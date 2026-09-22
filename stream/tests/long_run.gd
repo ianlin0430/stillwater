@@ -1,0 +1,107 @@
+extends SceneTree
+# Acceptance gate for ecology v2 (docs/plans/2026-09-22-self-sustaining-ecosystem.md).
+const PLANT_POOLS: Array[String] = ["stem","floating","biofilm"]
+const ACCEPTANCE = preload("res://tests/ecology_acceptance.gd")
+
+func plant_max(world: StreamWorld, plant: String) -> float:
+	return world.biofilm_max() if plant=="biofilm" else StreamWorld.PLANTS[plant].max
+
+func simulate(seed_value: int, days: int) -> Dictionary:
+	var start: int=Time.get_ticks_msec()
+	var world:=StreamWorld.new(seed_value)
+	var rows: Array=[]
+	var peak: int=world.state.animals.size()
+	var max_residual: float=0
+	var invalid: int=0
+	var in_band: int=0
+	var present: Dictionary={"shrimp":0,"threadfin":0,"hatchet":0}
+	var gap: Dictionary={"shrimp":0,"threadfin":0,"hatchet":0}
+	var longest_gap: Dictionary={"shrimp":0,"threadfin":0,"hatchet":0}
+	var plant_ok: Dictionary={"stem":0,"floating":0,"biofilm":0}
+	var plant_low: Dictionary={"stem":INF,"floating":INF,"biofilm":INF}
+	var first_old_age: int=-1
+	var removed_species: bool=false
+	for day in days:
+		for hour in 24:
+			world.advance_offline(3600)
+			peak=maxi(peak,world.state.animals.size())
+		max_residual=maxf(max_residual,absf(world.residual()))
+		if not StreamWorld.validate(world.export_state()):
+			invalid+=1
+		if world.state.animals.any(func(x): return x.species not in StreamWorld.ACTIVE_SPECIES):
+			removed_species=true
+		if first_old_age<0 and world.state.causes.get("old age",0)>0:
+			first_old_age=day+1
+		var n: int=world.state.animals.size()
+		if n>=12 and n<=18:
+			in_band+=1
+		var c: Dictionary=world.counts()
+		for species: String in present:
+			if c[species]>0:
+				present[species]+=1
+				gap[species]=0
+			else:
+				gap[species]+=1
+				longest_gap[species]=maxi(longest_gap[species],gap[species])
+		for plant: String in PLANT_POOLS:
+			var share: float=world.state.resources[plant]/plant_max(world,plant)
+			plant_low[plant]=minf(plant_low[plant],share)
+			if share>0.05:
+				plant_ok[plant]+=1
+		if (day+1)%30==0:
+			var row: Dictionary=c.duplicate()
+			row.day=day+1
+			row.total=n
+			row.resources=world.state.resources.duplicate()
+			row.biofilm_max=world.biofilm_max()
+			rows.append(row)
+			print("Seed %d day %d: %s pools %s" % [seed_value,day+1,JSON.stringify(c),JSON.stringify(world.state.resources)])
+	var totals: Dictionary=world.state.totals
+	var causes: Dictionary=world.state.causes
+	var presence: Dictionary={}
+	for species: String in present:
+		presence[species]=float(present[species])/days
+	var plants: Dictionary={}
+	for plant: String in PLANT_POOLS:
+		plants[plant]={"days_above_5pct":float(plant_ok[plant])/days,"lowest_share":plant_low[plant]}
+	return {"seed":seed_value,"days":days,"births":totals.birth,"arrivals":totals.arrival,"old_age":causes.get("old age",0),"first_old_age_day":first_old_age,"starvation":causes.get("starvation",0),"predation":totals.predation,"departures":totals.departure,"dispersal":totals.dispersal,"band_12_18":float(in_band)/days,"max_population":peak,"presence":presence,"longest_absence":longest_gap,"plants":plants,"max_material_residual":max_residual,"invalid_days":invalid,"removed_species_returned":removed_species,"causes":causes,"totals":totals,"monthly":rows,"seconds":(Time.get_ticks_msec()-start)/1000.0}
+
+func judge(run: Dictionary) -> Dictionary:
+	var ok: Dictionary={}
+	ok.reproduction=ACCEPTANCE.reproduction_passes(run)
+	ok.local_replacement=ACCEPTANCE.local_replacement_passes(run)
+	ok.old_age=run.old_age>=5 and run.first_old_age_day>0 and run.first_old_age_day<=60
+	ok.starvation=run.starvation<run.old_age
+	ok.predation=run.predation>=3 and run.predation<=20
+	ok.population=run.band_12_18>=0.8 and run.max_population<=18
+	ok.presence=run.presence.values().all(func(v): return v>=0.95) and run.longest_absence.values().all(func(v): return v<=30)
+	ok.no_departures=run.departures==0
+	ok.conservation=run.max_material_residual<0.00001
+	ok.plants=run.plants.values().all(func(p): return p.days_above_5pct>=0.95)
+	ok.valid=run.invalid_days==0 and not run.removed_species_returned
+	return ok
+
+func _initialize() -> void:
+	var report: Dictionary={"days_per_seed":180,"runs":[],"failures":[]}
+	for seed_value: int in [42,812,240921]:
+		var run: Dictionary=simulate(seed_value,180)
+		run.offspring_produced=ACCEPTANCE.offspring_produced(run)
+		run.acceptance=judge(run)
+		for key: String in run.acceptance:
+			if not run.acceptance[key]:
+				report.failures.append("Seed %d failed %s" % [seed_value,key])
+		report.runs.append(run)
+		print("SEED %d births %d arrivals %d old_age %d first_old_age_day %d starvation %d predation %d band %.3f max %d presence %s plants %s residual %s dispersal %d departures %d (%.1fs)" % [seed_value,run.births,run.arrivals,run.old_age,run.first_old_age_day,run.starvation,run.predation,run.band_12_18,run.max_population,JSON.stringify(run.presence),JSON.stringify(run.plants),String.num_scientific(run.max_material_residual),run.dispersal,run.departures,run.seconds])
+	var year: Dictionary=simulate(240921,365)
+	var last: Dictionary=year.monthly[-1]
+	year.acceptance={"species_persist":year.longest_absence.values().all(func(v): return v<=30) and last.shrimp>0 and last.threadfin>0 and last.hatchet>0,"conservation":year.max_material_residual<0.00001,"valid":year.invalid_days==0}
+	for key: String in year.acceptance:
+		if not year.acceptance[key]:
+			report.failures.append("365-day run failed "+key)
+	report.stability_365=year
+	print("YEAR births %d arrivals %d old_age %d starvation %d predation %d band %.3f max %d presence %s longest_absence %s residual %s (%.1fs)" % [year.births,year.arrivals,year.old_age,year.starvation,year.predation,year.band_12_18,year.max_population,JSON.stringify(year.presence),JSON.stringify(year.longest_absence),String.num_scientific(year.max_material_residual),year.seconds])
+	var f:=FileAccess.open("res://artifacts/six-month-runs.json",FileAccess.WRITE)
+	f.store_string(JSON.stringify(report,"  "))
+	f.close()
+	print("ACCEPTANCE "+("PASS" if report.failures.is_empty() else "FAIL "+JSON.stringify(report.failures)))
+	quit(0 if report.failures.is_empty() else 1)

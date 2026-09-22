@@ -1,0 +1,90 @@
+{
+  "insect": {
+    "label": "Lake midge",
+    "initial": 150,
+    "body": 0.1,
+    "reserve": 0.35,
+    "metabolism": 0.008,
+    "bite": 0.04,
+    "mature": 18.0,
+    "lifespan": 160.0,
+    "breed": 0.25,
+    "litter": 4,
+    "sense": 105.0,
+    "move": 22.0,
+    "diet": [],
+    "color": "c9c38b"
+  },
+  "fish": {
+    "label": "Pond minnow",
+    "initial": 52,
+    "body": 0.65,
+    "reserve": 2.5,
+    "metabolism": 0.018,
+    "bite": 0.12,
+    "mature": 90.0,
+    "lifespan": 1100.0,
+    "breed": 0.008,
+    "litter": 2,
+    "sense": 130.0,
+    "move": 30.0,
+    "diet": [
+      "insect"
+    ],
+    "color": "b6cfb4"
+  },
+  "frog": {
+    "label": "Common frog",
+    "initial": 28,
+    "body": 0.75,
+    "reserve": 3.0,
+    "metabolism": 0.025,
+    "bite": 0.17,
+    "mature": 70.0,
+    "lifespan": 1400.0,
+    "breed": 0.006,
+    "litter": 2,
+    "sense": 145.0,
+    "move": 22.0,
+    "diet": [
+      "insect"
+    ],
+    "color": "a5bf67"
+  },
+  "rodent": {
+    "label": "Bank vole",
+    "initial": 32,
+    "body": 0.6,
+    "reserve": 2.2,
+    "metabolism": 0.032,
+    "bite": 0.14,
+    "mature": 45.0,
+    "lifespan": 650.0,
+    "breed": 0.013,
+    "litter": 2,
+    "sense": 105.0,
+    "move": 27.0,
+    "diet": [],
+    "color": "b59978"
+  },
+  "heron": {
+    "label": "Grey heron",
+    "initial": 4,
+    "body": 3.5,
+    "reserve": 10.0,
+    "metabolism": 0.055,
+    "bite": 0.55,
+    "mature": 280.0,
+    "lifespan": 2800.0,
+    "breed": 0.0015,
+    "litter": 1,
+    "sense": 220.0,
+    "move": 32.0,
+    "diet": [
+      "fish",
+      "frog",
+      "rodent"
+    ],
+    "color": "d7ded7"
+  }
+}

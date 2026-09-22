@@ -1,0 +1,30 @@
+config_version=5
+
+[application]
+config/name="Stillwater Stream"
+config/description="A small world beneath the surface"
+run/main_scene="res://scenes/main.tscn"
+config/features=PackedStringArray("4.6", "GL Compatibility")
+
+[display]
+window/size/viewport_width=1280
+window/size/viewport_height=800
+window/size/window_width_override=1200
+window/size/window_height_override=750
+window/stretch/mode="canvas_items"
+window/vsync/vsync_mode=1
+
+[rendering]
+textures/vram_compression/import_etc2_astc=true
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+textures/default_filters/use_nearest_mipmap_filter=false
+environment/defaults/default_clear_color=Color(0.07, 0.12, 0.12, 1)
+
+[debug]
+gdscript/warnings/untyped_declaration=0
+
+[audio]
+driver/enable_input=false
+driver/driver="Dummy"
+driver/driver.macos="Dummy"

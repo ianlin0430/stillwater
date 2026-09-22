@@ -1,0 +1,8 @@
+Godot Engine v4.6.3.stable.official.7d41c59c4 - https://godotengine.org
+
+seed 42 year 1: {"deaths":{"old age":8,"predation":216,"starvation":19},"fish":161,"frog":1,"heron":1,"insect":0,"level":1.05432116708176,"rodent":172,"year":1}
+seed 42 year 2: {"deaths":{"habitat drying":2,"old age":80,"predation":306,"starvation":205},"fish":214,"frog":1,"heron":1,"insect":0,"level":1.1174197609361,"rodent":460,"year":2}
+seed 42 year 3: {"deaths":{"habitat drying":2,"old age":391,"predation":386,"starvation":500},"fish":201,"frog":2,"heron":1,"insect":0,"level":1.17797886131857,"rodent":249,"year":3}
+seed 42 year 4: {"deaths":{"habitat drying":2,"old age":654,"predation":436,"starvation":939},"fish":171,"frog":2,"heron":0,"insect":0,"level":1.2,"rodent":163,"year":4}
+seed 42 year 5: {"deaths":{"habitat drying":2,"old age":807,"predation":533,"starvation":1059},"fish":217,"frog":0,"heron":1,"insect":1,"level":1.2,"rodent":339,"year":5}
+seed 42 year 6: {"deaths":{"habitat drying":2,"old age":923,"predation":661,"starvation":1621},"fish":251,"frog":1,"heron":1,"insect":1,"level":1.19993282464186,"rodent":66,"year":6}

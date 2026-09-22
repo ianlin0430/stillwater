@@ -1,0 +1,9 @@
+# 0.5.0 artwork provenance
+
+Tool: built-in image_gen, edit mode. Input: `assets/pixel/stream.png`. Output copied without bitmap processing to `assets/pixel/stream-fish-shrimp.png`. Original generation: `/Users/ianlin/.codex/generated_images/01a0c301-f3f3-7b31-acc5-7f8e663f25d1/exec-5fbc44e2-3a4a-4f11-bde8-0bc6ad7e9b81.png`.
+
+Prompt:
+
+> Edit target: existing soft pixel underwater stream background. Create production replacement background only, NO ANIMALS and no text. Preserve side-on camera, 16:9 composition, sage/jade water and warm sand, crisp deliberate soft-pixel clusters at effective 640x360 game resolution. Improve art direction: remove BOTH conspicuous symmetrical giant cave holes (they were for crayfish, which no longer exist). Replace left hole area with an asymmetric low sweeping weathered submerged branch with lush moss and tiny fernlike plants, and right hole area with a compact pile of low rounded mossy stones and finer aquatic stems, NO cave openings. Keep the entire swimming zone from 10% to 65% height mostly quiet negative space with distant muted botanical silhouettes; do not fill it with detail. Keep a continuous nearly level clear shrimp grazing route across the width at 82% image height, low moss islands in that lane, avoid large rocks obstructing it. Small pebble nursery at center bottom. Floating plant roots hang delicately at top edges. Make colors intentionally softer and more cohesive, deeper muted jade distance, warm moss yellow-green in foreground, elegant grouped pixel shapes, NOT photorealistic texture/noise. Sunbeams faint. Fullbleed 16:9 background, game-ready. No fish, shrimp, crayfish, bubbles, captions, borders, UI, or icons.
+
+Character bitmap assets are unchanged; their generation prompts remain in `pixel-cast-prompts.md`. Shader/rig additions are native code, not raster edits. No CLI image API or external image-generation service was used.

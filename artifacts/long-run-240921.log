@@ -1,0 +1,7 @@
+Godot Engine v4.6.3.stable.official.7d41c59c4 - https://godotengine.org
+
+seed 240921 year 1: {"deaths":{"habitat drying":3,"old age":32,"predation":352,"starvation":275},"fish":113,"frog":0,"heron":1,"insect":4,"level":1.03972905574452,"rodent":187,"year":1}
+seed 240921 year 2: {"deaths":{"habitat drying":4,"old age":96,"predation":446,"starvation":641},"fish":196,"frog":2,"heron":0,"insect":3,"level":1.09725158902297,"rodent":354,"year":2}
+seed 240921 year 3: {"deaths":{"habitat drying":4,"old age":254,"predation":577,"starvation":1125},"fish":198,"frog":0,"heron":2,"insect":3,"level":1.15281092274797,"rodent":158,"year":3}
+seed 240921 year 4: {"deaths":{"habitat drying":5,"old age":411,"predation":742,"starvation":1394},"fish":213,"frog":1,"heron":2,"insect":5,"level":1.19967483476335,"rodent":244,"year":4}
+seed 240921 year 5: {"deaths":{"habitat drying":5,"old age":579,"predation":879,"starvation":1961},"fish":214,"frog":0,"heron":0,"insect":1,"level":1.1998956374207,"rodent":63,"year":5}

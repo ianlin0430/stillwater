@@ -1,0 +1,11 @@
+.godot/
+.DS_Store
+builds/
+*.tmp
+*.bak.*
+
+# Stillwater: large diagnostics and local backups stay out of git
+stream/artifacts/*
+!stream/artifacts/.gdignore
+stream-backup-*/
+stream-crayfish-backup-*/
