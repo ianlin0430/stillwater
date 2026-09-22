@@ -3,6 +3,7 @@ extends Control
 const STEP: float = 0.2
 const CREAM: Color = Color("e0e5d7")
 const MUTED: Color = Color("a0b3aa")
+const PersistQA=preload("res://scripts/persist_qa.gd")
 var world: StreamWorld
 var viewport: SubViewport
 var stage: StreamStage
@@ -46,6 +47,9 @@ var qa_visible_seconds: float = 0
 var qa_hidden_seconds: float = 0
 var qa_focused_seconds: float = 0
 var qa_progress_at: float = 0
+var prefs_path: String = "user://preferences.cfg"
+var persist_dir: String = ""
+var persist_log: Dictionary = {}
 
 func _ready() -> void:
 	Engine.max_fps=30
@@ -62,12 +66,27 @@ func _ready() -> void:
 	last_wall=Time.get_unix_time_from_system()
 	last_ticks=Time.get_ticks_msec()
 	started_ticks=last_ticks
+	for arg: String in args:
+		if arg.begins_with("--persist-qa="):
+			var run_id: String=arg.trim_prefix("--persist-qa=")
+			if qa or not PersistQA.valid_run_id(run_id):
+				printerr("Stillwater: invalid --persist-qa run id (need [A-Za-z0-9_-]+, no --qa)")
+				set_process(false)
+				get_tree().quit(1)
+				return
+			persist_dir=PersistQA.dir_for(run_id)
+			prefs_path=persist_dir+"preferences.cfg"
+			DirAccess.make_dir_recursive_absolute(persist_dir)
 	if qa:
 		world=StreamWorld.new(240921,last_wall)
 	else:
-		settings.load("user://preferences.cfg")
+		settings.load(prefs_path)
 		viewing_light=settings.get_value("view","light",false)
-		var path: String = settings.get_value("world","path",StreamStore.DEFAULT_PATH)
+		var path: String = settings.get_value("world","path",StreamStore.DEFAULT_PATH) if persist_dir.is_empty() else persist_dir+"stream.world"
+		if not persist_dir.is_empty():
+			var pre: Dictionary=StreamStore.read(path)
+			persist_log={"mode":"persist-qa","launch":PersistQA.next_launch(persist_dir),"path":ProjectSettings.globalize_path(path),"preferences":ProjectSettings.globalize_path(prefs_path),"wall":last_wall,"pre":{"digest":PersistQA.digest(pre),"summary":PersistQA.summary(pre)}}
+			PersistQA.write(persist_dir+"launch-%d.json" % persist_log.launch,persist_log)
 		var loaded: Dictionary = StreamStore.load_or_create(path,last_wall)
 		world=loaded.world
 		save_path=loaded.path
@@ -79,7 +98,12 @@ func _ready() -> void:
 			failure_status="Recovered the previous verified save."
 		_set_away(loaded.away)
 		settings.set_value("world","path",save_path)
-		settings.save("user://preferences.cfg")
+		settings.save(prefs_path)
+		if not persist_dir.is_empty():
+			var post: Dictionary=world.export_state()
+			persist_log.post={"digest":PersistQA.digest(post),"summary":PersistQA.summary(post),"lost":PersistQA.lost(persist_log.pre.summary,post),"away":loaded.away,"saved_path":ProjectSettings.globalize_path(save_path),"backup":loaded.backup,"preserved":loaded.preserved,"error":loaded.error}
+			PersistQA.write(persist_dir+"launch-%d.json" % persist_log.launch,persist_log)
+	print("Stillwater: mode=%s path=%s" % ["qa" if qa else "normal" if persist_dir.is_empty() else "persist-qa","(none)" if qa else ProjectSettings.globalize_path(save_path)])
 	_setup_ui()
 	if qa:
 		RenderingServer.frame_post_draw.connect(_qa_frame_drawn)
@@ -251,7 +275,7 @@ func _toggle_light() -> void:
 	light_button.button_pressed=viewing_light
 	if not qa:
 		settings.set_value("view","light",viewing_light)
-		settings.save("user://preferences.cfg")
+		settings.save(prefs_path)
 	_refresh()
 
 func _toggle_pause() -> void:
@@ -416,6 +440,8 @@ func _process(delta: float) -> void:
 
 func _set_suspended_view(value: bool) -> void:
 	suspended_view=value
+	if not persist_dir.is_empty():
+		print("Stillwater: persist-qa suspended_view=%s at %.1f" % [value,Time.get_unix_time_from_system()])
 	viewport.render_target_update_mode=SubViewport.UPDATE_DISABLED if suspended_view else SubViewport.UPDATE_ALWAYS
 	if suspended_view:
 		suspended_view_since=Time.get_unix_time_from_system()
@@ -438,6 +464,10 @@ func _set_suspended_view(value: bool) -> void:
 func _notification(what: int) -> void:
 	if what==NOTIFICATION_WM_CLOSE_REQUEST:
 		if _save():
+			if not persist_dir.is_empty():
+				var saved: Dictionary=world.export_state()
+				PersistQA.write(persist_dir+"exit-%d.json" % persist_log.launch,{"reason":"wm_close_request","suspended_view":suspended_view,"focused":focused,"wall":Time.get_unix_time_from_system(),"digest":PersistQA.digest(saved),"summary":PersistQA.summary(saved)})
+				print("Stillwater: persist-qa exit %d written" % persist_log.launch)
 			get_tree().quit()
 	elif what==NOTIFICATION_APPLICATION_FOCUS_OUT:
 		focused=false
