@@ -32,6 +32,8 @@ const NURSERY_HALF: float = 95.0
 const NURSERY_SHARE: float = 0.35
 const PREY_RATE: float = 0.3
 const PREY_RANGE: float = 220.0
+# Swimming depth bands, a little wider than the authored targets in _choose_activity.
+const DEPTH: Dictionary = {"threadfin":[200.0,420.0],"hatchet":[88.0,208.0]}
 const OFFLINE_ENCOUNTER: float = 0.5
 const RESCUE_RATE: float = 1.0/96.0
 const ARRIVAL_RATE: float = 1.0/504.0
@@ -204,7 +206,10 @@ func _move(delta: float) -> void:
 		velocity=velocity.move_toward(desired,acceleration*delta)
 		var next: Vector2=p+velocity*delta
 		if species in ["threadfin","hatchet"]:
-			next=next.clamp(Vector2(100,85),Vector2(1180,430))
+			# Keep each fish in its own layer: the shoaling push used to carry
+			# hatchetfish down into the threadfin band.
+			var band: Array = DEPTH[species]
+			next=next.clamp(Vector2(100,band[0]),Vector2(1180,band[1]))
 		if species=="shrimp" and a.activity=="Exploring":
 			next.y=_shrimp_surface(next.x)
 		if absf(velocity.x)>1.3 and a.activity!="Retreating":
