@@ -57,7 +57,12 @@ func simulate(seed_value: int, days: int, mode: String = "offline") -> Dictionar
 			if mode=="offline":
 				world.advance_offline(3600)
 			else:
-				world.advance_live(3600.0)
+				if mode=="frames":
+					# One hour at a 60 Hz frame delta, the way the running app steps.
+					for f in 216000:
+						world.advance_live(1.0/60.0)
+				else:
+					world.advance_live(3600.0)
 				audit_depth(world,depth)
 			peak=maxi(peak,world.state.animals.size())
 			audit_predation(world,mode,seen,audit)
