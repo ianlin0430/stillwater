@@ -1,0 +1,78 @@
+name: Ecology batch
+
+# Long seeded ecology runs are CPU-bound for about an hour each, so they run
+# here instead of on the Mac. Packaged-app persistence and the performance
+# acceptance stay local: they need macOS and the user's real machine.
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: live or offline
+        type: choice
+        options: [live, offline]
+        default: live
+      days:
+        description: simulated days per seed
+        default: "180"
+      seeds:
+        description: comma-separated seeds, one job each
+        default: "42,812,240921"
+      year:
+        description: also run the extra 365-day offline stability pass
+        type: boolean
+        default: false
+
+jobs:
+  seeds:
+    name: ${{ inputs.mode }} ${{ inputs.days }}d seed ${{ matrix.seed }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix:
+        seed: ${{ fromJSON(format('[{0}]', inputs.seeds)) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Godot 4.6.3
+        run: |
+          set -eu
+          url=https://github.com/godotengine/godot-builds/releases/download/4.6.3-stable/Godot_v4.6.3-stable_linux.x86_64.zip
+          curl -fsSL -o godot.zip "$url"
+          unzip -q godot.zip
+          mv Godot_v4.6.3-stable_linux.x86_64 /usr/local/bin/godot
+          chmod +x /usr/local/bin/godot
+          godot --version
+
+      - name: Import project
+        working-directory: stream
+        run: godot --headless --path . --import --quit-after 2000 || true
+
+      - name: Core tests
+        working-directory: stream
+        run: |
+          set -eu
+          for t in test_world test_swimmers test_roaming test_lifecycle test_persist_qa; do
+            [ -f "tests/$t.gd" ] || continue
+            echo "== $t"
+            godot --headless --path . --script "tests/$t.gd" 2>&1 | tee "../$t.log"
+          done
+
+      - name: Long run
+        working-directory: stream
+        run: |
+          godot --headless --path . --script tests/long_run.gd -- \
+            --mode=${{ inputs.mode }} --days=${{ inputs.days }} \
+            --seeds=${{ matrix.seed }} --year=${{ inputs.year }} \
+            --out=ci-${{ inputs.mode }}-${{ inputs.days }}d-${{ matrix.seed }}.json \
+            2>&1 | tail -200
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ecology-${{ inputs.mode }}-${{ inputs.days }}d-seed-${{ matrix.seed }}
+          path: |
+            *.log
+            stream/artifacts/ci-*.json
+          if-no-files-found: warn
