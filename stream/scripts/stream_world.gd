@@ -110,6 +110,13 @@ func spawn(species: String, age: float = 0, parent: int = 0) -> Dictionary:
 	state.animals.append(a)
 	return a
 
+# Moving a newly placed animal sideways: spawn sampled y against its own x, so a
+# shrimp kept that height and could end up inside the stream bed.
+func _bed_align(a: Dictionary, x: float) -> void:
+	if a.species=="shrimp":
+		a.y=floor_y(x)+(a.y-floor_y(a.x))
+	a.x=x
+
 func _event(kind: String, a: Dictionary, text: String) -> void:
 	var e: Dictionary = {"time":state.elapsed,"kind":kind,"id":a.get("id",0),"text":text}
 	state.events.append(e)
@@ -447,7 +454,7 @@ func _breed(parent: Dictionary) -> void:
 			_event("dispersal",parent,"A youngster of "+parent.name+" dispersed into the surrounding stream.")
 		else:
 			var child: Dictionary = spawn(parent.species,0,parent.id)
-			child.x=clampf(parent.x+rng.randf_range(-30,30),120,1150)
+			_bed_align(child,clampf(parent.x+rng.randf_range(-30,30),120,1150))
 			_event("birth",child,"A young "+cfg.label.to_lower()+" was born to "+parent.name+".")
 
 func _remove(a: Dictionary, cause: String, predator: Dictionary = {}) -> void:
@@ -490,7 +497,7 @@ func _arrive(species: String) -> void:
 	var a: Dictionary = spawn(species,SPECIES[species].mature+rng.randf_range(0,20))
 	if a.is_empty():
 		return
-	a.x=1150 if rng.randf()<0.5 else 130
+	_bed_align(a,1150.0 if rng.randf()<0.5 else 130.0)
 	state.ledger["in"]+=a.body+a.energy
 	_event("arrival",a,"A "+SPECIES[species].label.to_lower()+" arrived from upstream.")
 

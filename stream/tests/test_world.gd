@@ -268,6 +268,23 @@ func ecosystem_checks() -> void:
 	w._breed(mom)
 	check(w.state.totals.dispersal==2 and w.state.totals.birth==0 and w.counts().shrimp==8,"Space cap sends offspring downstream")
 	check(absf(w.residual())<0.00001,"Capped offspring leave through the ledger")
+	# Offspring and arrivals are moved sideways after spawn placed them.
+	var sunk: float=0.0
+	var w2:=StreamWorld.new(9)
+	for i in 300:
+		var mother: Dictionary=w2.state.animals[0]
+		mother.species="shrimp"
+		mother.energy=StreamWorld.SPECIES.shrimp.reserve
+		mother.x=float(130+(i*41)%1000)
+		var placed: int=w2.state.animals.size()
+		w2._breed(mother)
+		w2._arrive("shrimp")
+		for i2 in range(placed,w2.state.animals.size()):
+			var a: Dictionary=w2.state.animals[i2]
+			sunk=maxf(sunk,a.y-StreamWorld.floor_y(a.x))
+		while w2.state.animals.size()>6:
+			w2.state.animals.pop_back()
+	check(sunk<=0.0001,"Relocated shrimp stay on the stream bed")
 	# R9: nursery, hiding, molting and stem cover protect shrimplets.
 	w=StreamWorld.new(4)
 	var young: Dictionary=w.spawn("shrimp",2)
