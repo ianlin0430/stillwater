@@ -33,8 +33,11 @@ static func lost(before: Dictionary, saved: Dictionary) -> Array:
 	return out
 
 static func next_launch(dir: String) -> int:
+	return next_index(dir,"launch")
+
+static func next_index(dir: String, prefix: String) -> int:
 	var n: int=1
-	while FileAccess.file_exists(dir+"launch-%d.json" % n):
+	while FileAccess.file_exists(dir+"%s-%d.json" % [prefix,n]):
 		n+=1
 	return n
 

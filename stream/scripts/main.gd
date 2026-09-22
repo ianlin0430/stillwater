@@ -4,6 +4,7 @@ const STEP: float = 0.2
 const CREAM: Color = Color("e0e5d7")
 const MUTED: Color = Color("a0b3aa")
 const PersistQA=preload("res://scripts/persist_qa.gd")
+const Absence=preload("res://scripts/absence.gd")
 var world: StreamWorld
 var viewport: SubViewport
 var stage: StreamStage
@@ -35,8 +36,8 @@ var qa_capture: bool = false
 var qa_frames: Array[float] = []
 var away_text: String = ""
 var away_until: float = 0
-var suspended_view_since: float = 0
-var suspended_view_simulated: float = 0
+var absence: Dictionary = {}
+var absence_elapsed: float = 0
 var settings: ConfigFile = ConfigFile.new()
 var failure_status: String = ""
 var qa_snapshots: Dictionary = {}
@@ -350,16 +351,10 @@ func _refresh() -> void:
 	_refresh_info()
 
 func _set_away(report: Dictionary) -> void:
-	if report.get("seconds",0)<120:
+	var text: String=Absence.text(report)
+	if text.is_empty():
 		return
-	var hours: float=report.seconds/3600
-	away_text="While you were away: %.1f hours of stream life" % hours
-	var events: Dictionary=report.get("events",{})
-	for key: String in ["birth","arrival","departure","death"]:
-		if events.get(key,0)>0:
-			away_text+=" · %d %s" % [events[key],{"birth":"births","arrival":"arrivals","departure":"departures","death":"deaths"}[key]]
-	if report.get("capped",false):
-		away_text+=" · limited to three days"
+	away_text=text
 	away_until=qa_clock+30
 
 func _save() -> bool:
@@ -367,9 +362,7 @@ func _save() -> bool:
 		return true
 	var now: float=Time.get_unix_time_from_system()
 	if suspended_view and not paused:
-		var pending: float=maxf(0,now-suspended_view_since-suspended_view_simulated)
-		world.advance_offline(pending)
-		suspended_view_simulated+=pending
+		Absence.advance(absence,world,now)
 	world.state.wall_checkpoint=maxf(world.state.wall_checkpoint,now)
 	var err: Error=StreamStore.save(save_path,world)
 	if err!=OK:
@@ -403,10 +396,8 @@ func _process(delta: float) -> void:
 			progress.store_string(JSON.stringify({"seconds":qa_clock,"visible_seconds":qa_visible_seconds,"hidden_seconds":qa_hidden_seconds,"focused_seconds":qa_focused_seconds,"drawn_frames":qa_drawn_frames}))
 			qa_progress_at=qa_clock
 	if suspended_view:
-		if not paused and now-suspended_view_since-suspended_view_simulated>=60:
-			var amount: float=maxf(0,now-suspended_view_since-suspended_view_simulated)
-			world.advance_offline(amount)
-			suspended_view_simulated+=amount
+		if not paused and now-absence.since-absence.simulated>=60:
+			Absence.advance(absence,world,now)
 		if qa and qa_duration>0 and qa_clock>=qa_duration:
 			_finish_qa()
 		return
@@ -444,16 +435,18 @@ func _set_suspended_view(value: bool) -> void:
 		print("Stillwater: persist-qa suspended_view=%s at %.1f" % [value,Time.get_unix_time_from_system()])
 	viewport.render_target_update_mode=SubViewport.UPDATE_DISABLED if suspended_view else SubViewport.UPDATE_ALWAYS
 	if suspended_view:
-		suspended_view_since=Time.get_unix_time_from_system()
-		suspended_view_simulated=0
+		absence=Absence.fresh(Time.get_unix_time_from_system())
+		absence_elapsed=world.state.elapsed
 		# Keep AppKit event/Accessibility delivery responsive while rendering is off.
 		Engine.max_fps=10
 		RenderingServer.render_loop_enabled=false
 		_save()
 	else:
 		if not paused:
-			var report: Dictionary=world.advance_offline(maxf(0,Time.get_unix_time_from_system()-suspended_view_since-suspended_view_simulated))
-			_set_away(report)
+			# One summary for the whole absence, including every advance made while hidden.
+			_set_away(Absence.advance(absence,world,Time.get_unix_time_from_system()))
+		if not persist_dir.is_empty():
+			PersistQA.write(persist_dir+"absence-%d.json" % PersistQA.next_index(persist_dir,"absence"),{"launch":persist_log.get("launch",0),"resumed":Time.get_unix_time_from_system(),"paused":paused,"absence":absence,"elapsed_at_hide":absence_elapsed,"elapsed_at_resume":world.state.elapsed,"away_text":away_text})
 		last_wall=Time.get_unix_time_from_system()
 		last_ticks=Time.get_ticks_msec()
 		Engine.max_fps=30
