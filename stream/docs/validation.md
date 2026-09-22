@@ -120,3 +120,124 @@ The fish/shrimp-specific generated background is integrated, replacing the symme
 Rig regression: 103 checks pass. Native import/export and strict ad-hoc signature verification pass. Packaged screenshots were inspected at normal and zoomed views with the viewing light. Short QA runs exercise the rendering path; they do not replace sustained performance acceptance. An intermediate art run overlapped export, so its process samples must not be used as a clean performance result. Full 0.5.0 foreground/hidden performance revalidation is explicitly assigned to Claude after non-art fixes.
 
 Production art files are handed off as a stable baseline. Remaining non-art work and acceptance order: `NON_ART_CLAUDE_PLAN.md`. No new biological tuning or save schema changes were made in this art pass. `artifacts/.gdignore` now prevents mass importing the raw frame recordings.
+
+## 0.5.0 — lifecycle and time-boundary integration (2026-09-23)
+
+Scope of this section: the absence-summary defect and the lifecycle/time-boundary coverage assigned as
+step 2 of `NON_ART_CLAUDE_PLAN.md`. The isolated `--persist-qa` mode and the quit/relaunch harness from
+step 1 are reused unchanged; **their earlier results are not restated here and were not rerun**. The
+0.4.0 performance and hide/restore numbers above remain 0.4.0 results.
+
+### Defect: only the last fragment of an absence was summarised — FIXED
+
+While the window was hidden, `main.gd` advanced the world about once a minute and discarded each
+report. On resume it passed only the final leftover to `_set_away`, which drops any report under 120
+seconds. Replaying the pre-fix logic against a real `StreamWorld` (seed 42, 600 s hidden, one tick per
+second) produced: 10 hidden advances, **600.0 s of stream life actually simulated**, resume report
+**0.0 s**, **summary shown: false**. A ten-minute absence therefore showed the user nothing.
+
+`scripts/absence.gd` now accumulates `seconds`, per-event counts and the `capped` flag across every
+advance of one absence, and tracks the wall time already simulated so no span is applied twice. The
+three hidden-period call sites in `main.gd` (per-minute advance, hidden save, resume) all fold into the
+same total, and the summary text moved into the helper so the 120-second floor is under test. No
+ecology rate and no save-schema field changed.
+
+### Measured results
+
+| Check | Result | Evidence |
+|---|---|---|
+| Lifecycle/time-boundary suite (new) | PASSED — 63 checks, 0 failures | `tests/test_lifecycle.gd` |
+| Core regression suite | PASSED — 104 checks; 72-hour catch-up 167 ms | `tests/test_world.gd` |
+| Swimmer rig suite | PASSED — 103 checks | `tests/test_swimmers.gd` |
+| Roaming suite | PASSED — no failures, seeds 42 / 812 / 240921 | `tests/test_roaming.gd` |
+| Persist-QA helper suite | PASSED — 27 checks | `tests/test_persist_qa.gd` |
+| Packaged hidden → resume run | PASSED — 15 checks | `artifacts/persistence-qa/20260923-011817/` |
+| User `stream.world` / `.bak` / `preferences.cfg` | PASSED — SHA-256 unchanged across the whole session | see hashes below |
+
+`tests/test_lifecycle.gd` writes only under `user://lifecycle-test/`, hashes the three real user files
+at start and end, and asserts they match. Fault injection (truncated/garbage payloads) is applied only
+to files in that directory. Coverage:
+
+- Catch-up over 300 s, 72 h and 18 days through `StreamStore.load_or_create`. The 18-day case advances
+  exactly `MAX_AWAY` (259 200 s), reports `capped: true`, and still commits `wall_checkpoint` to the
+  real present so the remaining debt is not replayed later.
+- Negative elapsed (clock moved back one hour): nothing advances, the checkpoint does not move
+  backwards, the state still validates and every identity is intact.
+- Corrupted primary with a good backup: recovers from `.bak`, writes back to the primary path, still
+  catches up, and preserves identity and lineage.
+- Corrupted primary **and** corrupted backup: both files are left byte-identical (SHA-256 compared
+  before and after), `preserved` is reported, and a fresh world is written to a separate
+  `-recovery-<epoch>.world` file. The user's data is never overwritten or deleted.
+- Interruption before the catch-up commit: the on-disk bytes are unchanged, and the next launch replays
+  the full hour from the old save, byte-for-byte identical to the interrupted in-memory world.
+- Relaunch immediately after the commit: 0 s caught up, elapsed and checkpoint unchanged, same bytes
+  rewritten — no double advance.
+- Absence accumulator: a 605 s absence split into ten 60 s advances plus the leftover produces exactly
+  one 605 s summary, advances the world by exactly 605 s, and is byte-identical to a single
+  `advance_offline(605)`. Pause, a backwards clock mid-absence and repeated calls at the same instant
+  all advance nothing. An over-long absence caps and keeps the capped flag.
+
+### Packaged hidden → resume run — PASSED
+
+Re-exported after the fix (`--export-release macOS`; `codesign --verify --deep --strict` passes), then
+run for real via `python3 tools/persistence_acceptance.py --modes hidden_resume --hidden-seconds 200`.
+The app was hidden with `NSRunningApplication.hide` (no Accessibility needed) and unhidden
+programmatically. Actual numbers from run `20260923-011817_hidden_resume`:
+
+| Measurement | Value |
+|---|---:|
+| Confirmed hidden wall time | 203.3 s (`isHidden` true at both ends) |
+| Hidden advances folded into one absence | 5 |
+| Reported absence | 203.33 s (wall span 203.33 s) |
+| World elapsed at hide → at resume | 2.40 s → 205.73 s = **203.33 s advanced** |
+| Summary shown | `While you were away: 0.1 hours of stream life` |
+| Extra absence reports for the same hide | none |
+| Exit after resume | quit event, exit code 0 after 0.2 s, no process left |
+
+Two earlier harness runs in the same artifacts directory are **not** passes and are retained as-is:
+`20260923-011555` (an earlier tool version picked up the launch's own brief occlusion instead of the
+scripted hide, so it reported a 1.7 s absence and FAILED) and `20260923-011649` (an intentional
+`--trigger external` smoke test with a 20 s timeout and nobody acting, which correctly reported
+UNVERIFIED then FAILED). Only `20260923-011817` is the accepted run.
+
+Elapsed advanced by exactly the absence length, so the per-minute hidden advances were not re-applied.
+In `--persist-qa` mode only, each resume writes `absence-N.json` (since, resumed, advances, seconds,
+event counts, elapsed at hide and at resume, the summary text) into the run directory; normal launches
+write nothing extra.
+
+### Real machine sleep/wake — UNVERIFIED
+
+Not run. The Mac was deliberately not slept and no energy setting was changed, and suspending the
+process is not a substitute for hardware sleep. A ready-to-run procedure is left for the user:
+
+```sh
+cd stream
+/opt/homebrew/bin/godot --headless --path . --export-release macOS "$PWD/builds/Stillwater Stream.app"
+python3 tools/persistence_acceptance.py --modes hidden_resume --trigger external \
+        --hidden-seconds 300 --external-timeout 3600
+```
+
+The harness launches the isolated persist-QA app, prints `ACTION NEEDED` and writes
+`artifacts/persistence-qa/<stamp>/pending-action.json` with the app's pid, then waits (up to
+`--external-timeout`) without touching the window. Put the Mac to sleep naturally (Apple menu → Sleep,
+or close the lid), leave it asleep for at least `--hidden-seconds`, then wake it and bring Stillwater
+back to the front. The harness resumes as soon as the app writes its absence report and checks the same
+things as the programmatic run: that several hidden advances were folded into one absence, that the
+absence covers the whole wall span, that elapsed advanced exactly once, and that a single summary was
+shown. `since` and `resumed` in `absence-N.json` are the before/after wall timestamps; `advances` says
+whether catch-up ran once or repeatedly. The user's real save files are only hashed, before and after.
+
+Two related mechanisms also remain UNVERIFIED from step 1 and were not retested here: a real window
+close-button click and a real Cmd-Q, because macOS Accessibility permission for the calling process is
+denied. `--trigger external` covers those the same way.
+
+### User file hashes (unchanged for this whole session)
+
+```
+8fddb7b6338cb76d32385c0e3d8ea0c91df842b006c5ad9c9ed1ffe095587a5c  stream.world
+3e0b994531ece6a02306761abc34bd5d0250da15b728a3e992b1e31da0db6b34  stream.world.bak
+610b5d9c1e15e49c47db9cfe763d3c14c11ab8535a11c58188f49b66a73bf8f0  preferences.cfg
+```
+
+Still open after this step: live ecology validation for the new roaming (step 3), natural event
+presentation (step 4), and full 0.5.0 packaged performance acceptance (step 5).

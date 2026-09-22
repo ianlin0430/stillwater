@@ -6,6 +6,11 @@ Exit triggers:
   auto      System Events (needs Accessibility for the calling process; denied -> mode UNVERIFIED).
   external  harness writes pending-action.json and waits for someone to perform the real UI action.
 hidden_close never needs Accessibility: NSRunningApplication.hide + terminate (quit Apple event).
+
+Mode hidden_resume hides the app long enough for several 60s hidden advances, unhides it and checks
+that the whole absence was advanced exactly once and summarised once. With --trigger external the
+harness does not hide anything itself: it asks for a real hide/sleep and wake, which is how a natural
+machine sleep/wake is captured (see docs/validation.md, "Real sleep/wake procedure").
 """
 import argparse, datetime, hashlib, json, pathlib, subprocess, sys, time
 
@@ -16,6 +21,7 @@ USER = pathlib.Path.home() / 'Library/Application Support/Godot/app_userdata/Sti
 REAL = ['stream.world', 'stream.world.bak', 'preferences.cfg']
 PROC = 'Stillwater Stream.app/Contents/MacOS/Stillwater Stream'
 MODES = ['window_close', 'cmd_q', 'hidden_close']
+EXTRA_MODES = ['hidden_resume']
 
 
 def real_hashes():
@@ -47,8 +53,9 @@ def load(p):
 
 
 class Run:
-    def __init__(self, out, mode, trigger, external_timeout):
+    def __init__(self, out, mode, trigger, external_timeout, hidden_seconds=200):
         self.out, self.mode, self.trigger, self.ext = out, mode, trigger, external_timeout
+        self.hidden_seconds = hidden_seconds
         self.run_id = datetime.datetime.now().strftime('%Y%m%d-%H%M%S') + '_' + mode
         self.dir = USER / 'persistence-qa' / self.run_id
         self.checks = []
@@ -72,10 +79,15 @@ class Run:
             time.sleep(0.5)
         return proc, None
 
-    def external(self, action, proc):
-        (self.out / 'pending-action.json').write_text(json.dumps({'run_id': self.run_id, 'pid': proc.pid, 'action': action, 'since': time.time()}))
+    def external(self, action, proc, mark=None):
+        t0 = time.time()
+        (self.out / 'pending-action.json').write_text(json.dumps({'run_id': self.run_id, 'pid': proc.pid, 'action': action, 'since': t0}))
         print(f'  ACTION NEEDED: {action} (pid {proc.pid}); waiting up to {self.ext}s', flush=True)
         try:
+            if mark is not None:
+                if self.absences_since(mark, self.ext):
+                    return True, f'external {action} performed; absence report appeared after {time.time() - t0:.0f}s'
+                return False, f'no external {action} within {self.ext}s'
             proc.wait(self.ext)
             return True, f'external {action} performed; process exited'
         except subprocess.TimeoutExpired:
@@ -121,7 +133,94 @@ class Run:
         self.check(f'{label}: no process remains', 'PASS' if not left else 'FAIL', f'pgrep: {left}')
         return fallback
 
+    def absences_since(self, mark, timeout):
+        """Absence reports whose hide began at or after `mark`, oldest first; waits for the first."""
+        deadline = time.time() + timeout
+        while True:
+            out = []
+            for f in sorted(self.dir.glob('absence-*.json')):
+                d = load(f)
+                if d and d['absence']['since'] >= mark:
+                    out.append((f.name, d))
+            if out or time.time() >= deadline:
+                return sorted(out, key=lambda x: x[1]['absence']['since'])
+            time.sleep(1)
+
+    def wait_for(self, path, timeout):
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            d = load(path)
+            if d:
+                return d
+            time.sleep(1)
+        return None
+
+    def execute_hidden_resume(self):
+        """Hide the running app for a few minutes, unhide it, and check the absence was advanced
+        exactly once and reported once. --trigger external asks a human to hide/sleep and wake."""
+        print(f'== {self.mode} run_id={self.run_id}', flush=True)
+        before = real_hashes()
+        if running():
+            self.check('no Stillwater running before start', 'FAIL', f'pgrep: {running()}')
+            return self.result(before, before)
+        proc, l1 = self.launch(1)
+        if not l1:
+            proc.kill()
+            self.check('launch 1 writes launch-1.json', 'FAIL', 'timeout')
+            return self.result(before, real_hashes())
+        self.check('launch 1 isolated path', 'PASS' if '/persistence-qa/' + self.run_id + '/' in l1['path'] and l1['mode'] == 'persist-qa' else 'FAIL', l1['path'])
+        # A launch can start occluded and resume when we activate it, which already writes an
+        # absence report. Only reports that began after this mark belong to the hide below.
+        mark = time.time()
+        if self.trigger == 'external':
+            ok, msg = self.external(f'hide Stillwater (Cmd-H) or sleep the Mac, wait at least {self.hidden_seconds}s, then wake/unhide it', proc, mark)
+            self.check('external hide/wake performed', 'PASS' if ok else 'UNVERIFIED', msg)
+            hidden_wall = None
+        else:
+            t_hide = time.time()
+            app_js(proc.pid, 'hide')
+            time.sleep(3)
+            hidden = app_js(proc.pid, 'isHidden')[1] == 'true'
+            self.check('app hidden (NSRunningApplication.hide)', 'PASS' if hidden else 'FAIL', f'isHidden={hidden}')
+            time.sleep(self.hidden_seconds)
+            still = app_js(proc.pid, 'isHidden')[1] == 'true'
+            app_js(proc.pid, 'unhide')
+            app_js(proc.pid, 'activateWithOptions(2)')
+            hidden_wall = time.time() - t_hide
+            self.check('app stayed hidden for the whole absence', 'PASS' if still else 'FAIL',
+                       f'isHidden={still} after {hidden_wall:.1f}s')
+        found = self.absences_since(mark, 60)
+        if not found:
+            proc.kill()
+            self.check('an absence report is written on resume', 'FAIL', 'none written after the hide')
+            return self.result(before, real_hashes())
+        name, a = found[0]
+        acc, span = a['absence'], a['resumed'] - a['absence']['since']
+        self.check('an absence report is written on resume', 'PASS', f"{name}: span {span:.1f}s, advances {acc['advances']}")
+        self.check('several 60s advances happened while hidden', 'PASS' if acc['advances'] >= 3 else 'FAIL',
+                   f"advances={acc['advances']} over {span:.1f}s hidden")
+        self.check('absence covers the whole hidden span', 'PASS' if abs(acc['seconds'] - span) < 2.0 else 'FAIL',
+                   f"absence.seconds={acc['seconds']:.2f} vs wall span {span:.2f}s")
+        advanced = a['elapsed_at_resume'] - a['elapsed_at_hide']
+        self.check('elapsed advanced exactly once for the absence', 'PASS' if abs(advanced - acc['seconds']) < 0.001 else 'FAIL',
+                   f"elapsed {a['elapsed_at_hide']:.2f} -> {a['elapsed_at_resume']:.2f} = {advanced:.2f}s advanced, absence.seconds={acc['seconds']:.2f}")
+        self.check('one summary shown for the whole absence', 'PASS' if a['away_text'].startswith('While you were away') else 'FAIL',
+                   a['away_text'] or '(empty)')
+        self.check('no second absence report for the same hide', 'PASS' if len(found) == 1 else 'FAIL',
+                   f"reports after the hide: {[n for n, _ in found]}")
+        time.sleep(10)
+        ok, msg = app_js(proc.pid, 'terminate')
+        fb = self.finish(proc, 'exit after resume', ok, f'quit Apple event: {msg}')
+        e1 = load(self.dir / 'exit-1.json')
+        self.check('exit-1.json written', 'PASS' if e1 else 'FAIL', e1['reason'] if e1 else 'missing')
+        if e1:
+            self.check('the resumed world is what gets saved', 'PASS' if e1['summary']['elapsed'] >= a['elapsed_at_resume'] else 'FAIL',
+                       f"elapsed at resume {a['elapsed_at_resume']:.1f} -> at exit {e1['summary']['elapsed']:.1f}")
+        return self.result(before, real_hashes(), fb)
+
     def execute(self):
+        if self.mode == 'hidden_resume':
+            return self.execute_hidden_resume()
         print(f'== {self.mode} run_id={self.run_id}', flush=True)
         before = real_hashes()
         if running():
@@ -210,9 +309,10 @@ class Run:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--modes', default=','.join(MODES))
+    ap.add_argument('--modes', default=','.join(MODES), help='any of ' + ','.join(MODES + EXTRA_MODES))
     ap.add_argument('--trigger', choices=['auto', 'external'], default='auto')
-    ap.add_argument('--external-timeout', type=int, default=300)
+    ap.add_argument('--external-timeout', type=int, default=900)
+    ap.add_argument('--hidden-seconds', type=int, default=200, help='hidden_resume: how long to stay hidden')
     a = ap.parse_args()
     if not EXE.exists():
         sys.exit(f'missing {EXE}; export first')
@@ -221,7 +321,7 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     print(f'report dir: {out}', flush=True)
     start = real_hashes()
-    runs = [Run(out, m, a.trigger, a.external_timeout).execute() for m in a.modes.split(',')]
+    runs = [Run(out, m, a.trigger, a.external_timeout, a.hidden_seconds).execute() for m in a.modes.split(',')]
     end = real_hashes()
     report = {'app': str(APP), 'started': stamp, 'user_hashes_start': start, 'user_hashes_end': end,
               'user_files_unchanged': start == end, 'runs': runs}
