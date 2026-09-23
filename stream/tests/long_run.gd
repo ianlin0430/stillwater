@@ -13,7 +13,11 @@ const BANDS: Dictionary = StreamWorld.DEPTH
 func audit_depth(world: StreamWorld, depth: Dictionary) -> void:
 	for a: Dictionary in world.state.animals:
 		depth.checked+=1
-		if a.species=="shrimp":
+		if a.species=="garden_eel":
+			# On the bed, never swimming: exactly at its own burrow mouth.
+			if a.x!=a.burrow_x or a.y!=a.burrow_y or absf(a.y-StreamWorld.floor_y(a.x))>0.0001:
+				depth.violations+=1
+		elif a.species=="shrimp":
 			if a.y>StreamWorld.floor_y(a.x)+1.0 or a.y<StreamWorld.floor_y(a.x)-120.0:
 				depth.violations+=1
 		else:
@@ -30,9 +34,9 @@ func simulate(seed_value: int, days: int, mode: String = "offline") -> Dictionar
 	var max_residual: float=0
 	var invalid: int=0
 	var in_band: int=0
-	var present: Dictionary={"shrimp":0,"threadfin":0,"hatchet":0}
-	var gap: Dictionary={"shrimp":0,"threadfin":0,"hatchet":0}
-	var longest_gap: Dictionary={"shrimp":0,"threadfin":0,"hatchet":0}
+	var present: Dictionary={"shrimp":0,"threadfin":0,"hatchet":0,"garden_eel":0}
+	var gap: Dictionary={"shrimp":0,"threadfin":0,"hatchet":0,"garden_eel":0}
+	var longest_gap: Dictionary={"shrimp":0,"threadfin":0,"hatchet":0,"garden_eel":0}
 	var plant_ok: Dictionary={"stem":0,"floating":0,"biofilm":0}
 	var plant_low: Dictionary={"stem":INF,"floating":INF,"biofilm":INF}
 	var first_old_age: int=-1
@@ -58,7 +62,8 @@ func simulate(seed_value: int, days: int, mode: String = "offline") -> Dictionar
 		if first_old_age<0 and world.state.causes.get("old age",0)>0:
 			first_old_age=day+1
 		var n: int=world.state.animals.size()
-		if n>=12 and n<=18:
+		# 14-22 since the garden eels (2026-09-23): the habitat caps now sum to 8+5+5+4=22.
+		if n>=14 and n<=22:
 			in_band+=1
 		var c: Dictionary=world.counts()
 		for species: String in present:
@@ -91,7 +96,7 @@ func simulate(seed_value: int, days: int, mode: String = "offline") -> Dictionar
 	var plants: Dictionary={}
 	for plant: String in PLANT_POOLS:
 		plants[plant]={"days_above_5pct":float(plant_ok[plant])/days,"lowest_share":plant_low[plant]}
-	return {"seed":seed_value,"mode":mode,"absent_days":absent_days,"depth":depth,"days":days,"births":totals.birth,"arrivals":totals.arrival,"old_age":causes.get("old age",0),"first_old_age_day":first_old_age,"starvation":causes.get("starvation",0),"predation":totals.predation,"departures":totals.departure,"dispersal":totals.dispersal,"band_12_18":float(in_band)/days,"max_population":peak,"presence":presence,"longest_absence":longest_gap,"plants":plants,"max_material_residual":max_residual,"invalid_days":invalid,"removed_species_returned":removed_species,"causes":causes,"totals":totals,"monthly":rows,"seconds":(Time.get_ticks_msec()-start)/1000.0}
+	return {"seed":seed_value,"mode":mode,"absent_days":absent_days,"depth":depth,"days":days,"births":totals.birth,"arrivals":totals.arrival,"old_age":causes.get("old age",0),"first_old_age_day":first_old_age,"starvation":causes.get("starvation",0),"predation":totals.predation,"departures":totals.departure,"dispersal":totals.dispersal,"band_14_22":float(in_band)/days,"max_population":peak,"presence":presence,"longest_absence":longest_gap,"plants":plants,"max_material_residual":max_residual,"invalid_days":invalid,"removed_species_returned":removed_species,"causes":causes,"totals":totals,"monthly":rows,"seconds":(Time.get_ticks_msec()-start)/1000.0}
 
 func judge(run: Dictionary) -> Dictionary:
 	var ok: Dictionary={}
@@ -101,7 +106,7 @@ func judge(run: Dictionary) -> Dictionary:
 	ok.starvation=run.starvation<run.old_age
 	# Predation was removed on 2026-09-23: no animal eats another.
 	ok.predation=run.predation==0 and not run.causes.has("predation")
-	ok.population=run.band_12_18>=0.8 and run.max_population<=18
+	ok.population=run.band_14_22>=0.8 and run.max_population<=22
 	ok.presence=run.presence.values().all(func(v): return v>=0.95) and run.longest_absence.values().all(func(v): return v<=30)
 	ok.no_departures=run.departures==0
 	ok.conservation=run.max_material_residual<0.00001
@@ -142,18 +147,18 @@ func _initialize() -> void:
 				report.failures.append("Seed %d failed %s" % [seed_value,key])
 		report.runs.append(run)
 		print("SEED %d mode %s absent %s depth %s" % [seed_value,run.mode,JSON.stringify(run.absent_days),JSON.stringify(run.depth)])
-		print("SEED %d births %d arrivals %d old_age %d first_old_age_day %d starvation %d predation %d band %.3f max %d presence %s plants %s residual %s dispersal %d departures %d (%.1fs)" % [seed_value,run.births,run.arrivals,run.old_age,run.first_old_age_day,run.starvation,run.predation,run.band_12_18,run.max_population,JSON.stringify(run.presence),JSON.stringify(run.plants),String.num_scientific(run.max_material_residual),run.dispersal,run.departures,run.seconds])
+		print("SEED %d births %d arrivals %d old_age %d first_old_age_day %d starvation %d predation %d band %.3f max %d presence %s plants %s residual %s dispersal %d departures %d (%.1fs)" % [seed_value,run.births,run.arrivals,run.old_age,run.first_old_age_day,run.starvation,run.predation,run.band_14_22,run.max_population,JSON.stringify(run.presence),JSON.stringify(run.plants),String.num_scientific(run.max_material_residual),run.dispersal,run.departures,run.seconds])
 	if not o.year:
 		write_report(report,o.out)
 		return
 	var year: Dictionary=simulate(240921,365)
 	var last: Dictionary=year.monthly[-1]
-	year.acceptance={"species_persist":year.longest_absence.values().all(func(v): return v<=30) and last.shrimp>0 and last.threadfin>0 and last.hatchet>0,"conservation":year.max_material_residual<0.00001,"valid":year.invalid_days==0}
+	year.acceptance={"species_persist":year.longest_absence.values().all(func(v): return v<=30) and last.shrimp>0 and last.threadfin>0 and last.hatchet>0 and last.garden_eel>0,"conservation":year.max_material_residual<0.00001,"valid":year.invalid_days==0}
 	for key: String in year.acceptance:
 		if not year.acceptance[key]:
 			report.failures.append("365-day run failed "+key)
 	report.stability_365=year
-	print("YEAR births %d arrivals %d old_age %d starvation %d predation %d band %.3f max %d presence %s longest_absence %s residual %s (%.1fs)" % [year.births,year.arrivals,year.old_age,year.starvation,year.predation,year.band_12_18,year.max_population,JSON.stringify(year.presence),JSON.stringify(year.longest_absence),String.num_scientific(year.max_material_residual),year.seconds])
+	print("YEAR births %d arrivals %d old_age %d starvation %d predation %d band %.3f max %d presence %s longest_absence %s residual %s (%.1fs)" % [year.births,year.arrivals,year.old_age,year.starvation,year.predation,year.band_14_22,year.max_population,JSON.stringify(year.presence),JSON.stringify(year.longest_absence),String.num_scientific(year.max_material_residual),year.seconds])
 	write_report(report,o.out)
 
 func write_report(report: Dictionary, out: String) -> void:
