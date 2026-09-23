@@ -45,6 +45,7 @@ func run() -> void:
 	check(h.brush.distance_to(at)<0.001,"Disabled interaction does not produce input effects")
 	for i in 120: stage.animate(1.0/30)
 	check(h.impulses.is_empty(),"Interaction effects expire")
+	_fish_only()
 	_life_effects()
 	_events()
 	_motion(false)
@@ -130,7 +131,7 @@ func _events() -> void:
 	var initial: Dictionary=world.snapshot()
 	stage.apply_snapshot(initial)
 	check(stage.event_cursor==initial.next_event-1 and stage.deaths.is_empty(),"Initial snapshot establishes cursor without replay")
-	var a: Dictionary=initial.animals[0].duplicate(true)
+	var a: Dictionary=initial.animals.filter(func(v: Dictionary)->bool: return v.species=="threadfin")[0].duplicate(true)
 	var next: Dictionary=initial.duplicate(true)
 	next.animals=next.animals.filter(func(v: Dictionary)->bool: return v.id!=a.id)
 	next.archive.append(a)
@@ -163,13 +164,14 @@ func _events() -> void:
 	stage.animate(0.1)
 	var relocated: Dictionary=initial.duplicate(true)
 	relocated.elapsed=0.2
-	relocated.animals[0].relocated_at=0.2
-	relocated.animals[0].x+=20
-	relocated.animals[0].vx=30.0
+	var moved: Dictionary=relocated.animals.filter(func(v: Dictionary)->bool: return v.id==a.id)[0]
+	moved.relocated_at=0.2
+	moved.x+=20
+	moved.vx=30.0
 	stage.habitat.impulses.clear()
 	stage.apply_snapshot(relocated)
 	stage.animate(0.1)
-	check(stage.rigs[a.id].feet[0].distance_to(stage.rigs[a.id].position)<30,"Relocation replants feet beside the new body position")
+	check(stage.rigs[a.id].position==Vector2(moved.x,moved.y),"Relocated fish snaps to its new position")
 	check(stage.habitat.wake_clock[a.id]>=stage.habitat.clock-0.1,"Relocation suppresses wake even for short jumps")
 	var changed: Dictionary=next.duplicate(true)
 	changed.seed=999
@@ -200,7 +202,7 @@ func _life_effects() -> void:
 	root.add_child(stage)
 	var snap:=world.snapshot()
 	stage.apply_snapshot(snap)
-	var actor: Dictionary=snap.animals[0]
+	var actor: Dictionary=snap.animals.filter(func(v: Dictionary)->bool: return v.species=="threadfin")[0]
 	var fx=stage.events_layer
 	for kind: String in ["birth","arrival"]:
 		fx.accept({"kind":kind,"id":actor.id},snap)
@@ -219,26 +221,42 @@ func _life_effects() -> void:
 	check(fx.ghosts.size()==1 and fx.ghosts[0].rig.position.x>actor.x,"Dispersing youngster drifts downstream")
 	stage.animate(3)
 	check(fx.ghosts.is_empty(),"Dispersal expires at four seconds")
+	# The current fish-only brief retires shell and brood presentation tests.
 	fx.accept({"kind":"molt","id":actor.id,"until":10.0},snap)
-	stage.animate(3)
-	check(fx.ghosts.size()==1 and fx.ghosts[0].expired==0,"Exuvia remains until simulation deadline")
-	snap.elapsed=10.0
-	stage.apply_snapshot(snap)
-	stage.animate(1)
-	check(fx.ghosts.size()==1 and fx.ghosts[0].rig.modulate.a<0.32,"Exuvia fades after deadline")
-	stage.animate(1)
-	check(fx.ghosts.is_empty(),"Expired exuvia removed")
-	actor.brood_until=20.0
-	actor.molting_until=20.0/86400
-	stage.apply_snapshot(snap)
-	check(stage.rigs[actor.id].berried and stage.rigs[actor.id].molting,"Snapshot activates eggs and pale molt state")
-	actor.erase("brood_until")
-	actor.molting_until=0.0
-	stage.apply_snapshot(snap)
-	check(not stage.rigs[actor.id].berried and not stage.rigs[actor.id].molting,"Hatching and molt completion remove identity overlays")
+	fx.accept({"kind":"berried","id":actor.id,"until":10.0},snap)
+	check(fx.ghosts.is_empty() and fx.fades.is_empty(),"Fish never produce molt or egg overlays")
 	for i in 50: fx.accept({"kind":"dispersal","id":actor.id},snap)
 	check(fx.ghosts.size()==24,"Transient life effects have a hard cap")
 	fx.clear()
 	check(fx.ghosts.is_empty() and fx.fades.is_empty(),"World reset clears all transients")
 	check(var_to_bytes(world.export_state())==bytes,"Life effects do not modify simulation or RNG")
+	stage.queue_free()
+
+func _fish_only() -> void:
+	var world:=StreamWorld.new(42,1000)
+	var unchanged:=var_to_bytes(world.export_state())
+	var snap:=world.snapshot()
+	# Include an explicit legacy shrimp so this stays useful after backend removal.
+	var legacy: Dictionary=snap.animals[0].duplicate(true)
+	legacy.id=999
+	legacy.species="shrimp"
+	legacy.activity="Grazing"
+	legacy.brood_until=1000.0
+	legacy.molting_until=1.0
+	snap.animals.append(legacy)
+	var stage:=StreamStage.new()
+	root.add_child(stage)
+	stage.apply_snapshot(snap)
+	check(not stage.rigs.has(999),"Legacy shrimp does not get a rendered rig")
+	check(not 999 in stage.visible_ids(),"Keyboard selection and visible count exclude shrimp")
+	check(stage.habitat.animals.all(func(a: Dictionary)->bool: return a.species!="shrimp"),"Hidden shrimp cannot bend plants or produce wakes")
+	check(stage.visible_ids().size()==snap.animals.filter(func(a: Dictionary)->bool: return a.species in StreamStage.PRESENTED_SPECIES).size(),"Visible count matches actual supported fish")
+	for kind: String in ["birth","arrival","dispersal","molt","berried"]:
+		stage.events_layer.accept({"kind":kind,"id":999,"until":1000.0},snap)
+	check(stage.events_layer.ghosts.is_empty() and stage.events_layer.fades.is_empty(),"Legacy shrimp events create no transient silhouettes or overlays")
+	snap.archive.append(legacy)
+	stage._begin_death({"id":999,"cause":"old age"},snap)
+	check(not stage.rigs.has(999) and stage.deaths.is_empty(),"Archived shrimp cannot reappear during a death event")
+	stage.animate(1)
+	check(var_to_bytes(world.export_state())==unchanged,"Fish-only presentation preserves saves and ecology for backend migration")
 	stage.queue_free()

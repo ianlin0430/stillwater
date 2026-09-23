@@ -22,7 +22,7 @@ func _ready() -> void:
 	for i in ROOTS.size(): bends.append(0.0)
 
 func apply_snapshot(value: Dictionary) -> void:
-	animals=value.get("animals",[]).duplicate(true)
+	animals=value.get("animals",[]).filter(func(a: Dictionary)->bool: return a.species in StreamStage.PRESENTED_SPECIES).duplicate(true)
 	var at: float=value.get("elapsed",0.0)
 	var discontinuity: bool=at<snapshot_elapsed or at-snapshot_elapsed>0.3
 	for a: Dictionary in animals:
@@ -60,7 +60,7 @@ func describe(point: Vector2) -> String:
 	for i in ROOTS.size():
 		if point.distance_to(ROOTS[i]-Vector2(0,_height(i)*0.5))<65:
 			return "Water plants · brush past to bend the fronds"
-	if point.y>555: return "Moss and leaf litter · shrimp grazing ground"
+	if point.y>555: return "Moss and leaf litter · stream floor"
 	return "Drag through the water · click a creature to inspect"
 
 func _height(i: int) -> float:
@@ -90,9 +90,6 @@ func advance(delta: float) -> void:
 			if v.length()>7 and p.distance_to(previous[a.id])<80:
 				_add_impulse(p-v.normalized()*22,v,"wake",clampf(v.length()/25,0.2,0.7))
 				wake_clock[a.id]=clock
-			elif a.species=="shrimp" and a.activity=="Grazing":
-				_add_impulse(p+Vector2(18*float(a.direction),-4),Vector2(0,-3),"graze",0.4)
-				wake_clock[a.id]=clock+1.0
 		previous[a.id]=p
 	for impulse: Dictionary in impulses: impulse.age+=delta
 	impulses=impulses.filter(func(v: Dictionary) -> bool: return v.age<2.1)

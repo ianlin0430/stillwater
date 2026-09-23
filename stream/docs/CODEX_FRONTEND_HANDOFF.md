@@ -1,5 +1,7 @@
 # 給 Codex：前端待辦（2026-09-23）
 
+> **最新需求（2026-09-23）：「不要蝦子 魚就好」。** 蝦的美術迭代、核可與正式整合均取消。以 [FISH_ONLY_CLAUDE_HANDOFF.md](FISH_ONLY_CLAUDE_HANDOFF.md) 為最新分工；以下蝦相關段落只保留為歷史，不能繼續照做。保留魚類工作與環境互動。
+
 > **最新（2026-09-23）：使用者決定拿掉蝦。本檔 §3 蝦精緻化整節、§2 的脫殼與抱卵兩列都已取消。** 順序和最新範圍以 `CODEX_FRONTEND_PLAN.md` 為準。
 
 使用者分工：**Codex 負責前端與美術，Claude 負責 backend 與其他所有工作**。本檔是目前全部的前端待辦。backend 欄位細節以 `BACKEND_SNAPSHOT_EVENTS.md` 為準；你的 `FRONTEND_BACKEND_CONTRACT.md` 仍是你的檔案。

@@ -1,5 +1,7 @@
 # Shrimp candidate A — 2026-09-23
 
+> CANCELLED: 使用者已改成只要魚（2026-09-23）。A/B 候選均不再待核可，不整合、不繼續迭代。以下為歷史記錄。
+
 Status: review candidate only. Production `StreamStage` continues using `SwimmerRig`; it does not load the candidate. No user approval recorded. Garden eel art is still pending its own review.
 
 Source: original code-drawn polygons, articulated segments, one-pixel pigment marks and thin appendages in `tools/art_candidates/shrimp_candidate.gd`, inheriting the real movement/feet rig. No generated bitmap, no external photograph copied, no image-generation prompt. Design brief: C / Soft Pixel, unchanged adult scale 0.75 / juvenile 0.48, translucent ventral areas, darker red dorsal pigment, six abdominal segments, five pairs of pleopods, slender planted walking legs, two pairs of antennae (long pair approximately 1.1 body lengths), delayed antenna turn, fuller redder female, paler male and juvenile.

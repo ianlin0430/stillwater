@@ -269,6 +269,7 @@ func _scene_input(event: InputEvent) -> void:
 				if hit<0 and not paused: stage.interact(point)
 
 func _select(id: int) -> void:
+	if id>=0 and not id in stage.visible_ids(): id=-1
 	selected=id
 	stage.selected=id
 	inspector.visible=id>=0
@@ -316,12 +317,9 @@ func _input(event: InputEvent) -> void:
 				if not paused: stage.interact(Vector2(640,360))
 				get_viewport().set_input_as_handled()
 			KEY_TAB:
-				if not event.shift_pressed and not world.state.animals.is_empty():
-					var index: int=-1
-					for i in world.state.animals.size():
-						if world.state.animals[i].id==selected:
-							index=i
-					_select(world.state.animals[(index+1)%world.state.animals.size()].id)
+				var ids: Array[int]=stage.visible_ids()
+				if not event.shift_pressed and not ids.is_empty():
+					_select(ids[(ids.find(selected)+1)%ids.size()])
 					get_viewport().set_input_as_handled()
 
 func _refresh_info() -> void:
@@ -356,7 +354,7 @@ func _refresh() -> void:
 	var hour: float=local.hour+local.minute/60.0
 	stage.natural_light=clampf(sin((hour-6)/12*PI),0,1)
 	stage.viewing_light=viewing_light
-	climate.text=("Night" if hour<6 or hour>=20 else "Evening" if hour>=17 else "Morning" if hour<11 else "Daylight")+" · "+str(world.state.animals.size())+" lives"
+	climate.text=("Night" if hour<6 or hour>=20 else "Evening" if hour>=17 else "Morning" if hour<11 else "Daylight")+" · "+str(stage.visible_ids().size())+" fish in view"
 	status.text="Click a creature · Drag water or plants to explore · Scroll to look closer" if not paused else "Paused · the stream will continue when you resume"
 	if qa_clock<away_until and not away_text.is_empty():
 		status.text=away_text
