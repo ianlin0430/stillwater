@@ -139,7 +139,8 @@ func _initialize() -> void:
 				if night[species].resting_share<=s.resting_share:
 					failures.append("Night no longer settles "+species)
 		runs.append({"seed":seed_value,"day":day,"night":night})
-	if worst_below_bed>3.0:
+	# Same tolerance as the long_run depth audit (tests/long_run.gd audit_depth).
+	if worst_below_bed>1.0:
 		failures.append("Shrimp sank through the stream bed")
 	var predation: Dictionary=predation_conditions()
 	print(JSON.stringify({"runs":runs,"predation":predation,"worst_below_bed":snappedf(worst_below_bed,0.01),"failures":failures}))

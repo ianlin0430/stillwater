@@ -217,8 +217,13 @@ func _move(delta: float) -> void:
 			# hatchetfish down into the threadfin band.
 			var band: Array = DEPTH[species]
 			next=next.clamp(Vector2(100,band[0]),Vector2(1180,band[1]))
-		if species=="shrimp" and a.activity=="Exploring":
-			next.y=_shrimp_surface(next.x)
+		if species=="shrimp":
+			if a.activity=="Exploring":
+				next.y=_shrimp_surface(next.x)
+			else:
+				# The bed is x-dependent: a shrimp swimming off the bed climbs more
+				# slowly than the bed rises under it and used to dip into it.
+				next.y=minf(next.y,floor_y(next.x))
 		if absf(velocity.x)>1.3 and a.activity!="Retreating":
 			a.direction=1.0 if velocity.x>0 else -1.0
 		a.x=next.x
