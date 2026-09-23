@@ -28,9 +28,9 @@
 
 ### 0. 把目前未 commit 的前端收好
 
-工作目錄裡已經有你還沒 commit 的改動：`main.gd`（拖曳撥水、R 水紋、提示文字）、`stream_stage.gd`、`stream_habitat.gd(.uid)`、`test_frontend.gd(.uid)`、`FRONTEND_BACKEND_CONTRACT.md`。
+> **大部分已由 Claude 代為處理**：你留在工作目錄的改動（`main.gd` 的拖曳撥水、R 水紋、提示文字，`stream_stage.gd`，`stream_habitat.gd(.uid)`，`test_frontend.gd(.uid)`，`FRONTEND_BACKEND_CONTRACT.md`）已經**原封不動**存成 commit `12ef13d`，當時跑過 `test_frontend` 10/0、`test_presentation` 26/0。之後 Claude 又在上面修了卡頓（§0.5），所以 `stream_stage.gd` 和 `test_frontend.gd` 跟你記得的不一樣，**請先讀現行版本再改**。這一步剩下的只有修正契約文件。
 
-- 先確認它們能跟 `main` 上最新的 backend 一起跑：`test_frontend` 和 `test_presentation` 都要通過。
+- 先確認現行 `main` 上 `test_frontend` 和 `test_presentation` 都通過。
 - 修正 `FRONTEND_BACKEND_CONTRACT.md`：
   - `stream_absence.gd` 改成實際檔名 `scripts/absence.gd`。
   - 引用 `BACKEND_SNAPSHOT_EVENTS.md`。
