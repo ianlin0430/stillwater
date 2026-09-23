@@ -231,6 +231,19 @@ Two related mechanisms also remain UNVERIFIED from step 1 and were not retested 
 close-button click and a real Cmd-Q, because macOS Accessibility permission for the calling process is
 denied. `--trigger external` covers those the same way.
 
+### Real window close-button click — PASSED (2026-09-23, manual)
+
+Run `20260923-110938_window_close`: the user launched `persistence_acceptance.py --modes window_close,cmd_q
+--trigger external` and clicked the window's close button after 14.2 s. The app logged
+`reason: wm_close_request` (visible, focused) and wrote `exit-1.json`. The harness itself was then closed
+before its relaunch, so the relaunch and comparison were completed by hand: the same run id was relaunched,
+quit with the Apple-event terminate, and `exit-1` was compared with `launch-2`'s pre-catch-up record.
+Digest `783223726b64e405…` identical; resources, rng, motion_rng, wall_checkpoint and elapsed equal; 14/14
+animals keep id/name/parent/species, none lost; catch-up 50.2 s, not capped; the user's three files hashed
+unchanged (values above). No report.json exists for this run because the harness did not finish.
+
+Real Cmd-Q remains UNVERIFIED: the harness was closed before its cmd_q case ran.
+
 ### User file hashes (unchanged for this whole session)
 
 ```
