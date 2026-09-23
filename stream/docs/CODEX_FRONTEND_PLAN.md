@@ -42,6 +42,28 @@
 - `test_frontend` 通過。
 - `test_presentation` 通過（它負責證明前端不改動生態）。
 
+### 0.5 先修動作卡頓（最優先，使用者 2026-09-23 回報「動畫卡卡的」）
+
+**根因**（Claude 依目前程式邏輯推算，0.5.0 正式包和 Frontend Preview 都有）：
+- simulation 的位置每 0.2 秒才更新一次（`advance_live` 以 0.2 秒 motion tick 積分）。
+- `main.gd` 用自己的 `step_clock` 每 0.2 秒套一次 snapshot，跟 motion tick 沒有對齊。
+- `stream_stage.gd` 的 `animate` 每一幀用 `rig.position.lerp(targets[id], delta*9)` 往目標追。
+
+結果是每 0.2 秒一次「衝一下、慢下來、停住」。以一隻穩定 40 px/s 游動的魚計算，畫面上每一幀的速度在 **9 到 150 px/s 之間擺盪**，約 16 倍；兩個 0.2 秒時鐘漂移時，還會週期性一次跳兩步。這就是卡頓的來源。
+
+**修法**（前端，不改 simulation）：
+1. 在 stage 保留最近兩份 snapshot，照 snapshot 的 `elapsed` 做**時間插值**：畫面位置 = 兩份 snapshot 位置的線性插值，時間軸比最新 snapshot 晚一個 tick（0.2 秒）。延遲對觀察型魚缸看不出來，而且轉彎不會過衝。拿掉 `lerp(targets, delta*9)` 這種追目標的寫法。
+   - 備選做法是用 `vx/vy` 從最新 snapshot 往前外推，但轉彎時會過衝，不建議。
+2. 插值時間用 simulation 時間：每幀依 `advance_live` 實際推進的時間累加。暫停時停住；隱藏／恢復、離線補算、世界重載之後，直接跳到最新位置，不插值。
+3. `relocated_at` 落在兩份 snapshot 之間時，這一段直接跳位，不插值、不畫尾流（和 §1 的第 3 點合併處理）。
+4. snapshot 套用時機要跟 motion tick 對齊：`main.gd` 的 `step_clock` 改成「`world.state.motion_ticks` 有變化才套用新 snapshot」。這是 `main.gd` 裡唯一允許你改到 `_scene_input` 以外的地方，只改這一段。
+5. 朝向（`face_target`）和尾擺強度也改用插值後的速度，不要用追目標時的暴衝速度，否則尾巴會跟著抽動。
+
+**驗收**：
+- 在 `test_frontend` 加一個測試：用真的 `StreamWorld` 以 30 FPS 推進 10 秒，記錄一隻正在巡游的魚每一幀的畫面位移。直線巡游段的每幀速度變化，不得超過真實速度的 ±25%（目前會擺盪到約 16 倍）。暫停時位移為 0。
+- 再錄一段 1.65 倍的短片，放在 `artifacts/motion-smoothness/`，附修前修後對照給使用者看。
+- `test_presentation` 通過，證明 snapshot 仍是只讀。
+
 ### 1. 接上事件游標、延遲移除、重定位
 
 照 handoff §1 做：
