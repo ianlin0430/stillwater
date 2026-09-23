@@ -61,26 +61,18 @@ func _initialize() -> void:
 			if step.distance_to(Vector2(a.vx,a.vy)*0.2)>StreamWorld.RELOCATION:
 				consistent=false
 	check(moved and consistent,"vx/vy match per-tick displacement unless relocated_at marks the tick")
-	# A shrimp high in the water told to explore snaps to the mossy surface: that is a relocation.
-	var s: Dictionary=w.state.animals.filter(func(a): return a.species=="shrimp")[0]
-	s.molting_until=-1.0
-	s.y=StreamWorld.floor_y(s.x)-80
-	s.activity="Exploring"
+	# A fish found far outside its layer (e.g. an edited save) snaps back into it: that is a relocation.
+	var s: Dictionary=w.state.animals.filter(func(a): return a.species=="threadfin")[0]
+	s.y=StreamWorld.DEPTH.threadfin[1]+80
+	s.activity="Resting"
 	s.decision_at=w.state.elapsed+100
-	s.tx=s.x+40
-	s.ty=StreamWorld._shrimp_surface(s.tx)
+	s.tx=s.x
+	s.ty=s.y
 	w.state.elapsed+=0.2
 	w._move(0.2)
-	check(s.relocated_at==w.state.elapsed,"An instantaneous snap records relocated_at")
-	# Molting: a real ecology tick emits a live, positioned event with its end time.
-	var cursor: int=w.state.next_event-1
-	s.next_molt=s.age
-	w.advance_live(60)
-	var molt: Dictionary=find(StreamWorld.events_after(w.snapshot().events,cursor),"molt")
-	check(molt.get("id")==s.id and molt.get("live")==true and molt.has("x") and molt.has("y"),"Molt event is live with actor and position")
-	check(is_equal_approx(molt.get("until",0.0),s.molting_until*StreamWorld.DAY),"Molt event carries when sheltering ends")
+	check(s.relocated_at==w.state.elapsed and s.y==StreamWorld.DEPTH.threadfin[1],"An instantaneous snap records relocated_at")
 	# Natural death: the event arrives in the same snapshot the animal disappears from.
-	cursor=w.state.next_event-1
+	var cursor: int=w.state.next_event-1
 	var old: Dictionary=w.state.animals.filter(func(a): return a.species=="hatchet")[0]
 	old.age=old.lifespan
 	w.advance_live(60)
@@ -92,13 +84,13 @@ func _initialize() -> void:
 	check(snap.animals.all(func(a): return a.id!=old.id) and snap.archive.any(func(a): return a.id==old.id),"Same snapshot: gone from animals, kept in archive")
 	# Birth, arrival and dispersal.
 	cursor=w.state.next_event-1
-	var mother: Dictionary=w.state.animals.filter(func(a): return a.species=="shrimp" and a.sex=="female")[0]
+	var mother: Dictionary=w.state.animals.filter(func(a): return a.species=="threadfin" and a.sex=="female")[0]
 	mother.energy=100.0
 	w._breed(mother)
 	var born: Dictionary=find(StreamWorld.events_after(w.state.events,cursor),"birth")
 	check(born.get("target")==mother.id and born.has("x"),"Birth event: child is actor, parent is target")
-	while w.counts().shrimp<StreamWorld.CAP.shrimp:
-		w.spawn("shrimp",30)
+	while w.counts().threadfin<StreamWorld.CAP.threadfin:
+		w.spawn("threadfin",30)
 	cursor=w.state.next_event-1
 	mother.energy=100.0
 	w._breed(mother)
@@ -111,7 +103,7 @@ func _initialize() -> void:
 	check(newcomer.size()==1 and came.x==newcomer[0].x and came.y==newcomer[0].y,"Arrival event is placed at the newcomer")
 	# Offline catch-up events are not live.
 	cursor=w.state.next_event-1
-	w.state.animals.filter(func(a): return a.species=="shrimp")[1].next_molt=0.0
+	w.state.animals.filter(func(a): return a.species=="hatchet")[1].age=999.0
 	w.advance_offline(120)
 	var quiet: Array=StreamWorld.events_after(w.state.events,cursor)
 	check(not quiet.is_empty() and quiet.all(func(e): return e.live==false),"Offline events are marked not live")
@@ -121,7 +113,7 @@ func _initialize() -> void:
 	var back:=StreamWorld.new()
 	check(back.restore(StreamStore.read(path)),"Restore with event ids")
 	check(back.state.next_event==w.state.next_event,"next_event survives save/load")
-	back._event("molt",back.state.animals[0],"x")
+	back._event("death",back.state.animals[0],"x")
 	check(back.state.events.back().seq==w.state.next_event,"Next id after load is not reused")
 	DirAccess.remove_absolute(path)
 	DirAccess.remove_absolute(path+".bak")

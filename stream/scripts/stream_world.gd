@@ -5,19 +5,23 @@ const VERSION: int = 2
 const MAX_ANIMALS: int = 24
 const MAX_AWAY: float = 259200.0
 const DAY: float = 86400.0
-const ACTIVE_SPECIES: Array[String] = ["shrimp","threadfin","hatchet","garden_eel"]
+const ACTIVE_SPECIES: Array[String] = ["threadfin","hatchet","garden_eel"]
 const SPECIES: Dictionary = {
-	"shrimp": {"label":"Cherry shrimp","latin":"Neocaridina davidi","initial":6,"mature":21.0,"lifespan":120.0,"body":0.3,"reserve":3.0,"cost":0.22,"bite":0.5,"brood":2,"breed":0.12,"cooldown":7.0,"pool":"biofilm","k_food":6.0},
-	# Legacy entry: crayfish were removed from the cast; kept only so older saves validate.
+	# Legacy entries: shrimp (2026-09-23) and crayfish (2026-09-22) were removed from the
+	# cast; kept only so older saves validate, upgrade and still show their history.
+	"shrimp": {"label":"Cherry shrimp","latin":"Neocaridina davidi","initial":0,"mature":21.0,"lifespan":120.0,"body":0.3,"reserve":3.0,"cost":0.22,"bite":0.5,"brood":2,"breed":0.12,"cooldown":7.0,"pool":"biofilm"},
 	"crayfish": {"label":"Blue crayfish","latin":"Procambarus alleni","initial":0,"mature":35.0,"lifespan":540.0,"body":3.0,"reserve":12.0,"cost":0.65,"bite":1.2,"brood":2,"breed":0.035,"cooldown":21.0,"pool":"detritus"},
-	"threadfin": {"label":"Threadfin rainbowfish","latin":"Iriatherina werneri","initial":4,"mature":28.0,"lifespan":180.0,"body":0.7,"reserve":4.0,"cost":0.3,"bite":0.7,"brood":2,"breed":0.06,"cooldown":10.0,"pool":"microfauna","k_food":10.0},
-	"hatchet": {"label":"Marbled hatchetfish","latin":"Carnegiella strigata","initial":4,"mature":28.0,"lifespan":180.0,"body":0.8,"reserve":4.0,"cost":0.32,"bite":0.75,"brood":2,"breed":0.04,"cooldown":14.0,"pool":"microfauna","k_food":10.0},
+	"threadfin": {"label":"Threadfin rainbowfish","latin":"Iriatherina werneri","initial":5,"mature":28.0,"lifespan":180.0,"body":0.7,"reserve":4.0,"cost":0.3,"bite":0.7,"brood":2,"breed":0.06,"cooldown":10.0,"pool":"microfauna","k_food":10.0},
+	"hatchet": {"label":"Marbled hatchetfish","latin":"Carnegiella strigata","initial":5,"mature":28.0,"lifespan":180.0,"body":0.8,"reserve":4.0,"cost":0.32,"bite":0.75,"brood":2,"breed":0.04,"cooldown":14.0,"pool":"microfauna","k_food":10.0},
 	# Added 2026-09-23 by user decision; a marine fish, kept in this freshwater stream on purpose.
 	"garden_eel": {"label":"Spotted garden eel","latin":"Heteroconger hassi","initial":2,"mature":90.0,"lifespan":365.0,"body":0.9,"reserve":5.0,"cost":0.22,"bite":0.55,"brood":2,"breed":0.04,"cooldown":20.0,"pool":"microfauna","k_food":10.0}}
 # Ecology v2 (docs/plans/2026-09-22-self-sustaining-ecosystem.md). Rates are per day, applied per one-minute tick.
-const CAP: Dictionary = {"shrimp":8,"threadfin":5,"hatchet":5,"garden_eel":4}
+# Fish-only since 2026-09-23 (user decision): caps 6+6+4 = 16, opening cast 5+5+2 = 12
+# (SPECIES.initial). These two are the only places the cast sizes live; the arrival
+# limit (habitat_cap) and the long-run band follow from them.
+const CAP: Dictionary = {"threadfin":6,"hatchet":6,"garden_eel":4}
 const POOLS: Array[String] = ["nutrients","stem","floating","biofilm","microfauna","detritus"]
-# Opening pools, near the settled state with a full cast (R11); also the v1 upgrade fill (R12).
+# Opening pools (R11, set with the earlier shrimp cast); also the v1 upgrade fill (R12).
 const OPENING: Dictionary = {"nutrients":0.4,"stem":45.0,"floating":24.0,"biofilm":32.0,"microfauna":24.0,"detritus":8.0}
 const PLANTS: Dictionary = {
 	"floating": {"r":1.3,"m":0.025,"max":40.0,"seed":0.4},
@@ -28,23 +32,21 @@ const MICRO: Dictionary = {"r":1.2,"m":0.06,"max":80.0,"k":25.0}
 const DECAY: float = 0.08
 const STREAM_IN: Dictionary = {"nutrients":0.7,"microfauna":0.35}
 const STREAM_OUT: Dictionary = {"nutrients":0.05,"microfauna":0.015,"detritus":0.04,"floating":0.005}
-const SHRIMP_DETRITUS_K: float = 30.0
 # Swimming depth bands, a little wider than the authored targets in _choose_activity.
 const DEPTH: Dictionary = {"threadfin":[200.0,420.0],"hatchet":[88.0,208.0]}
-# A female shrimp carries her brood this many days before it hatches (brood_until).
-const BROOD_DAYS: float = 5.0
 const RESCUE_RATE: float = 1.0/96.0
 const ARRIVAL_RATE: float = 1.0/504.0
 # An unexplained position jump larger than this in one motion tick is a relocation
-# (animals carry relocated_at). Fish layer clamping stays under 1 px; the shrimp
-# surface snap when Exploring starts off the bed is what crosses it.
+# (animals carry relocated_at). Generic: fish layer clamping stays under 1 px in normal
+# play, so since the shrimp (whose surface snap crossed it) left, only a fish found
+# outside its band, e.g. from an edited save, is snapped back and marked.
 const RELOCATION: float = 3.0
 # Garden eel burrow sites on the open sand between the stones and the plants, filled
 # nearest-first; an eel never leaves its burrow. A fish within `dx` sideways and `dy`
 # above the burrow mouth (the bottom of the threadfin layer) sends it down for `seconds`.
 const BURROWS: Array[float] = [650.0,684.0,616.0,718.0,582.0,752.0,548.0,786.0]
 const EEL_WARY: Dictionary = {"dx":48.0,"dy":200.0,"seconds":4.0}
-const NAMES: Dictionary = {"shrimp":["Ember","Poppy","Ruby","Coral","Fern","Pepper"],"threadfin":["Silk","Reed","Willow","Glimmer"],"hatchet":["Marble","Mica","Dapple","Flint"],"garden_eel":["Dune","Sprig"]}
+const NAMES: Dictionary = {"threadfin":["Silk","Reed","Willow","Glimmer","Wisp"],"hatchet":["Marble","Mica","Dapple","Flint","Slate"],"garden_eel":["Dune","Sprig"]}
 var rng := RandomNumberGenerator.new()
 var motion_rng := RandomNumberGenerator.new()
 var state: Dictionary
@@ -57,8 +59,8 @@ func _init(world_seed: int = 240921, wall_time: float = 0) -> void:
 	state = {"version":VERSION,"seed":world_seed,"elapsed":0.0,"ecology_remainder":0.0,"motion_remainder":0.0,"motion_ticks":0,"ecology_ticks":0,"next_id":1,"next_event":1,"wall_checkpoint":wall_time,"animals":[],"archive":[],"events":[],"history":[],"resources":OPENING.duplicate(),"ledger":{"initial":0.0,"in":0.0,"out":0.0},"totals":{"birth":0,"death":0,"arrival":0,"departure":0,"dispersal":0,"molt":0,"predation":0},"causes":{},"light_hour":12.0,"eel_colony":true}
 	for species: String in ACTIVE_SPECIES:
 		var n: int = int(SPECIES[species].initial)
-		var lo: float = 25.0 if species=="shrimp" else 100.0 if species=="garden_eel" else 40.0
-		var hi: float = 100.0 if species=="shrimp" else 220.0 if species=="garden_eel" else 150.0
+		var lo: float = 100.0 if species=="garden_eel" else 40.0
+		var hi: float = 220.0 if species=="garden_eel" else 150.0
 		# Staggered opening ages (R11): one per age stratum, in seeded random order.
 		var ages: Array[float] = []
 		for i in n:
@@ -70,20 +72,18 @@ func _init(world_seed: int = 240921, wall_time: float = 0) -> void:
 			ages[j]=t
 		for i in n:
 			var animal: Dictionary = spawn(species, ages[i])
-			animal.name = NAMES[species][i]
+			# Past the authored names an animal keeps spawn's "<label> <id>".
+			if i<NAMES[species].size():
+				animal.name = NAMES[species][i]
 			animal.sex = "female" if i%2==0 else "male"
-			if species=="shrimp":
-				animal.x=[170.0,415.0,550.0,755.0,860.0,1120.0][i]
-			elif species=="garden_eel":
+			if species=="garden_eel":
 				pass
 			elif species=="threadfin":
-				animal.x=245.0+i*245.0
+				animal.x=200.0+i*880.0/maxf(1,n-1)
 				animal.y=275.0+(i%2)*55
 			else:
-				animal.x=300.0+i*205.0
+				animal.x=300.0+i*820.0/maxf(1,n-1)
 				animal.y=125.0+(i%2)*30
-			if species=="shrimp":
-				animal.y=floor_y(animal.x)
 			animal.tx=animal.x
 			animal.ty=animal.y
 	state.ledger.initial = material()
@@ -95,8 +95,6 @@ static func floor_y(x: float) -> float:
 
 func animal_scale(a: Dictionary) -> float:
 	var juvenile: bool = a.age < SPECIES[a.species].mature
-	if a.species=="shrimp":
-		return 0.48 if juvenile else 0.75
 	return 0.5 if juvenile else 1.0
 
 func _place(species: String) -> Vector2:
@@ -106,8 +104,6 @@ func _place(species: String) -> Vector2:
 		y = motion_rng.randf_range(220,400)
 	elif species=="hatchet":
 		y = motion_rng.randf_range(90,190)
-	elif species=="shrimp":
-		y -= motion_rng.randf_range(0,25)
 	return Vector2(x,y)
 
 func spawn(species: String, age: float = 0, parent: int = 0) -> Dictionary:
@@ -115,10 +111,10 @@ func spawn(species: String, age: float = 0, parent: int = 0) -> Dictionary:
 		return {}
 	var cfg: Dictionary = SPECIES[species]
 	var p: Vector2 = _burrow(parent) if species=="garden_eel" else _place(species)
-	var a: Dictionary = {"id":state.next_id,"species":species,"name":cfg.label+" "+str(state.next_id),"sex":"female" if rng.randf()<0.5 else "male","age":age,"parent":parent,"born":state.elapsed,"body":cfg.body*(0.45 if age<cfg.mature else 1.0),"energy":cfg.reserve*(0.35 if age<cfg.mature else 0.67),"x":p.x,"y":p.y,"tx":p.x,"ty":p.y,"direction":1.0 if p.x<640 else -1.0,"activity":"Resting","decision_at":0.0,"last_breed":-cfg.cooldown,"next_molt":age+(rng.randf_range(8,16) if species in ["crayfish","shrimp"] else 99999.0),"molting_until":-1.0,"shelter":240.0 if state.next_id%2==1 else 1030.0,"recent":[],"hunger":0.0}
+	# next_molt, molting_until and shelter are legacy fields validate() still requires;
+	# nothing molts or shelters since the shrimp left (2026-09-23).
+	var a: Dictionary = {"id":state.next_id,"species":species,"name":cfg.label+" "+str(state.next_id),"sex":"female" if rng.randf()<0.5 else "male","age":age,"parent":parent,"born":state.elapsed,"body":cfg.body*(0.45 if age<cfg.mature else 1.0),"energy":cfg.reserve*(0.35 if age<cfg.mature else 0.67),"x":p.x,"y":p.y,"tx":p.x,"ty":p.y,"direction":1.0 if p.x<640 else -1.0,"activity":"Resting","decision_at":0.0,"last_breed":-cfg.cooldown,"next_molt":age+99999.0,"molting_until":-1.0,"shelter":240.0 if state.next_id%2==1 else 1030.0,"recent":[],"hunger":0.0}
 	a.lifespan=cfg.lifespan*rng.randf_range(0.85,1.15)
-	if species=="shrimp":
-		a.tint=_tint(a)
 	if species=="garden_eel":
 		a.burrow_x=p.x
 		a.burrow_y=p.y
@@ -127,23 +123,10 @@ func spawn(species: String, age: float = 0, parent: int = 0) -> Dictionary:
 	state.animals.append(a)
 	return a
 
-# Appearance only: derived from seed and id so it never draws on rng/motion_rng.
-# Young take roughly their mother's tint.
-func _tint(a: Dictionary) -> float:
-	var h:=RandomNumberGenerator.new()
-	h.seed=int(state.seed)*1000003+int(a.id)*7919+17
-	for m: Dictionary in state.animals:
-		if m.id==a.parent and m.has("tint"):
-			return clampf(m.tint+h.randf_range(-0.08,0.08),0,1)
-	return h.randf_range(0.3,0.95)
-
-# Moving a newly placed animal sideways: spawn sampled y against its own x, so a
-# shrimp kept that height and could end up inside the stream bed.
+# Moving a newly placed animal sideways; an eel stays at its burrow.
 func _bed_align(a: Dictionary, x: float) -> void:
 	if a.species=="garden_eel":
 		return
-	if a.species=="shrimp":
-		a.y=floor_y(x)+(a.y-floor_y(a.x))
 	a.x=x
 
 # `id` is the actor; `seq` is the event's own id (see docs/BACKEND_SNAPSHOT_EVENTS.md).
@@ -216,54 +199,34 @@ func _move(delta: float) -> void:
 			continue
 		var p:=Vector2(a.x,a.y)
 		var species: String=a.species
-		if a.molting_until>state.elapsed/DAY:
-			a.activity="Molting"
-			a.tx=a.shelter
-			a.ty=floor_y(a.shelter)-35
-		elif state.elapsed>=a.decision_at:
+		if state.elapsed>=a.decision_at:
 			_choose_activity(a)
 		var target:=Vector2(a.tx,a.ty)
 		var offset: Vector2=target-p
-		var speed: float=7.0 if species=="shrimp" else 17.0 if species=="threadfin" else 11.0
+		var speed: float=17.0 if species=="threadfin" else 11.0
 		speed*=0.82+0.36*float((int(a.id)*37)%101)/100.0
-		var acceleration: float=28.0 if species=="shrimp" else 15.0
-		if a.activity=="Swimming" and species=="shrimp":
-			speed=19.0
-		if a.activity=="Retreating":
-			var escape_age: float=0.9-maxf(0,a.decision_at-state.elapsed)
-			speed=105.0*exp(-escape_age*3.0)
-			acceleration=500.0
-		if a.activity in ["Resting","Grazing","Feeding","Surface feeding","Displaying"]:
-			speed=0.0 if species=="shrimp" else 1.2
+		var acceleration: float=15.0
+		if a.activity in ["Resting","Surface feeding","Displaying"]:
+			speed=1.2
 		var desired: Vector2=offset.normalized()*minf(speed,sqrt(2.0*acceleration*offset.length()))
-		if species in ["threadfin","hatchet"]:
-			# Gentle changing headings, fading out on approach; no per-frame randomness.
-			if a.activity=="Swimming" and offset.length()>35:
-				var bend: float=sin(state.elapsed*(0.28+float(int(a.id)%5)*0.025)+a.id*1.73)
-				desired+=offset.normalized().orthogonal()*bend*speed*0.22*minf(1,offset.length()/100)
-			for other: Dictionary in state.animals:
-				if other.id==a.id or other.species!=species:
-					continue
-				var apart: Vector2=p-Vector2(other.x,other.y)
-				if apart.length()<90 and apart.length()>0.01:
-					desired+=apart.normalized()*(90-apart.length())*0.16
+		# Gentle changing headings, fading out on approach; no per-frame randomness.
+		if a.activity=="Swimming" and offset.length()>35:
+			var bend: float=sin(state.elapsed*(0.28+float(int(a.id)%5)*0.025)+a.id*1.73)
+			desired+=offset.normalized().orthogonal()*bend*speed*0.22*minf(1,offset.length()/100)
+		for other: Dictionary in state.animals:
+			if other.id==a.id or other.species!=species:
+				continue
+			var apart: Vector2=p-Vector2(other.x,other.y)
+			if apart.length()<90 and apart.length()>0.01:
+				desired+=apart.normalized()*(90-apart.length())*0.16
 		var velocity:=Vector2(a.get("vx",0.0),a.get("vy",0.0))
 		velocity=velocity.move_toward(desired,acceleration*delta)
 		var free: Vector2=p+velocity*delta
-		var next: Vector2=free
-		if species in ["threadfin","hatchet"]:
-			# Keep each fish in its own layer: the shoaling push used to carry
-			# hatchetfish down into the threadfin band.
-			var band: Array = DEPTH[species]
-			next=next.clamp(Vector2(100,band[0]),Vector2(1180,band[1]))
-		if species=="shrimp":
-			if a.activity=="Exploring":
-				next.y=_shrimp_surface(next.x)
-			else:
-				# The bed is x-dependent: a shrimp swimming off the bed climbs more
-				# slowly than the bed rises under it and used to dip into it.
-				next.y=minf(next.y,floor_y(next.x))
-		if absf(velocity.x)>1.3 and a.activity!="Retreating":
+		# Keep each fish in its own layer: the shoaling push used to carry
+		# hatchetfish down into the threadfin band.
+		var band: Array = DEPTH[species]
+		var next: Vector2=free.clamp(Vector2(100,band[0]),Vector2(1180,band[1]))
+		if absf(velocity.x)>1.3:
 			a.direction=1.0 if velocity.x>0 else -1.0
 		if next.distance_to(free)>RELOCATION:
 			a.relocated_at=state.elapsed
@@ -271,14 +234,9 @@ func _move(delta: float) -> void:
 		a.y=next.y
 		a.vx=velocity.x
 		a.vy=velocity.y
-		if next.distance_to(target)<5 and velocity.length()<7 and a.activity in ["Exploring","Swimming","Settling"]:
-			if species=="shrimp" and a.activity=="Swimming":
-				a.activity="Settling"
-				a.tx=a.x
-				a.ty=_shrimp_surface(a.x)
-			else:
-				a.activity="Grazing" if species=="shrimp" else "Resting"
-				a.decision_at=state.elapsed+motion_rng.randf_range(4,18)
+		if next.distance_to(target)<5 and velocity.length()<7 and a.activity=="Swimming":
+			a.activity="Resting"
+			a.decision_at=state.elapsed+motion_rng.randf_range(4,18)
 
 # Nearest free burrow site to the parent's burrow (or the colony centre). No randomness.
 func _burrow(parent: int) -> Vector2:
@@ -311,50 +269,21 @@ func _eel(a: Dictionary) -> void:
 		a.activity="Retracted" if state.elapsed<a.decision_at else "Swaying"
 	a.extend=1.0 if a.activity=="Swaying" else 0.0
 
-static func _shrimp_surface(x: float) -> float:
-	# Low mossy stones along the foreground grazing route.
-	var mound: float=18.0*exp(-pow((x-520.0)/80.0,2.0))+14.0*exp(-pow((x-840.0)/90.0,2.0))
-	return floor_y(x)-mound
-
 func _choose_activity(a: Dictionary) -> void:
 	var r: float=motion_rng.randf()
 	var night: bool=state.light_hour<7 or state.light_hour>19
 	a.decision_at=state.elapsed+motion_rng.randf_range(18,45)
-	if a.species=="shrimp":
-		if r<0.02:
-			# An occasional current/startle response, not an invented predator.
-			a.activity="Retreating"
-			a.tx=clampf(a.x-a.direction*65,100,1180)
-			a.ty=a.y-16
-			a.decision_at=state.elapsed+0.9
-		elif r<0.52:
-			a.activity="Grazing" if r<0.4 else "Resting"
-			a.tx=a.x
-			a.ty=_shrimp_surface(a.x)
-			if absf(a.y-a.ty)>4:
-				a.activity="Settling"
-		elif r<0.86:
-			a.activity="Exploring"
-			a.tx=_roaming_x(a,110,0.22)
-			a.ty=_shrimp_surface(a.tx)
-		else:
-			a.activity="Swimming"
-			a.tx=_roaming_x(a,180,0.35)
-			a.ty=floor_y(a.tx)-motion_rng.randf_range(45,95)
-	else:
-		a.activity="Swimming"
-		a.tx=_roaming_x(a,290,0.42)
-		a.ty=motion_rng.randf_range(100,205) if a.species=="hatchet" else motion_rng.randf_range(205,415)
-		if r<0.16:
-			a.activity="Surface feeding" if a.species=="hatchet" else "Displaying"
-		elif night and r<0.6:
-			a.activity="Resting"
-
-
-	# Give exploratory trips enough time to reach a destination instead of repeatedly
+	a.activity="Swimming"
+	a.tx=_roaming_x(a,290,0.42)
+	a.ty=motion_rng.randf_range(100,205) if a.species=="hatchet" else motion_rng.randf_range(205,415)
+	if r<0.16:
+		a.activity="Surface feeding" if a.species=="hatchet" else "Displaying"
+	elif night and r<0.6:
+		a.activity="Resting"
+	# Give trips enough time to reach a destination instead of repeatedly
 	# abandoning distant targets. Rest/feed choices keep their independent dwell time.
-	if a.activity in ["Exploring","Swimming"]:
-		var cruise: float=7.0 if a.species=="shrimp" and a.activity=="Exploring" else 19.0 if a.species=="shrimp" else 17.0 if a.species=="threadfin" else 11.0
+	if a.activity=="Swimming":
+		var cruise: float=17.0 if a.species=="threadfin" else 11.0
 		cruise*=0.82+0.36*float((int(a.id)*37)%101)/100.0
 		var distance: float=Vector2(a.tx-a.x,a.ty-a.y).length()
 		a.decision_at=state.elapsed+distance/cruise+motion_rng.randf_range(5,14)
@@ -446,10 +375,6 @@ func _ecology(offline: bool) -> void:
 		var factor: float = main/(main+cfg.k_food)
 		var food: float = minf(main,minf(room,cfg.bite/1440*factor))
 		r[cfg.pool]-=food
-		if a.species=="shrimp":
-			var scraps: float = minf(r.detritus,minf(room-food,cfg.bite/1440*(1-factor)*r.detritus/(r.detritus+SHRIMP_DETRITUS_K)))
-			r.detritus-=scraps
-			food+=scraps
 		a.energy+=food*0.8
 		r.detritus+=food*0.2
 		var growth: float = minf(maxf(0,cfg.body-a.body),minf(a.energy*0.002,cfg.body/(cfg.mature*1440)))
@@ -465,20 +390,10 @@ func _ecology(offline: bool) -> void:
 		if a.age>=a.lifespan:
 			_remove(a,"old age")
 			continue
-		if a.age>=a.next_molt:
-			a.next_molt=a.age+(14 if a.age<cfg.mature else 28)
-			a.molting_until=state.elapsed/DAY+0.16
-			_event("molt",a,a.name+" molted and is sheltering while its shell hardens.",{"until":a.molting_until*DAY})
-		if a.has("brood_until") and state.elapsed>=a.brood_until:
-			a.erase("brood_until")
-			_breed(a)
-		elif not a.has("brood_until") and a.age>=cfg.mature and a.sex=="female" and a.energy>cfg.reserve*0.74 and a.age-a.last_breed>=cfg.cooldown:
+		if a.age>=cfg.mature and a.sex=="female" and a.energy>cfg.reserve*0.74 and a.age-a.last_breed>=cfg.cooldown:
 			if males.has(a.species) and rng.randf()<cfg.breed/1440*factor:
 				a.last_breed=a.age
-				if a.species=="shrimp":
-					_berry(a)
-				else:
-					_breed(a)
+				_breed(a)
 	if state.ecology_ticks%60==0:
 		_migration()
 	if state.ecology_ticks%1440==0:
@@ -502,29 +417,16 @@ func _breed(parent: Dictionary) -> void:
 			_bed_align(child,clampf(parent.x+rng.randf_range(-30,30),120,1150))
 			_event("birth",child,"A young "+cfg.label.to_lower()+" was born to "+parent.name+".",{"target":parent.id})
 
-# Shrimp only: the brood hatches in _ecology once brood_until passes.
-func _berry(a: Dictionary) -> void:
-	a.last_breed=a.age
-	a.brood_until=state.elapsed+BROOD_DAYS*DAY
-	_event("berried",a,a.name+" is carrying eggs.",{"until":a.brood_until})
-
 func _remove(a: Dictionary, cause: String) -> void:
 	if not state.animals.has(a):
 		return
-	# A brood not yet hatched is lost with her; its cost was never taken.
-	var extra: Dictionary = {"cause":cause}
-	var text: String = a.name+" died from "+cause+"."
-	if a.has("brood_until"):
-		a.erase("brood_until")
-		extra.brood_lost=true
-		text+=" Her eggs did not hatch."
 	var mass: float = a.body+a.energy
 	if cause=="departure":
 		state.ledger.out+=mass
 		_event("departure",a,a.name+" moved downstream.")
 	else:
 		state.resources.detritus+=mass
-		_event("death",a,text,extra)
+		_event("death",a,a.name+" died from "+cause+".",{"cause":cause})
 	state.causes[cause]=state.causes.get(cause,0)+1
 	a.cause=cause
 	a.ended=state.elapsed
@@ -542,8 +444,7 @@ func _migration() -> void:
 			c[species]+=1
 	if rng.randf()<ARRIVAL_RATE:
 		var species: String = ACTIVE_SPECIES[rng.randi_range(0,ACTIVE_SPECIES.size()-1)]
-		# 22 = the combined habitat caps (was 18 before the garden eels).
-		if c[species]<CAP[species] and state.animals.size()<22:
+		if c[species]<CAP[species] and state.animals.size()<habitat_cap():
 			_arrive(species)
 
 func _arrive(species: String) -> Dictionary:
@@ -563,8 +464,17 @@ func _sample() -> void:
 	if state.history.size()>400:
 		state.history.pop_front()
 
+# The combined habitat caps (16; 22 with the shrimp, 18 before the garden eels).
+static func habitat_cap() -> int:
+	var total: int = 0
+	for species: String in CAP:
+		total+=int(CAP[species])
+	return total
+
 func counts() -> Dictionary:
-	var c: Dictionary = {"shrimp":0,"threadfin":0,"hatchet":0,"garden_eel":0}
+	var c: Dictionary = {}
+	for species: String in ACTIVE_SPECIES:
+		c[species]=0
 	for a: Dictionary in state.animals:
 		c[a.species]+=1
 	return c
@@ -608,15 +518,14 @@ func restore(saved: Dictionary) -> bool:
 		state.next_event=1
 	if state.version==1:
 		_upgrade_v1()
-	# The user explicitly removed crayfish from this pool. Preserve every other
-	# identity, archive each departure and account for its exported material.
+	# The user explicitly removed crayfish (2026-09-22) and shrimp (2026-09-23) from
+	# this pool. Preserve every other identity, archive each departure and account
+	# for its exported material. An unhatched shrimp brood leaves with its mother:
+	# its cost was never taken, so no young and no extra material.
 	for a: Dictionary in state.animals.duplicate():
 		if a.species not in ACTIVE_SPECIES:
+			a.erase("brood_until")
 			_remove(a,"departure")
-	# Saves from before tints: assign them the same way spawn does.
-	for a: Dictionary in state.animals:
-		if a.species=="shrimp" and not a.has("tint"):
-			a.tint=_tint(a)
 	# Saves from before the garden eels (2026-09-23): a pair arrives once, like any
 	# arrival but not live. A colony that later dies out is not replaced on load.
 	if not state.get("eel_colony",false):

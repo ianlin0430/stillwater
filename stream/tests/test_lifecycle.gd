@@ -155,7 +155,7 @@ func _initialize() -> void:
 	check(lost.path!=path and lost.path.contains("-recovery-"),"A separate recovery world is created")
 	check(digest(path)==primary_hash and digest(path+".bak")==backup_hash,"The user's unreadable files are left byte-identical")
 	check(lost.error==OK and FileAccess.file_exists(lost.path),"The recovery world is saved")
-	check(lost.away.seconds==0.0 and lost.world.state.animals.size()==16,"The recovery world starts fresh, not caught up")
+	check(lost.away.seconds==0.0 and lost.world.state.animals.size()==StreamWorld.new().state.animals.size(),"The recovery world starts fresh, not caught up")
 
 	# --- Interrupted before the catch-up commit, and a relaunch right after it ---
 	clean()

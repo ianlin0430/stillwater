@@ -317,3 +317,50 @@ outside [0,1]. No acceptance threshold changed; predation gate stays `== 0`.
 ### Live 180-day ecology (GitHub Actions)
 
 未驗證 — pending the cloud run recorded below.
+
+## Shrimp removed (2026-09-23)
+
+User decision 2026-09-23 ("不要蝦子 魚就好"): the pool holds threadfin rainbowfish, marbled hatchetfish
+and spotted garden eels only. Caps threadfin 6 / hatchetfish 6 / garden eel 4 (sum 16), opening cast
+5 / 5 / 2 (12); ordinary arrivals stop at 16; hard cap 24 unchanged. Shrimp-only code removed: shrimp
+movement (`_shrimp_surface`, `Grazing`/`Settling`/`Exploring`/`Retreating`), molting (`molt` events,
+`Molting` shelter), berried broods (`_berry`, `BROOD_DAYS`, hatch tick, `brood_lost`), `tint`
+(`_tint`, load-time tinting) and `SHRIMP_DETRITUS_K`. Kept: `SPECIES.shrimp` (`initial` 0, not in
+`ACTIVE_SPECIES`) for old saves; `validate()` still accepts every legacy field and event; the generic
+`relocated_at` mechanism (now only triggered by a fish found outside its layer). Shrimp in a loaded save
+leave once as `departure` events (like the crayfish), an unhatched brood is cancelled. No ecological rate
+was changed. Long-run population gate: band 14–22 → **11–16** and `max_population ≤ 16`, same ≥ 80 %
+share — this follows the cast change (caps 22 → 16), it is not a looser gate; every other gate unchanged,
+predation stays `== 0`.
+
+### Local quick suites (macOS, Godot 4.6.3 headless)
+
+| Check | Result | Evidence |
+|---|---|---|
+| Core regression suite | 已通過 — 162 checks, 0 failures (was 164: 31 brood/tint checks removed, 29 shrimp-departure/fish checks added or rewritten); 72-hour catch-up 126 ms | `tests/test_world.gd` |
+| New world: 12 animals, counts `{threadfin 5, hatchet 5, garden_eel 2}`, caps 6/6/4, `spawn("shrimp")` and `spawn("crayfish")` refused | 已通過 | `tests/test_world.gd` |
+| Current-format save with 3 live shrimp (one mid-brood with `brood_until`, all with `tint`, one `Molting`) plus one archived dead shrimp and past `berried`/`molt`/`birth` events: validates; on load 0 shrimp, exactly 3 non-live `departure` events in order, fish/eel ids-names-parents-sex unchanged, archive keeps id/name/parent/sex/tint, young→mother lineage kept, brood cancelled (no `brood_until`, no young over 3 more days), earlier dead shrimp and past events still present, `ledger.out` grows by exactly the shrimp mass, residual < 1e-5, validates; a second load adds no departure; same result through `StreamStore` | 已通過 | `tests/test_world.gd` (`shrimp_departure_checks`) |
+| `v2-pre-eel.var` (6 tinted shrimp, 1 mid-brood): all 6 depart once, archived with tints and no brood, no births, 2 eels arrive (non-live), fish untouched, residual < 1e-5 | 已通過 | `shrimp_departure_checks`, `eel_checks` |
+| `v1-world.var` (8 shrimp + 1 crayfish): upgrade keeps fish ids/names/lineage, 9 departures archived by id, conserves, validates | 已通過 | `ecosystem_checks` |
+| 20 offline days from a new world: fish breed; no `tint`, `brood_until`, `molt` or `berried` appears | 已通過 | `shrimp_departure_checks` |
+| Swimmer rig suite (Codex rig, unchanged) | 已通過 — 103 checks | `tests/test_swimmers.gd` |
+| Roaming suite | **失敗** — 1 failure: "Individuals follow overly uniform routes: threadfin" (seed 812, day: the five threadfin ten-minute spans are 992.6 / 995.0 / 999.1 / 1001.5 / 1010.9 px, spread 18.3 px < 20 px). Every other roaming gate passes on all three seeds. Fish motion code is unchanged; the metric is saturated (every fish crossed essentially the whole ~1 020 px roaming width). Threshold not widened | `tests/test_roaming.gd` |
+| Lifecycle/time-boundary suite | 已通過 — 63 checks; user `stream.world` / `.bak` / `preferences.cfg` hashes unchanged | `tests/test_lifecycle.gd` |
+| Persist-QA helper suite | 已通過 — 27 checks | `tests/test_persist_qa.gd` |
+| Presentation suite | 已通過 — 24 checks (the 2 shrimp molt checks removed; relocation now tested with a fish snapped back into its layer) | `tests/test_presentation.gd` |
+| Frontend suite (Codex, run read-only) | 已通過 — 57 checks | `tests/test_frontend.gd` |
+
+### Live 180-day ecology (GitHub Actions)
+
+未驗證 — not triggered yet: the user is re-choosing the final cast (shrimp stay removed), so the
+180-day run waits until the cast is final. Resource pools without the grazer are therefore also
+未驗證 with a long run. Analytic bound only: with nothing grazing it, biofilm is capped by its logistic
+limit 30 + 0.4 × stem (≤ 78 at the stem maximum 120) and returns 3 %/day to detritus; the ledger stays
+exact in every local suite (residual < 1e-5). Baseline for comparison (last passing cloud run with
+shrimp, run 35826027646 at 3ffccee, live 180 d): biofilm 5.8–27.4, detritus 6.2–17.1, microfauna
+6.9–34.7 across seeds 42/812/240921 at 30-day samples.
+
+Cast sizes live only in `StreamWorld.SPECIES[*].initial` and `StreamWorld.CAP`; the arrival limit is
+`StreamWorld.habitat_cap()` and the long-run band is `POPULATION_BAND` in `tests/long_run.gd` (the run
+fails if its top differs from `habitat_cap()`). `tests/test_world.gd` pins the cast in one check.
+

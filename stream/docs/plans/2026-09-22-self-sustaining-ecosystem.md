@@ -7,7 +7,7 @@
 | # | 決策 |
 |---|---|
 | 1 | 以在地的生命週期為主：個體在池裡長大、繁殖、變老、死亡，後代留在池裡 |
-| 2 | 數量由食物控制為主，另有物種空間上限：蝦 8、threadfin 5、hatchetfish 5;總數硬上限 24 不變 |
+| 2 | 數量由食物控制為主，另有物種空間上限：~~蝦 8、threadfin 5、hatchetfish 5~~(2026-09-23 起 threadfin 6、hatchetfish 6、花園鰻 4，見文末);總數硬上限 24 不變 |
 | 3 | 移入以「救援」為主(物種 ≤2 隻時平均 3–5 天一隻),平常約 3 週一次;沒有成年個體隨機離開;只有超過空間上限時，幼體才漂到下游 |
 | 4 | ~~捕食：幼蝦離開育幼區且沒有莖草掩護時，偶爾被魚吃掉;事件文字不血腥~~ 已由 2026-09-23 決策取代：完全沒有捕食(見文末) |
 | 5 | 壽命：蝦約 120 天、魚約 180 天(個體有 ±15% 差異),成熟時間不變;開局年齡錯開，第一批老死出現在 60 天內 |
@@ -150,6 +150,18 @@
 - 存檔相容：容器與 schema 不變(`VERSION` 仍為 2)。`totals.predation` 仍是必填欄位，舊存檔的數值原樣保留、不再增加；舊存檔裡的 `causes.predation`、archive 的 predation 死亡與 `feeding` 事件仍通過 `validate()`/`restore()`。
 - 驗收：`幼蝦被吃` 改為 0 次(`ok.predation=run.predation==0`)，移除 `predation_conditions` 稽核。其他門檻一律不變。
 - 校準值 `PREY_RATE=0.3` 已失效；其他校準值不動。
+
+### 2026-09-23 決策：移除櫻桃蝦(取代決策 #2 的蝦上限與所有蝦專屬規則)
+
+使用者最終決定「不要蝦子 魚就好」：池子只剩 threadfin、marbled hatchetfish 與花園鰻。
+
+- 族群：threadfin 上限 6、開局 5;hatchetfish 上限 6、開局 5;花園鰻上限 4、開局 2(不變)。上限合計 16、開局 12;一般移入在總數 16 以下才發生;硬上限 24 不變。
+- 數字只在 `SPECIES[*].initial` 與 `CAP` 兩處;移入上限是 `habitat_cap()`(上限合計)，長跑族群帶是 `tests/long_run.gd` 的 `POPULATION_BAND`(上緣必須等於 `habitat_cap()`，否則長跑失敗)。
+- 驗收的族群帶從 14–22 改為 **11–16**、`max_population<=16`，在帶內天數比例仍需 ≥80%。這是隨物種組成改變(上限合計從 22 變 16)而跟著改，不是放寬門檻;其他門檻(繁殖 ≥20、本地出生 > 移入、老死、餓死 < 老死、捕食 0、出現率、守恆、植物、驗證、深度)強度一律不變。
+- 移除(只有蝦用到)：蝦的出生/移動/上下層規則、`_shrimp_surface`、`Grazing`/`Settling`/`Exploring`/`Retreating`/`Molting` 行為、脫殼排程與 `molt` 事件、抱卵(`_berry`、`BROOD_DAYS`、孵化 tick、`brood_lost`)、`tint`(`_tint` 與載入補色)、`SHRIMP_DETRITUS_K`(蝦撿食碎屑)。
+- 保留：`SPECIES.shrimp`(`initial:0`，不在 `ACTIVE_SPECIES`，只供舊檔驗證、v1 升級壽命與歷史顯示);`validate()` 仍接受 `berried`、`molt`、`brood_lost`、`feeding`、`predation`、`tint`、`brood_until`、`next_molt`、`molting_until`、`shelter`;`totals.molt` 仍必填、不再增加。`relocated_at` 機制是通用的(任何夾限跳位 > 3 px)，保留，但正常遊玩已不會觸發。
+- 舊存檔：比照螯蝦，載入時每隻活蝦記一次 `departure`(live=false)，物質記入 `ledger.out`，紀錄進 archive(保留 id、name、parent、sex、tint);抱卵中的卵作廢(移除 `brood_until`，不產生幼體;成本本來就還沒扣，不動物質)。重開不重複。
+- 生態：蝦原本吃 biofilm(和少量 detritus)。沒有牧食者後 biofilm 由自身承載量(30 + 0.4×stem)封頂、每天 3% 死亡回到 detritus，不會無限增長。量測結果(含前後數字)記在 `docs/validation.md`;本次**沒有**調整任何生態速率。
 
 ## 會動到的檔案
 
