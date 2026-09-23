@@ -4,7 +4,7 @@
 前端契約（Codex）見 `FRONTEND_BACKEND_CONTRACT.md`；本檔只描述 backend 提供什麼。
 注意：該契約寫的 `stream_absence.gd` 實際檔名是 `scripts/absence.gd`。
 
-所有欄位都是**可選、有預設**的新增（2026-09-23 加了 `tint`、`brood_until`、`berried`、`brood_lost`）；存檔容器 `stillwater-stream-1`、world schema version 2、生態率都沒變。
+所有欄位都是**可選、有預設**的新增（2026-09-23 加了 `tint`、`brood_until`、`berried`、`brood_lost`，以及花園鰻的 `burrow_x`、`burrow_y`、`extend`、state 的 `eel_colony`）；存檔容器 `stillwater-stream-1`、world schema version 2、生態率都沒變。
 沒有這些欄位的舊存檔（含 v1 升級）照樣驗證與載入。
 
 ## snapshot
@@ -20,6 +20,9 @@
 | `animals[].relocated_at` | float，可缺 | 最近一次「瞬間重定位」的模擬時間。缺少＝從未。 |
 | `animals[].tint` | float 0–1，可缺 | **只有蝦**。個體固定的顏色深淺（紅色深度／色點密度），純外觀、不影響生態。開場的蝦各不相同；幼蝦 = 母蝦 tint ± 0.08（夾在 0–1）；移入者自己一個值。**缺少視為 0.6**（魚沒有這欄）。舊存檔載入時會補上。 |
 | `animals[].brood_until` | float，可缺 | **只有抱卵中的母蝦**有。孵化的模擬秒（同 `elapsed` 時鐘）。孵化或死亡時移除。 |
+| `animals[].burrow_x`, `animals[].burrow_y` | float | **只有花園鰻**（必有）。固定的沙洞口，`burrow_y = StreamWorld.floor_y(burrow_x)`。一輩子不變；`x==burrow_x`、`y==burrow_y`。 |
+| `animals[].extend` | float 0–1 | **只有花園鰻**。backend 給的目標伸出比例：`0`＝完全在沙裡，`1`＝完全站出。只會是 0 或 1，前端自己平滑地往它動。 |
+| `eel_colony` | bool | state 頂層。`true`＝這個世界已經有過花園鰻（新世界開場就是 true）。前端不用讀。 |
 | `archive[]` | Array | 最近 96 個離開的個體（含 `cause`、`ended`、最後 x/y、species、age）。 |
 
 ### 瞬間重定位
@@ -56,7 +59,7 @@
 | `berried` | 母蝦 | — | 母蝦 | 開始抱卵；同一份 snapshot 她帶 `brood_until`。約 5 模擬日後孵化。 |
 | `birth` | 新生幼體 | 親代 | 幼體（親代 ±30 px） | 幼體已在同一份 snapshot 的 `animals`。蝦的 birth 發生在孵化那一刻。 |
 | `dispersal` | 親代 | — | 親代 | 棲地滿，幼體直接漂走；**沒有**幼體個體。 |
-| `arrival` | 移入者 | — | 移入者（x=130 或 1150） | 個體已在 `animals`。 |
+| `arrival` | 移入者 | — | 移入者（x=130 或 1150；花園鰻＝牠的沙洞口） | 個體已在 `animals`。 |
 | `death` | 死亡個體 | — | 死亡個體 | 個體**同一份 snapshot**就不在 `animals`、已在 `archive`。 |
 | `departure` | 離開個體 | — | 個體 | 目前只在載入舊存檔移除螯蝦時（live=false）。成年個體不會隨機離開。 |
 
@@ -88,10 +91,27 @@ events 只保留 160 筆；若 `events_after` 最舊一筆 `seq > cursor+1`，�
 
 捕食已於 2026-09-23 依使用者決定移除：backend 不再產生 `feeding`，`death` 也不再帶 `target`。舊存檔裡的 `feeding` 事件與 `cause=="predation"` 的 `death` 仍然合法、可載入；它們沒有 `seq` 或 `live==false` 時不會播放，前端不用為它們做任何演出。
 
+## 花園鰻（2026-09-23）
+
+斑點花園鰻 *Heteroconger hassi*，`species:"garden_eel"`，`StreamWorld.SPECIES.garden_eel` 有 `label:"Spotted garden eel"`、`latin`。海水魚，使用者明確決定照放在這條溪，不是疏忽。
+
+- **位置**：每隻有固定沙洞 `burrow_x/burrow_y`，從 `StreamWorld.BURROWS`（x = 650、684、616、718、582、752、548、786）挑「離親代的洞最近、還沒被佔的」一格（沒有親代就從 650 附近開始），不用亂數，所以同一個世界每次都一樣。洞口間距 34 px，不會重疊。最多 4 隻時只會用到 616–718 這一小片。
+- 花園鰻**永遠不移動**：`x/y` = 洞口，`vx=vy=0`，`direction` 固定（出生時 x<640 為 1，否則 −1；目前的洞都 ≥548，多半是 −1，前端可自己決定朝向）。不會出現 `relocated_at`。不脫殼、不抱卵。
+- **行為**（每個 0.2 秒 motion tick 由 backend 決定，不用 `motion_rng`）：
+  - 夜裡（`light_hour<7 或 >19`，和其他魚同一個定義）：`activity:"Sleeping"`，`extend:0`。
+  - 白天：`"Swaying"`，`extend:1`（站出沙面、吃漂過的小生物）。
+  - 白天有魚（threadfin 或 hatchet）在洞口左右 48 px 內、而且在洞口上方 200 px 內（大約是 threadfin 那一層的最底部）：`"Retracted"`，`extend:0`；魚離開後再過 4 秒回到 `"Swaying"`。實測白天約 3–5% 的時間是縮著的，每隻每 20 分鐘縮 2–7 次。常數在 `StreamWorld.EEL_WARY`。
+  - 使用者撥水/水紋讓花園鰻縮回，只是前端的呈現，backend **沒有**任何輸入介面，也不該有。
+- **出生**：`birth` 事件的 x/y 就是幼魚的新洞口（在親代的洞附近）。棲地滿（4 隻）時是 `dispersal`，沒有幼魚個體。
+- **移入**：移入的花園鰻**直接出現在自己的洞口**，`arrival` 事件的 x/y＝洞口。backend 不模擬「從上游游進來」；前端要演「從上游邊緣游進來、鑽進洞」可以純呈現地做（例如從 x=130 或 1150 游到 `burrow_x`），不需要 backend 欄位。
+- **舊存檔**：沒有 `eel_colony` 的存檔（2026-09-23 以前的 v2，以及 v1 升級）載入時，會自動來一對（一公一母）成年花園鰻，產生兩筆 `arrival`，`live:false`（不演出，只進日誌/離開摘要），物質記在 `ledger.in`。只發生一次；之後就算花園鰻死光也不會因為載入而補回（要靠一般的移入救援）。
+- 吃的是 `microfauna`（和 threadfin、hatchet 同一個池），會餓死、老死（壽命 365 天 ±15%，90 天成熟），不吃蝦。
+
 ## 活動名稱（`animals[].activity`）
 
 `Resting`、`Grazing`、`Settling`、`Exploring`、`Swimming`、`Retreating`（蝦受驚短衝，非捕食者）、`Molting`（躲藏）、`Surface feeding`（hatchet）、`Displaying`（threadfin）。
-`Sheltering` 在 stage 有列出，但目前 backend 不會設定（`exposure()` 已隨捕食移除）。本次沒有新增或改名任何活動。
+花園鰻專用：`Swaying`（白天站出沙面）、`Retracted`（有魚經過，暫時縮回）、`Sleeping`（夜裡在洞裡）。
+`Sheltering` 在 stage 有列出，但目前 backend 不會設定（`exposure()` 已隨捕食移除）。
 
 ## 呈現唯讀
 

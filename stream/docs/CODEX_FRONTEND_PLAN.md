@@ -142,11 +142,12 @@
   - 白天：站出沙面，身體對著水流搖擺，吃漂過的小生物。
   - 夜裡：全部縮回沙裡睡覺。
   - 有魚游過太近：縮一下，幾秒後再探出來。
-- snapshot 會提供（名稱暫定，以 backend 文件為準）：
-  - `species:"garden_eel"`
-  - 沙洞座標 `burrow_x/burrow_y`
-  - 伸出比例 `extend`（0＝完全在沙裡，1＝完全站出）
+- snapshot 會提供（2026-09-23 已實作，細節見 `BACKEND_SNAPSHOT_EVENTS.md` 的「花園鰻」一節）：
+  - `species:"garden_eel"`（`StreamWorld.SPECIES.garden_eel.label` = "Spotted garden eel"）
+  - 沙洞座標 `burrow_x/burrow_y`（`burrow_y = floor_y(burrow_x)`，x/y 永遠等於洞口，`vx=vy=0`）
+  - 伸出比例 `extend`（0＝完全在沙裡，1＝完全站出；backend 只給 0 或 1，前端自己平滑）
   - `activity`：`Swaying`、`Retracted`、`Sleeping`
+  - 移入的個體直接出現在洞口（`arrival` 的 x/y＝洞口）；「從上游游進來」由前端純呈現
   - 性別、年齡照舊
 
 **前端要做**：
