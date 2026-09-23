@@ -51,6 +51,12 @@ var qa_progress_at: float = 0
 var prefs_path: String = "user://preferences.cfg"
 var persist_dir: String = ""
 var persist_log: Dictionary = {}
+# Feed / tap / lure wiring (world API, docs/BACKEND_SNAPSHOT_EVENTS.md). Pointer in world coords.
+const LURE_REST: float = 1.5
+var pointer: Vector2 = Vector2(-1,-1)
+var pointer_rest: float = 0
+var notice_text: String = ""
+var notice_until: float = 0
 
 func _ready() -> void:
 	Engine.max_fps=30
@@ -209,7 +215,7 @@ func _setup_ui() -> void:
 	var help_box := VBoxContainer.new()
 	help_panel.add_child(help_box)
 	var help_text := Label.new()
-	help_text.text="A small world beneath the surface\n\nClick an animal to read its story.\nDrag through water or plants to feel the current.\nR makes a ripple without the mouse.\nScroll or use + / − to look closer. Tab selects the next animal.\nSpace pauses; Escape returns to the whole pool.\nL switches the viewing light.\n\nNatural food, arrivals, births and departures need no care.\nThe world advances while you’re away, up to three days.\nNothing runs on your Mac after you quit.\n\nReal species, a fictional shared habitat.\nQuiet mode: 30 FPS. Saves are automatic."
+	help_text.text="A small world beneath the surface\n\nClick an animal to read its story.\nDrag through water or plants to feel the current.\nR makes a ripple without the mouse.\nF drops a pinch of food at the pointer (a few pinches a day).\nClick the frame around the water, or press T, to tap the glass.\nRest the pointer in the water and curious fish may come to look.\nScroll or use + / − to look closer. Tab selects the next animal.\nSpace pauses; Escape returns to the whole pool.\nL switches the viewing light.\n\nNatural food, arrivals, births and departures need no care;\nfeeding is a treat, never required.\nThe world advances while you’re away, up to three days.\nNothing runs on your Mac after you quit.\n\nReal species, a fictional shared habitat.\nQuiet mode: 30 FPS. Saves are automatic."
 	help_text.add_theme_font_size_override("font_size",13)
 	help_box.add_child(help_text)
 	help_box.add_child(_button("Back to the stream",func() -> void: help_panel.hide()))
@@ -253,6 +259,7 @@ func _scene_input(event: InputEvent) -> void:
 	var offset: Vector2=(display.size-Vector2(1280,720)*fit)/2
 	if event is InputEventMouse:
 		var point: Vector2=(event.position-offset)/fit
+		_world_pointer(event,point)
 		if not Rect2(0,0,1280,720).has_point(point): return
 		if event is InputEventMouseMotion:
 			display.tooltip_text=stage.describe_environment(point)
@@ -267,6 +274,31 @@ func _scene_input(event: InputEvent) -> void:
 				var hit: int=stage.pick(point)
 				_select(hit)
 				if hit<0 and not paused: stage.interact(point)
+
+# Backend interactions only (Codex: keep this call in _scene_input; draw the cues yourself).
+# Tracks the pointer for the lure and F, and turns a click on the frame into a glass tap.
+func _world_pointer(event: InputEventMouse, point: Vector2) -> void:
+	var at: Vector2=(point-stage.position)/stage.zoom
+	var inside: bool=Rect2(0,0,1280,720).has_point(point)
+	if event is InputEventMouseMotion:
+		pointer=at if inside and at.y>StreamWorld.FOOD.surface and at.y<StreamWorld.floor_y(at.x) else Vector2(-1,-1)
+		pointer_rest=0
+	elif event is InputEventMouseButton and event.pressed and event.button_index==MOUSE_BUTTON_LEFT and not inside and not paused:
+		world.startle(clampf(at.x,0,1280),clampf(at.y,0,720),1.0)
+
+func _feed() -> void:
+	if paused: return
+	if not world.feed(pointer.x if pointer.x>=0 else 640.0):
+		notice_text="They’re full for today — natural food keeps them going."
+		notice_until=qa_clock+4
+		_refresh()
+
+func _update_lure(delta: float) -> void:
+	pointer_rest+=delta
+	if pointer.x>=0 and pointer_rest>=LURE_REST and not paused and not suspended_view:
+		world.set_lure(pointer)
+	else:
+		world.clear_lure()
 
 func _select(id: int) -> void:
 	if id>=0 and not id in stage.visible_ids(): id=-1
@@ -316,6 +348,12 @@ func _input(event: InputEvent) -> void:
 			KEY_R:
 				if not paused: stage.interact(Vector2(640,360))
 				get_viewport().set_input_as_handled()
+			KEY_F:
+				_feed()
+				get_viewport().set_input_as_handled()
+			KEY_T:
+				if not paused: world.startle(pointer.x if pointer.x>=0 else 640.0,pointer.y if pointer.x>=0 else 360.0,1.0)
+				get_viewport().set_input_as_handled()
 			KEY_TAB:
 				var ids: Array[int]=stage.visible_ids()
 				if not event.shift_pressed and not ids.is_empty():
@@ -358,6 +396,8 @@ func _refresh() -> void:
 	status.text="Click a creature · Drag water or plants to explore · Scroll to look closer" if not paused else "Paused · the stream will continue when you resume"
 	if qa_clock<away_until and not away_text.is_empty():
 		status.text=away_text
+	if qa_clock<notice_until:
+		status.text=notice_text
 	if not failure_status.is_empty():
 		status.text=failure_status
 	_refresh_info()
@@ -420,6 +460,7 @@ func _process(delta: float) -> void:
 		_refresh()
 	elif not paused:
 		world.advance_live(minf(delta,0.25))
+	_update_lure(delta)
 	last_wall=now
 	ui_clock+=delta
 	save_clock+=delta

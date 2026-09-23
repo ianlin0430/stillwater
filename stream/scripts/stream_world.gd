@@ -46,10 +46,26 @@ const RELOCATION: float = 3.0
 # above the burrow mouth (the bottom of the threadfin layer) sends it down for `seconds`.
 const BURROWS: Array[float] = [650.0,684.0,616.0,718.0,582.0,752.0,548.0,786.0]
 const EEL_WARY: Dictionary = {"dx":48.0,"dy":200.0,"seconds":4.0}
+# Feeding (user decision 2026-09-23: real food, never required). A pinch is `particles` of
+# `mass` dropped just below the surface (y `surface`); at most `daily` mass per simulated day.
+# Particles sink `sink` px/s; fish with room notice food within `notice` px and eat it within
+# `eat` px; a swaying garden eel snatches food within `eel_dx` of its burrow and `eel_reach`
+# above it. Food on the bed becomes detritus `decay` seconds after it settles. See
+# docs/BACKEND_SNAPSHOT_EVENTS.md.
+const FOOD: Dictionary = {"particles":5,"mass":0.05,"daily":1.0,"max":40,"surface":56.0,"sink":10.0,"notice":260.0,"eat":12.0,"eel_dx":22.0,"eel_reach":80.0,"decay":900.0}
+# Tap the glass: fish within `radius` dart up to `dart` px away for `seconds`; eels in reach
+# stay down `eel_seconds`. Presentation of the tap only; no ecology effect, nothing saved.
+const STARTLE: Dictionary = {"radius":260.0,"dart":150.0,"seconds":3.0,"eel_seconds":5.0}
+# Cursor lure: for `interest` seconds after the cursor comes to rest, a fish choosing its next
+# move within `range` of it looks with probability `chance`, hovering `stand_off` px to the side
+# for `look` seconds. Jitter under `still` px keeps the same lure. Never saved.
+const LURE: Dictionary = {"range":320.0,"chance":0.5,"interest":45.0,"look":[6.0,12.0],"stand_off":36.0,"still":8.0}
 const NAMES: Dictionary = {"threadfin":["Silk","Reed","Willow","Glimmer","Wisp","Fern"],"garden_eel":["Dune","Sprig"]}
 var rng := RandomNumberGenerator.new()
 var motion_rng := RandomNumberGenerator.new()
 var state: Dictionary
+# Live-only cursor lure {x, y, since}; empty when there is none. Not part of state.
+var lure: Dictionary = {}
 # True only while a live ecology tick runs; stamps events the stage may play.
 var _live: bool = false
 
@@ -185,14 +201,125 @@ func catch_up(now: float) -> Dictionary:
 	state.wall_checkpoint=maxf(now,state.wall_checkpoint)
 	return report
 
+# Public live interactions (called from main.gd only). See docs/BACKEND_SNAPSHOT_EVENTS.md.
+# Drops a pinch of food at the surface at x. False past the daily cap (the UI says "they're full").
+func feed(x: float) -> bool:
+	if not is_finite(x):
+		return false
+	var day: int=int(state.elapsed/DAY)
+	var fed: Dictionary=state.get("fed",{"day":day,"mass":0.0})
+	if fed.day!=day:
+		fed={"day":day,"mass":0.0}
+	var amount: float=FOOD.particles*FOOD.mass
+	var food: Array=state.get("food",[])
+	if fed.mass+amount>FOOD.daily+0.000001 or food.size()+FOOD.particles>FOOD.max:
+		return false
+	x=clampf(x,130,1150)
+	# Fixed offsets by particle id: no draw from rng or motion_rng.
+	for i in FOOD.particles:
+		var id: int=state.get("next_food",1)
+		state.next_food=id+1
+		food.append({"id":id,"x":x+float((id*37)%11-5)*4.0,"y":FOOD.surface+float((id*13)%5)*3.0,"mass":FOOD.mass,"settled":false,"settled_at":-1.0})
+	state.food=food
+	fed.mass+=amount
+	state.fed=fed
+	state.ledger["in"]+=amount
+	_live=true
+	_event("fed",{},"A pinch of food drifted down from the surface.",{"x":x,"y":FOOD.surface})
+	_live=false
+	return true
+
+# Taps the glass at (x, y). Returns how many animals noticed.
+func startle(x: float, y: float, strength: float = 1.0) -> int:
+	if not (is_finite(x) and is_finite(y) and is_finite(strength)) or strength<=0:
+		return 0
+	var hit:=Vector2(x,y)
+	var reach: float=STARTLE.radius*clampf(strength,0.2,1.0)
+	var noticed: int=0
+	for a: Dictionary in state.animals:
+		var p:=Vector2(a.x,a.y)
+		var gap: float=p.distance_to(hit)
+		if gap>=reach:
+			continue
+		noticed+=1
+		if a.species=="garden_eel":
+			a.decision_at=maxf(a.decision_at,state.elapsed+STARTLE.eel_seconds)
+			_eel(a)
+			continue
+		var away: Vector2=(p-hit)/gap if gap>0.01 else Vector2(a.direction,0)
+		var band: Array=DEPTH[a.species]
+		var to: Vector2=p+away*STARTLE.dart*(1.0-0.5*gap/reach)
+		a.activity="Startled"
+		a.tx=clampf(to.x,130,1150)
+		a.ty=clampf(to.y,band[0],band[1])
+		a.decision_at=state.elapsed+STARTLE.seconds
+		a.erase("food_id")
+	return noticed
+
+# The cursor resting in the water at `point` (world coordinates).
+func set_lure(point: Vector2) -> void:
+	if not point.is_finite():
+		return
+	if not lure.is_empty() and Vector2(lure.x,lure.y).distance_to(point)<LURE.still:
+		return
+	lure={"x":point.x,"y":point.y,"since":state.elapsed}
+
+func clear_lure() -> void:
+	lure={}
+
+func _sink_food(delta: float) -> void:
+	for f: Dictionary in state.food:
+		if f.settled:
+			continue
+		f.y+=FOOD.sink*delta
+		var bed: float=floor_y(f.x)-2
+		if f.y>=bed:
+			f.y=bed
+			f.settled=true
+			f.settled_at=state.elapsed
+
+# Nearest drifting food this fish can reach within its layer, if it has room to eat.
+func _seek_food(a: Dictionary) -> bool:
+	var best: Dictionary={}
+	var band: Array=DEPTH[a.species]
+	if SPECIES[a.species].reserve-a.energy>=FOOD.mass*0.8:
+		var gap: float=FOOD.notice
+		for f: Dictionary in state.get("food",[]):
+			if f.settled or f.y>band[1]+FOOD.eat:
+				continue
+			var d: float=Vector2(a.x,a.y).distance_to(Vector2(f.x,clampf(f.y,band[0],band[1])))
+			if d<gap:
+				best=f
+				gap=d
+	if best.is_empty():
+		a.erase("food_id")
+		return false
+	a.activity="Feeding"
+	a.food_id=best.id
+	a.tx=best.x
+	a.ty=clampf(best.y,band[0],band[1])
+	# Choose again as soon as the food is gone.
+	a.decision_at=state.elapsed
+	return true
+
+# Food mass becomes the eater's energy (80%) and detritus (20%), as with natural food (R6).
+func _eat(a: Dictionary, f: Dictionary) -> void:
+	a.energy+=f.mass*0.8
+	state.resources.detritus+=f.mass*0.2
+	state.food.erase(f)
+	a.erase("food_id")
+
 func _move(delta: float) -> void:
+	if not state.get("food",[]).is_empty():
+		_sink_food(delta)
 	for a: Dictionary in state.animals:
 		if a.species=="garden_eel":
 			_eel(a)
 			continue
 		var p:=Vector2(a.x,a.y)
 		var species: String=a.species
-		if state.elapsed>=a.decision_at:
+		var startled: bool=a.activity=="Startled" and state.elapsed<a.decision_at
+		if not startled and not _seek_food(a) and state.elapsed>=a.decision_at:
 			_choose_activity(a)
 		var target:=Vector2(a.tx,a.ty)
 		var offset: Vector2=target-p
@@ -201,6 +328,9 @@ func _move(delta: float) -> void:
 		var acceleration: float=15.0
 		if a.activity in ["Resting","Displaying"]:
 			speed=1.2
+		elif a.activity=="Startled":
+			speed*=2.4
+			acceleration=45.0
 		var desired: Vector2=offset.normalized()*minf(speed,sqrt(2.0*acceleration*offset.length()))
 		# Gentle changing headings, fading out on approach; no per-frame randomness.
 		if a.activity=="Swimming" and offset.length()>35:
@@ -226,6 +356,11 @@ func _move(delta: float) -> void:
 		a.y=next.y
 		a.vx=velocity.x
 		a.vy=velocity.y
+		if a.has("food_id"):
+			for f: Dictionary in state.food:
+				if f.id==a.food_id and next.distance_to(Vector2(f.x,f.y))<FOOD.eat:
+					_eat(a,f)
+					break
 		if next.distance_to(target)<5 and velocity.length()<7 and a.activity=="Swimming":
 			a.activity="Resting"
 			a.decision_at=state.elapsed+motion_rng.randf_range(4,18)
@@ -260,6 +395,11 @@ func _eel(a: Dictionary) -> void:
 				a.decision_at=state.elapsed+EEL_WARY.seconds
 		a.activity="Retracted" if state.elapsed<a.decision_at else "Swaying"
 	a.extend=1.0 if a.activity=="Swaying" else 0.0
+	if a.activity=="Swaying" and not state.get("food",[]).is_empty() and SPECIES.garden_eel.reserve-a.energy>=FOOD.mass*0.8:
+		for f: Dictionary in state.food:
+			if not f.settled and absf(f.x-a.burrow_x)<FOOD.eel_dx and f.y>a.burrow_y-FOOD.eel_reach and f.y<a.burrow_y:
+				_eat(a,f)
+				break
 
 func _choose_activity(a: Dictionary) -> void:
 	var r: float=motion_rng.randf()
@@ -279,6 +419,15 @@ func _choose_activity(a: Dictionary) -> void:
 		cruise*=0.82+0.36*float((int(a.id)*37)%101)/100.0
 		var distance: float=Vector2(a.tx-a.x,a.ty-a.y).length()
 		a.decision_at=state.elapsed+distance/cruise+motion_rng.randf_range(5,14)
+	# Only while a lure is set (live, never saved) does curiosity draw from motion_rng.
+	if not lure.is_empty() and state.elapsed-lure.since<LURE.interest:
+		var band: Array=DEPTH[a.species]
+		var spot:=Vector2(lure.x,clampf(lure.y,band[0],band[1]))
+		if Vector2(a.x,a.y).distance_to(spot)<LURE.range and motion_rng.randf()<LURE.chance:
+			a.activity="Curious"
+			a.tx=clampf(lure.x+(-1.0 if a.x<lure.x else 1.0)*LURE.stand_off,130,1150)
+			a.ty=spot.y
+			a.decision_at=state.elapsed+motion_rng.randf_range(LURE.look[0],LURE.look[1])
 
 func _roaming_x(a: Dictionary, local_range: float, crossing_chance: float) -> float:
 	if motion_rng.randf()<crossing_chance:
@@ -346,6 +495,8 @@ func _ecology(offline: bool) -> void:
 	var decay: float = r.detritus*DECAY/1440
 	r.detritus-=decay
 	r.nutrients+=decay
+	if not state.get("food",[]).is_empty():
+		_food_tick(offline)
 	var males: Dictionary = {}
 	for b: Dictionary in state.animals:
 		if b.sex=="male" and b.age>=SPECIES[b.species].mature:
@@ -391,6 +542,17 @@ func _ecology(offline: bool) -> void:
 	if state.ecology_ticks%1440==0:
 		_sample()
 	_live=false
+
+# Offline nobody chases food: drifting particles settle at once. Settled food turns to detritus.
+func _food_tick(offline: bool) -> void:
+	for f: Dictionary in state.food.duplicate():
+		if offline and not f.settled:
+			f.y=floor_y(f.x)-2
+			f.settled=true
+			f.settled_at=state.elapsed
+		if f.settled and state.elapsed-f.settled_at>=FOOD.decay:
+			state.resources.detritus+=f.mass
+			state.food.erase(f)
 
 func _breed(parent: Dictionary) -> void:
 	if parent.species not in ACTIVE_SPECIES:
@@ -477,6 +639,8 @@ func material() -> float:
 		total+=amount
 	for a: Dictionary in state.animals:
 		total+=a.body+a.energy
+	for f: Dictionary in state.get("food",[]):
+		total+=f.mass
 	return total
 
 func residual() -> float:
@@ -505,6 +669,7 @@ func restore(saved: Dictionary) -> bool:
 	motion_rng.state=int(state.motion_rng)
 	state.erase("rng")
 	state.erase("motion_rng")
+	lure={}
 	# Saves from before event ids start numbering at 1 (validate forbids ids without it).
 	if not state.has("next_event"):
 		state.next_event=1
@@ -557,6 +722,8 @@ static func validate(saved: Dictionary) -> bool:
 		return false
 	if saved.has("eel_colony") and not saved.eel_colony is bool:
 		return false
+	if not _valid_food(saved):
+		return false
 	var next_event: int = saved.get("next_event",0)
 	for key: String in ["rng","motion_rng"]:
 		if not saved.get(key) is String or not saved[key].is_valid_int():
@@ -585,6 +752,8 @@ static func validate(saved: Dictionary) -> bool:
 		for key: String in ["age","born","body","energy","x","y","tx","ty","direction","decision_at","last_breed","next_molt","molting_until","shelter","hunger","parent"]:
 			if not _number(a.get(key)):
 				return false
+		if a.has("food_id") and not a.food_id is int:
+			return false
 		for key: String in ["vx","vy","relocated_at","brood_until","tint","extend"]:
 			if a.has(key) and not _number(a[key]):
 				return false
@@ -608,6 +777,27 @@ static func validate(saved: Dictionary) -> bool:
 		for count: Variant in saved.causes.values():
 			if not _number(count) or count<0:
 				return false
+	return true
+
+# Optional since 2026-09-23 (feeding); saves without them have no food.
+static func _valid_food(saved: Dictionary) -> bool:
+	if saved.has("fed") and (not saved.fed is Dictionary or not saved.fed.get("day") is int or saved.fed.day<0 or not _number(saved.fed.get("mass")) or saved.fed.mass<0):
+		return false
+	if not saved.has("food"):
+		return true
+	var next_food: Variant=saved.get("next_food")
+	if not saved.food is Array or saved.food.size()>FOOD.max or not next_food is int or next_food<1:
+		return false
+	var seen: Dictionary={}
+	for f: Variant in saved.food:
+		if not f is Dictionary or not f.get("id") is int or f.id<1 or f.id>=next_food or seen.has(f.id) or not f.get("settled") is bool:
+			return false
+		seen[f.id]=true
+		for key: String in ["x","y","mass","settled_at"]:
+			if not _number(f.get(key)):
+				return false
+		if f.mass<=0:
+			return false
 	return true
 
 static func _number(value: Variant) -> bool:

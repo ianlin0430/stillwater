@@ -243,6 +243,9 @@ func _initialize() -> void:
 	shrimp_departure_checks()
 	hatchet_departure_checks()
 	eel_checks()
+	feeding_checks()
+	startle_checks()
+	lure_checks()
 	var acceptance=preload("res://tests/ecology_acceptance.gd")
 	check(acceptance.reproduction_passes({"births":17,"dispersal":14,"arrivals":7}),"Dispersed offspring count toward reproduction")
 	check(not acceptance.reproduction_passes({"births":17,"dispersal":2,"arrivals":7}),"Nineteen offspring do not meet the twenty-offspring threshold")
@@ -688,3 +691,258 @@ func eel_checks() -> void:
 	bad=StreamWorld.new(5).export_state()
 	bad.animals.filter(func(x): return x.species=="garden_eel")[0].extend=1.5
 	check(not StreamWorld.validate(bad),"Extend above 1 rejected")
+
+func threadfin(w: StreamWorld) -> Array:
+	return w.state.animals.filter(func(x): return x.species=="threadfin")
+
+func food_mass(w: StreamWorld) -> float:
+	var total: float=0.0
+	for f: Dictionary in w.state.get("food",[]):
+		total+=f.mass
+	return total
+
+# What the interactions must never touch: both RNGs, the pools and every animal's ecology.
+func ecology_of(w: StreamWorld) -> Array:
+	return [w.rng.state,w.state.resources,w.state.totals,w.state.ledger,w.state.animals.map(func(x): return [x.id,x.energy,x.body,x.age,x.last_breed])]
+
+# 2026-09-23 user decision: real food, never required (docs/BACKEND_SNAPSHOT_EVENTS.md "Feeding").
+func feeding_checks() -> void:
+	var cfg: Dictionary=StreamWorld.FOOD
+	var pinch: float=cfg.particles*cfg.mass
+	# Without feeding nothing new appears in the state, and no-op calls change nothing.
+	var plain:=StreamWorld.new(42,1000)
+	var quiet:=StreamWorld.new(42,1000)
+	for i in 300:
+		plain.advance_live(0.2)
+		quiet.clear_lure()
+		quiet.startle(-5000,-5000,1.0)
+		quiet.advance_live(0.2)
+	quiet.advance_offline(StreamWorld.DAY)
+	plain.advance_offline(StreamWorld.DAY)
+	check(same(plain,quiet),"Unfed world with no-op interaction calls is byte-identical")
+	check(["food","next_food","fed"].all(func(k): return not plain.state.has(k)) and plain.state.animals.all(func(x): return not x.has("food_id")),"An unfed world carries no food fields")
+	# A pinch enters through ledger.in and is saved.
+	var w:=StreamWorld.new(42,1000)
+	w.state.light_hour=12.0
+	var cursor: int=w.state.next_event-1
+	var ledger_in: float=w.state.ledger["in"]
+	check(w.feed(640.0),"Feeding the pool succeeds")
+	var fed: Array=StreamWorld.events_after(w.state.events,cursor)
+	check(fed.size()==1 and fed[0].kind=="fed" and fed[0].live==true and fed[0].x==640.0 and fed[0].id==0 and fed[0].has("seq"),"One live fed event at x")
+	check(w.state.food.size()==cfg.particles and w.state.food.all(func(f): return f.settled==false and f.y<=cfg.surface+15 and absf(f.x-640)<=25),"A pinch is a few particles at the surface")
+	check(absf(w.state.ledger["in"]-ledger_in-pinch)<0.000001 and absf(w.residual())<0.00001,"Food mass enters through ledger.in")
+	check(StreamWorld.validate(w.export_state()),"World with food validates")
+	var c:=StreamWorld.new()
+	check(c.restore(w.export_state()) and c.state.food==w.state.food and same(c,w),"Food survives save and load")
+	# Food sinks; fish notice it and eat it; the pool keeps balancing.
+	var y0: float=w.state.food[0].y
+	w.advance_live(2)
+	check(w.state.food.is_empty() or w.state.food[0].y>y0,"Food sinks")
+	var saw_feeding: bool=false
+	for i in 600:
+		w.advance_live(0.2)
+		saw_feeding=saw_feeding or w.state.animals.any(func(x): return x.activity=="Feeding" and x.has("food_id"))
+		if absf(w.residual())>0.00001:
+			break
+	check(saw_feeding,"Fish swim to food (activity Feeding with food_id)")
+	check(absf(w.residual())<0.00001,"Food eaten or settling keeps material balanced")
+	# A hungry fish below a pinch gains exactly the eaten food as energy (80%).
+	var h:=StreamWorld.new(8,1000)
+	var twin:=StreamWorld.new(8,1000)
+	for world: StreamWorld in [h,twin]:
+		for x: Dictionary in world.state.animals.duplicate():
+			if x!=threadfin(world)[0]:
+				world.state.animals.erase(x)
+		var fish: Dictionary=threadfin(world)[0]
+		fish.energy=1.0
+		fish.x=500.0
+		fish.y=230.0
+		fish.tx=500.0
+		fish.ty=230.0
+		reset_material(world)
+	h.feed(500.0)
+	h.advance_live(60)
+	twin.advance_live(60)
+	var eaten: float=pinch-food_mass(h)
+	check(eaten>=cfg.mass-0.000001,"The fish ate at least one particle")
+	check(absf(threadfin(h)[0].energy-threadfin(twin)[0].energy-eaten*0.8)<0.0001 and absf(h.residual())<0.00001,"Eaten food becomes that fish's energy (80%, 20% detritus)")
+	# A full fish ignores food.
+	var full:=StreamWorld.new(8,1000)
+	for x: Dictionary in full.state.animals.duplicate():
+		if x!=threadfin(full)[0]:
+			full.state.animals.erase(x)
+	threadfin(full)[0].energy=StreamWorld.SPECIES.threadfin.reserve
+	reset_material(full)
+	full.feed(threadfin(full)[0].x)
+	full.advance_live(60)
+	check(absf(food_mass(full)-pinch)<0.000001 and threadfin(full)[0].activity!="Feeding","A full fish ignores food")
+	# Daily cap: a few pinches per simulated day, then "they're full".
+	var d:=StreamWorld.new(5,1000)
+	var n: int=0
+	while d.feed(300.0+n*100):
+		n+=1
+		if n>50:
+			break
+	check(n==int(round(cfg.daily/pinch)) and n>=2,"The daily cap allows %d pinches" % n)
+	var before: PackedByteArray=var_to_bytes(d.export_state())
+	check(not d.feed(640.0) and var_to_bytes(d.export_state())==before,"Past the cap feed returns false and changes nothing")
+	check(not d.feed(NAN) and not d.feed(INF),"Non-finite positions are refused")
+	d.advance_offline(StreamWorld.DAY)
+	check(d.feed(640.0),"The next simulated day accepts food again")
+	# Without fish, food settles on the bed and turns into detritus.
+	var bare:=StreamWorld.new(6,1000)
+	strip_animals(bare)
+	bare.feed(300.0)
+	var settled: bool=false
+	for i in 400:
+		bare.advance_live(0.2)
+		settled=settled or bare.state.food.any(func(f): return f.settled and absf(f.y-(StreamWorld.floor_y(f.x)-2))<0.001 and f.settled_at>0)
+	check(settled and bare.state.food.size()==cfg.particles,"Uneaten food settles on the bed")
+	bare.advance_live(cfg.decay+120)
+	check(bare.state.food.is_empty() and absf(bare.residual())<0.00001,"Settled food becomes detritus after a while")
+	# Offline catch-up: drifting food just settles and decays, nobody chases it.
+	var off:=StreamWorld.new(9,1000)
+	off.feed(640.0)
+	off.advance_offline(120)
+	check(off.state.food.all(func(f): return f.settled) and off.state.animals.all(func(x): return x.activity!="Feeding"),"Offline, drifting food settles without a chase")
+	off.advance_offline(StreamWorld.DAY)
+	check(off.state.food.is_empty() and absf(off.residual())<0.00001 and StreamWorld.validate(off.export_state()),"Offline food decays and the ledger balances")
+	# Garden eels snatch food drifting past a swaying eel.
+	var e:=StreamWorld.new(42,1000)
+	for x: Dictionary in threadfin(e):
+		e.state.animals.erase(x)
+	var eel: Dictionary=eels(e)[0]
+	eel.energy=1.0
+	reset_material(e)
+	e.state.light_hour=12.0
+	e.advance_live(1)
+	var eel_before: float=eel.energy
+	e.feed(eel.burrow_x)
+	e.advance_live(80)
+	check(eel.energy>eel_before and absf(e.residual())<0.00001,"A swaying garden eel snatches food drifting past its burrow")
+	# Overfeeding at the cap for 60 days only raises detritus within bounds.
+	var fat:=StreamWorld.new(812,1000)
+	var lean:=StreamWorld.new(812,1000)
+	var peak: Array=[0.0,0.0]
+	for day in 60:
+		while fat.feed(640.0):
+			pass
+		fat.advance_offline(StreamWorld.DAY)
+		lean.advance_offline(StreamWorld.DAY)
+		peak=[maxf(peak[0],fat.state.resources.detritus),maxf(peak[1],lean.state.resources.detritus)]
+	check(peak[0]<=peak[1]+cfg.daily/0.12+1.0 and absf(fat.residual())<0.00001 and StreamWorld.validate(fat.export_state()),"Sixty days at the cap keep detritus bounded (%.2f vs %.2f unfed)" % peak)
+	# Validation of the new optional fields.
+	var bad: Dictionary=d.export_state()
+	check(bad.food.size()==cfg.particles,"Fixture for food validation holds a pinch")
+	bad.food[0].mass=NAN
+	check(not StreamWorld.validate(bad),"Non-finite food mass rejected")
+	bad=d.export_state()
+	bad.food[0].id=bad.next_food
+	check(not StreamWorld.validate(bad),"Food id at or beyond next_food rejected")
+	bad=d.export_state()
+	bad.food[0].settled="yes"
+	check(not StreamWorld.validate(bad),"Non-boolean settled rejected")
+	bad=d.export_state()
+	bad.animals[0].food_id="1"
+	check(not StreamWorld.validate(bad),"Non-integer food_id rejected")
+	bad=d.export_state()
+	bad.fed.mass=-1.0
+	check(not StreamWorld.validate(bad),"Negative fed mass rejected")
+	bad=d.export_state()
+	bad.food="none"
+	check(not StreamWorld.validate(bad),"Non-array food rejected")
+
+# Tap the glass: a short dart away and an eel retraction; no ecology effect, nothing saved.
+func startle_checks() -> void:
+	var w:=StreamWorld.new(42,1000)
+	var twin:=StreamWorld.new(42,1000)
+	for world: StreamWorld in [w,twin]:
+		world.state.light_hour=12.0
+		world.advance_live(20)
+	var near: Dictionary=threadfin(w)[0]
+	var tap:=Vector2(near.x+30,near.y)
+	var far: Array=w.state.animals.filter(func(x): return Vector2(x.x,x.y).distance_to(tap)>=StreamWorld.STARTLE.radius)
+	var far_before: Array=far.map(func(x): return [x.activity,x.tx,x.ty,x.decision_at])
+	var start: float=Vector2(near.x,near.y).distance_to(tap)
+	var hits: int=w.startle(tap.x,tap.y,1.0)
+	check(hits>=1 and near.activity=="Startled","A tap startles a nearby fish")
+	check(far.map(func(x): return [x.activity,x.tx,x.ty,x.decision_at])==far_before,"Fish out of reach are not startled")
+	w.advance_live(1.6)
+	twin.advance_live(1.6)
+	check(Vector2(near.x,near.y).distance_to(tap)>start+10,"The startled fish darts away from the tap")
+	w.advance_live(StreamWorld.STARTLE.seconds+1)
+	twin.advance_live(StreamWorld.STARTLE.seconds+1)
+	check(near.activity!="Startled","It settles again after a few seconds")
+	for i in 3000:
+		w.advance_live(0.2)
+		twin.advance_live(0.2)
+	check(ecology_of(w)==ecology_of(twin),"Startle has no ecology effect (RNG, pools, energy, breeding)")
+	# Eels near the tap retract for a few seconds, then sway again.
+	var e:=StreamWorld.new(42,1000)
+	for x: Dictionary in threadfin(e):
+		x.x=150.0
+		x.tx=150.0
+	e.state.light_hour=12.0
+	e.advance_live(1)
+	var eel: Dictionary=eels(e)[0]
+	check(eel.activity=="Swaying","Eel out before the tap")
+	e.startle(eel.burrow_x,eel.burrow_y-20,1.0)
+	check(eel.activity=="Retracted" and eel.extend==0.0,"A tap near the burrow makes the eel retract")
+	for x: Dictionary in threadfin(e):
+		x.x=150.0
+		x.tx=150.0
+	e.advance_live(StreamWorld.STARTLE.eel_seconds+1)
+	check(eel.activity=="Swaying" or threadfin(e).any(func(x): return absf(x.x-eel.burrow_x)<StreamWorld.EEL_WARY.dx),"The eel comes back out after a few seconds")
+	check(StreamWorld.validate(e.export_state()) and not e.export_state().has("startle"),"Startle leaves no saved field")
+	check(w.startle(NAN,0,1)==0 and w.startle(0,0,0)==0,"Invalid taps are ignored")
+
+# Cursor lure: nearby curious fish drift over, keep their layer, lose interest; nothing saved.
+func lure_checks() -> void:
+	var w:=StreamWorld.new(42,1000)
+	var twin:=StreamWorld.new(42,1000)
+	for world: StreamWorld in [w,twin]:
+		world.state.light_hour=12.0
+	var spot:=Vector2(640,90)
+	w.set_lure(spot)
+	var band: Array=StreamWorld.DEPTH.threadfin
+	var curious: Dictionary={}
+	var in_band: bool=true
+	var came_close: bool=false
+	var far_curious: bool=false
+	for i in 300:
+		w.advance_live(0.2)
+		twin.advance_live(0.2)
+		for a: Dictionary in threadfin(w):
+			in_band=in_band and a.y>=band[0] and a.y<=band[1]
+			if a.activity=="Curious":
+				if not curious.has(a.id):
+					curious[a.id]=Vector2(a.x,a.y).distance_to(Vector2(spot.x,band[0]))
+					far_curious=far_curious or curious[a.id]>StreamWorld.LURE.range
+				came_close=came_close or (absf(a.x-spot.x)<StreamWorld.LURE.stand_off+25 and a.y<band[0]+30)
+	check(not curious.is_empty(),"A resting cursor draws curious fish (%d)" % curious.size())
+	check(not far_curious,"Only fish within range become curious")
+	check(came_close,"A curious fish drifts over to look")
+	check(in_band,"Curious fish keep their depth band when the lure is above it")
+	# Interest fades: after the interest window no fish starts a new look.
+	for i in int(StreamWorld.LURE.interest/0.2):
+		w.advance_live(0.2)
+		twin.advance_live(0.2)
+	var late: bool=false
+	for i in 600:
+		w.advance_live(0.2)
+		twin.advance_live(0.2)
+		late=late or threadfin(w).any(func(x): return x.activity=="Curious")
+	check(not late,"Fish lose interest in a cursor that stays put")
+	# The same resting point does not renew interest; a moved cursor does.
+	var since: float=w.lure.since
+	w.set_lure(spot+Vector2(2,1))
+	check(w.lure.since==since,"Tiny cursor jitter keeps the same lure")
+	w.clear_lure()
+	check(w.lure.is_empty() and not w.export_state().has("lure"),"clear_lure removes it; the lure is never saved")
+	for i in 600:
+		w.advance_live(0.2)
+		twin.advance_live(0.2)
+	check(ecology_of(w)==ecology_of(twin),"The lure has no ecology effect")
+	var r:=StreamWorld.new()
+	w.set_lure(spot)
+	check(r.restore(w.export_state()) and r.lure.is_empty(),"A restored world has no lure")

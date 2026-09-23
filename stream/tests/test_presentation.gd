@@ -157,5 +157,26 @@ func _initialize() -> void:
 		w.animal_scale(a)
 		a.recent.slice(-2)
 	check(state_bytes(w)==bytes and [w.rng.state,w.motion_rng.state]==rngs,"Snapshots and selection/scale/light reads do not change state or RNGs")
+	# Feeding: the fed event and the food particles the stage draws; reading them changes nothing.
+	var fw:=StreamWorld.new(42,1000)
+	var fcursor: int=fw.state.next_event-1
+	check(fw.feed(420.0),"feed() accepts a pinch")
+	var fed: Dictionary=find(StreamWorld.events_after(fw.state.events,fcursor),"fed")
+	check(fed.get("live")==true and fed.get("id")==0 and fed.get("x")==420.0 and fed.get("y")==StreamWorld.FOOD.surface and seqs_ok(fw.state.events,fw.state.next_event),"fed event: live, actor 0, at the surface x")
+	fw.advance_live(3)
+	var fsnap: Dictionary=fw.snapshot()
+	check(fsnap.food.size()>0 and fsnap.food.all(func(f): return f.id is int and f.x is float and f.y is float and f.settled is bool),"Snapshot exposes food id, x, y, settled")
+	fw.startle(fsnap.animals[0].x,fsnap.animals[0].y,1.0)
+	fw.set_lure(Vector2(640,300))
+	var fbytes: PackedByteArray=state_bytes(fw)
+	var frngs: Array=[fw.rng.state,fw.motion_rng.state]
+	for i in 20:
+		var view: Dictionary=fw.snapshot()
+		view.food.clear()
+		StreamWorld.events_after(view.events,0)
+	fw.residual()
+	fw.material()
+	check(state_bytes(fw)==fbytes and [fw.rng.state,fw.motion_rng.state]==frngs,"Reading food, startle and lure state does not change the world")
+	check(not fw.export_state().has("lure"),"The lure is not part of the snapshot or save")
 	print(JSON.stringify({"checks":checks,"failures":failures.size()}))
 	quit(0 if failures.is_empty() else 1)

@@ -27,7 +27,12 @@ func audit_depth(world: StreamWorld, depth: Dictionary) -> void:
 			if a.y<band[0] or a.y>band[1]:
 				depth.violations+=1
 
-func simulate(seed_value: int, days: int, mode: String = "offline") -> Dictionary:
+# --feed=daily: a pinch at 08, 11, 14 and 17 h (sim time since start) at rotating x, which is
+# the whole daily cap (StreamWorld.FOOD.daily); --feed=none (default) never calls feed().
+const FEED_HOURS: Array[int] = [8,11,14,17]
+const FEED_X: Array[float] = [300.0,640.0,980.0,660.0]
+
+func simulate(seed_value: int, days: int, mode: String = "offline", feed: String = "none") -> Dictionary:
 	var start: int=Time.get_ticks_msec()
 	var world:=StreamWorld.new(seed_value)
 	var depth: Dictionary={"checked":0,"violations":0}
@@ -45,8 +50,15 @@ func simulate(seed_value: int, days: int, mode: String = "offline") -> Dictionar
 	var plant_low: Dictionary={"stem":INF,"floating":INF,"biofilm":INF}
 	var first_old_age: int=-1
 	var removed_species: bool=false
+	var fed: Dictionary={"pinches":0,"refused":0}
+	var detritus_max: float=0.0
 	for day in days:
 		for hour in 24:
+			if feed=="daily" and hour in FEED_HOURS:
+				if world.feed(FEED_X[FEED_HOURS.find(hour)]):
+					fed.pinches+=1
+				else:
+					fed.refused+=1
 			if mode=="offline":
 				world.advance_offline(3600)
 			else:
@@ -59,6 +71,7 @@ func simulate(seed_value: int, days: int, mode: String = "offline") -> Dictionar
 				audit_depth(world,depth)
 			peak=maxi(peak,world.state.animals.size())
 		max_residual=maxf(max_residual,absf(world.residual()))
+		detritus_max=maxf(detritus_max,world.state.resources.detritus)
 		if not StreamWorld.validate(world.export_state()):
 			invalid+=1
 		if world.state.animals.any(func(x): return x.species not in StreamWorld.ACTIVE_SPECIES):
@@ -99,7 +112,7 @@ func simulate(seed_value: int, days: int, mode: String = "offline") -> Dictionar
 	var plants: Dictionary={}
 	for plant: String in PLANT_POOLS:
 		plants[plant]={"days_above_5pct":float(plant_ok[plant])/days,"lowest_share":plant_low[plant]}
-	return {"seed":seed_value,"mode":mode,"absent_days":absent_days,"depth":depth,"days":days,"births":totals.birth,"arrivals":totals.arrival,"old_age":causes.get("old age",0),"first_old_age_day":first_old_age,"starvation":causes.get("starvation",0),"predation":totals.predation,"departures":totals.departure,"dispersal":totals.dispersal,"population_band":POPULATION_BAND,"band_share":float(in_band)/days,"max_population":peak,"presence":presence,"longest_absence":longest_gap,"plants":plants,"max_material_residual":max_residual,"invalid_days":invalid,"removed_species_returned":removed_species,"causes":causes,"totals":totals,"monthly":rows,"seconds":(Time.get_ticks_msec()-start)/1000.0}
+	return {"seed":seed_value,"mode":mode,"feed":feed,"fed":fed,"detritus_max":detritus_max,"absent_days":absent_days,"depth":depth,"days":days,"births":totals.birth,"arrivals":totals.arrival,"old_age":causes.get("old age",0),"first_old_age_day":first_old_age,"starvation":causes.get("starvation",0),"predation":totals.predation,"departures":totals.departure,"dispersal":totals.dispersal,"population_band":POPULATION_BAND,"band_share":float(in_band)/days,"max_population":peak,"presence":presence,"longest_absence":longest_gap,"plants":plants,"max_material_residual":max_residual,"invalid_days":invalid,"removed_species_returned":removed_species,"causes":causes,"totals":totals,"monthly":rows,"seconds":(Time.get_ticks_msec()-start)/1000.0}
 
 func judge(run: Dictionary) -> Dictionary:
 	var ok: Dictionary={}
@@ -121,7 +134,7 @@ func judge(run: Dictionary) -> Dictionary:
 func options() -> Dictionary:
 	# --mode=live --days=180 --seeds=42,812 --out=live-runs.json for the live batches;
 	# no arguments keeps the original offline acceptance gate.
-	var o: Dictionary={"mode":"offline","days":180,"seeds":[42,812,240921],"out":"six-month-runs.json","year":true}
+	var o: Dictionary={"mode":"offline","days":180,"seeds":[42,812,240921],"out":"six-month-runs.json","year":true,"feed":"none"}
 	for arg: String in OS.get_cmdline_user_args():
 		var parts: PackedStringArray=arg.lstrip("-").split("=")
 		if parts.size()!=2:
@@ -130,6 +143,7 @@ func options() -> Dictionary:
 			"mode": o.mode=parts[1]
 			"days": o.days=int(parts[1])
 			"out": o.out=parts[1]
+			"feed": o.feed=parts[1]
 			"year": o.year=parts[1]=="true"
 			"seeds":
 				var seeds: Array[int]=[]
@@ -140,18 +154,20 @@ func options() -> Dictionary:
 
 func _initialize() -> void:
 	var o: Dictionary=options()
-	var report: Dictionary={"days_per_seed":o.days,"mode":o.mode,"runs":[],"failures":[]}
+	var report: Dictionary={"days_per_seed":o.days,"mode":o.mode,"feed":o.feed,"runs":[],"failures":[]}
+	if o.feed not in ["none","daily"]:
+		report.failures.append("Unknown --feed="+o.feed)
 	if POPULATION_BAND[1]!=StreamWorld.habitat_cap():
 		report.failures.append("POPULATION_BAND top %d is not the combined habitat caps %d" % [POPULATION_BAND[1],StreamWorld.habitat_cap()])
 	for seed_value: int in o.seeds:
-		var run: Dictionary=simulate(seed_value,o.days,o.mode)
+		var run: Dictionary=simulate(seed_value,o.days,o.mode,o.feed)
 		run.offspring_produced=ACCEPTANCE.offspring_produced(run)
 		run.acceptance=judge(run)
 		for key: String in run.acceptance:
 			if not run.acceptance[key]:
 				report.failures.append("Seed %d failed %s" % [seed_value,key])
 		report.runs.append(run)
-		print("SEED %d mode %s absent %s depth %s" % [seed_value,run.mode,JSON.stringify(run.absent_days),JSON.stringify(run.depth)])
+		print("SEED %d mode %s feed %s fed %s detritus_max %.2f absent %s depth %s" % [seed_value,run.mode,run.feed,JSON.stringify(run.fed),run.detritus_max,JSON.stringify(run.absent_days),JSON.stringify(run.depth)])
 		print("SEED %d births %d arrivals %d old_age %d first_old_age_day %d starvation %d predation %d band %.3f max %d presence %s plants %s residual %s dispersal %d departures %d (%.1fs)" % [seed_value,run.births,run.arrivals,run.old_age,run.first_old_age_day,run.starvation,run.predation,run.band_share,run.max_population,JSON.stringify(run.presence),JSON.stringify(run.plants),String.num_scientific(run.max_material_residual),run.dispersal,run.departures,run.seconds])
 	if not o.year:
 		write_report(report,o.out)

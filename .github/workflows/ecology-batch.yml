@@ -22,6 +22,11 @@ on:
         description: also run the extra 365-day offline stability pass
         type: boolean
         default: false
+      feed:
+        description: none (never fed) or daily (four pinches a day, the daily cap)
+        type: choice
+        options: [none, daily]
+        default: none
 
 # An explicit bash shell turns on pipefail, so a failing test or acceptance
 # gate fails the job instead of being hidden behind tee/tail.
@@ -31,7 +36,7 @@ defaults:
 
 jobs:
   seeds:
-    name: ${{ inputs.mode }} ${{ inputs.days }}d seed ${{ matrix.seed }}
+    name: ${{ inputs.mode }} ${{ inputs.days }}d feed-${{ inputs.feed }} seed ${{ matrix.seed }}
     runs-on: ubuntu-latest
     timeout-minutes: 350
     strategy:
@@ -73,14 +78,14 @@ jobs:
         run: |
           godot --headless --path . --script tests/long_run.gd -- \
             --mode=${{ inputs.mode }} --days=${{ inputs.days }} \
-            --seeds=${{ matrix.seed }} --year=${{ inputs.year }} \
-            --out=ci-${{ inputs.mode }}-${{ inputs.days }}d-${{ matrix.seed }}.json \
+            --seeds=${{ matrix.seed }} --year=${{ inputs.year }} --feed=${{ inputs.feed }} \
+            --out=ci-${{ inputs.mode }}-${{ inputs.days }}d-feed-${{ inputs.feed }}-${{ matrix.seed }}.json \
             2>&1 | tail -200
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: ecology-${{ inputs.mode }}-${{ inputs.days }}d-seed-${{ matrix.seed }}
+          name: ecology-${{ inputs.mode }}-${{ inputs.days }}d-feed-${{ inputs.feed }}-seed-${{ matrix.seed }}
           path: |
             *.log
             stream/artifacts/ci-*.json
