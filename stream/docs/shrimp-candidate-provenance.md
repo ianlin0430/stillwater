@@ -11,3 +11,17 @@ Review generator: `tools/shrimp_review.gd`. Calls the candidate's `apply_identit
 Outputs in `artifacts/shrimp-review/`: nine identities/states (female, male, newborn, juvenile, berried, molting, tint-low/mid/high), each at normal and 1.65x. Left current / right candidate. `tints-close.png` shows three candidate pigment values side by side. `motion.mp4` shows walking, swimming, grazing, and turning at 1.65x, two seconds each. Small pigment/egg details will be subtle at native 640x360; no enlarged body is used to hide that limitation.
 
 Existing production changes in this batch are only event overlays (eggs, pale molt line and empty exuvia) plus replanted feet on relocation. Candidate translucency, anatomy and pigment are NOT integrated.
+
+## Candidate B — more drawable pixels and readable actions
+
+User feedback: 「希望pixel可以多一點 可以真的看出他的動作」. Built a review variant interpreting this as more pixel detail and clearer motion, without increasing body scale. An optional clarification was sent because it could also mean larger animals or coarser pixel blocks; no answer was available while making this candidate.
+
+Files: `tools/art_candidates/shrimp_candidate_b.gd`, `tools/shrimp_motion_review.gd`. Candidate A is preserved unchanged. B adds five-foot alternating support groups with a 5.5-local-unit swing lift; stance feet stay fixed in world space. Swimming appendages sweep sequentially with a continuously integrated phase driven by actual rendered speed. Feeding forelegs alternate between the surface and mouth, replacing the front walking pair while feeding. Dark limb edges and abdominal seams improve contrast. Antennae retain delayed turns. Resting feet stop and pause freezes every phase.
+
+The review alone renders at 1280×720 instead of 640×360: twice the pixel count per axis, unchanged world/body dimensions. Both A and B use the higher resolution in the new comparison to isolate their motion differences. Production resolution and production rig are unchanged; no claim of accepted CPU/GPU cost. A 120-second performance check is still required before adopting the resolution in the actual app.
+
+`artifacts/shrimp-review-b/motion.mp4`: 16 seconds / 480 frames / 30 FPS. First eight seconds normal view, next eight at 1.65×; each covers walking, swimming, feeding, turning. Left A, right B. `motion-detail.mp4` is an explicitly cropped and magnified eight-second detail of the close view, not the app's actual animal size. Identity/sex/tint/state comparisons also regenerated in this directory. This is scripted rig playback, not autonomous behavior evidence.
+
+Short test `tests/test_shrimp_candidate.gd`: 8 checks, 0 failures; 1,065 planted-foot samples, zero stance slipping; peak foot lift 4.102 world pixels at adult scale. Tests include resting completion, pause, alternating support, continuous paddle phase, antenna turn delay and unchanged ecological state/RNG. The first PNG video capture was stopped early because encoding was too costly; the final capture uses JPEG frames and completed without leaving a rendering process. This capture is not a sustained performance benchmark.
+
+Approval remains pending. Do not integrate B or change production resolution until the user confirms the visual direction.
