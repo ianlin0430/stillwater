@@ -16,12 +16,20 @@ var animals: Array=[]
 var previous: Dictionary={}
 var wake_clock: Dictionary={}
 var needs_initial_resources: bool=true
+var snapshot_elapsed: float=-INF
 
 func _ready() -> void:
 	for i in ROOTS.size(): bends.append(0.0)
 
 func apply_snapshot(value: Dictionary) -> void:
 	animals=value.get("animals",[]).duplicate(true)
+	var at: float=value.get("elapsed",0.0)
+	var discontinuity: bool=at<snapshot_elapsed or at-snapshot_elapsed>0.3
+	for a: Dictionary in animals:
+		if discontinuity or float(a.get("relocated_at",-1))>snapshot_elapsed:
+			previous[a.id]=Vector2(a.x,a.y)
+			wake_clock[a.id]=clock
+	snapshot_elapsed=at
 	var incoming: Dictionary=value.get("resources",{})
 	for key: String in resources:
 		if incoming.has(key) and (incoming[key] is float or incoming[key] is int) and is_finite(float(incoming[key])):

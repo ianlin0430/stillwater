@@ -45,6 +45,7 @@ func run() -> void:
 	check(h.brush.distance_to(at)<0.001,"Disabled interaction does not produce input effects")
 	for i in 120: stage.animate(1.0/30)
 	check(h.impulses.is_empty(),"Interaction effects expire")
+	_events()
 	_motion(false)
 	_motion(true)
 	_smoother()
@@ -119,3 +120,73 @@ func _smoother() -> void:
 	m.push(0.4,{1:Vector2(90,0)},[1])
 	check(m.position(1)==Vector2(90,0) and not m.from.has(2),"Relocation jumps directly; removed animals drop their history")
 	check(m.push(9.0,{1:Vector2(20,20)}) and m.position(1)==Vector2(20,20),"A time jump (catch-up, reload) snaps to the latest position")
+
+func _events() -> void:
+	var world:=StreamWorld.new(42,1000)
+	var untouched:=var_to_bytes(world.export_state())
+	var stage:=StreamStage.new()
+	root.add_child(stage)
+	var initial: Dictionary=world.snapshot()
+	stage.apply_snapshot(initial)
+	check(stage.event_cursor==initial.next_event-1 and stage.deaths.is_empty(),"Initial snapshot establishes cursor without replay")
+	var a: Dictionary=initial.animals[0].duplicate(true)
+	var next: Dictionary=initial.duplicate(true)
+	next.animals=next.animals.filter(func(v: Dictionary)->bool: return v.id!=a.id)
+	next.archive.append(a)
+	var seq: int=next.next_event
+	next.events.append({"seq":seq,"kind":"death","id":a.id,"cause":"old age","live":true,"x":a.x,"y":a.y,"time":0.2})
+	next.next_event+=1
+	next.elapsed=0.2
+	stage.apply_snapshot(next)
+	check(stage.rigs.has(a.id) and stage.deaths.has(a.id),"Live death retains archived appearance for fade-out")
+	var start: Vector2=stage.rigs[a.id].position
+	stage.animate(0.5)
+	check(stage.rigs[a.id].modulate.a<1 and stage.rigs[a.id].position.y>start.y,"Death fades and sinks at event position")
+	var age: float=stage.deaths[a.id].age
+	stage.animate(0)
+	check(stage.deaths[a.id].age==age,"Pause freezes event presentation")
+	stage.apply_snapshot(next)
+	check(stage.deaths[a.id].age==age,"Repeated snapshot cannot restart event")
+	stage.animate(2)
+	check(not stage.rigs.has(a.id) and stage.deaths.is_empty(),"Death rig expires after two seconds")
+	stage.apply_snapshot(initial)
+	check(stage.event_cursor==initial.next_event-1 and stage.deaths.is_empty(),"Cursor rollback clears presentation without replay")
+	next.events[-1].live=false
+	stage.apply_snapshot(next)
+	check(not stage.rigs.has(a.id) and stage.deaths.is_empty(),"Offline death does not animate")
+	stage.apply_snapshot(initial)
+	next.events=[]
+	stage.apply_snapshot(next)
+	check(not stage.rigs.has(a.id),"Missing animal without event removes normally")
+	stage.apply_snapshot(initial)
+	stage.animate(0.1)
+	var relocated: Dictionary=initial.duplicate(true)
+	relocated.elapsed=0.2
+	relocated.animals[0].relocated_at=0.2
+	relocated.animals[0].x+=20
+	relocated.animals[0].vx=30.0
+	stage.habitat.impulses.clear()
+	stage.apply_snapshot(relocated)
+	stage.animate(0.1)
+	check(stage.habitat.wake_clock[a.id]>=stage.habitat.clock-0.1,"Relocation suppresses wake even for short jumps")
+	var changed: Dictionary=next.duplicate(true)
+	changed.seed=999
+	changed.events=[{"seq":changed.next_event,"kind":"death","id":a.id,"cause":"old age","live":true,"x":a.x,"y":a.y}]
+	changed.next_event+=1
+	stage.apply_snapshot(changed)
+	check(stage.deaths.is_empty(),"Changing seed resets cursor even when event numbers increase")
+	stage.apply_snapshot(initial)
+	stage.rigs[a.id].queue_free()
+	stage.rigs.erase(a.id)
+	next.events=[{"seq":seq,"kind":"death","id":a.id,"cause":"old age","live":true,"x":a.x,"y":a.y}]
+	stage.apply_snapshot(next)
+	check(stage.rigs.has(a.id) and stage.deaths[a.id].appearance.sex==a.sex,"Archive restores appearance when death actor was not previously rendered")
+	for i in 40:
+		var copy: Dictionary=a.duplicate(true)
+		copy.id=100+i
+		stage._begin_death({"id":copy.id}, {"archive":[copy]})
+	check(stage.deaths.size()==24,"Retained death actors are bounded")
+	stage.animate(2.1)
+	check(stage.deaths.is_empty(),"All capped death actors expire")
+	check(var_to_bytes(world.export_state())==untouched,"Event and relocation presentation leave world and both RNGs unchanged")
+	stage.queue_free()

@@ -3,6 +3,11 @@ extends Node2D
 
 const MotionSmoother=preload("res://scripts/motion_smoother.gd")
 var rigs: Dictionary = {}
+var event_cursor: int = -1
+var deaths: Dictionary = {}
+const MAX_DEATHS: int = 24
+# Garden eel art remains behind the user review gate; never render it as a hatchetfish.
+const PRESENTED_SPECIES: Array[String] = ["shrimp","threadfin","hatchet"]
 var smoother=MotionSmoother.new()
 var selected: int = -1
 var zoom: float = 1.0
@@ -40,11 +45,26 @@ func _ready() -> void:
 	add_child(dimmer)
 
 func apply_snapshot(value: Dictionary) -> void:
-	snapshot=value
+	var latest: int=value.get("next_event",1)-1
+	var reset: bool=event_cursor<0 or latest<event_cursor or float(value.elapsed)<smoother.elapsed or (not snapshot.is_empty() and value.get("seed")!=snapshot.get("seed"))
+	if reset:
+		for id: int in deaths:
+			if rigs.has(id):
+				rigs[id].queue_free()
+				rigs.erase(id)
+		deaths.clear()
+		smoother=MotionSmoother.new()
+	else:
+		for event: Dictionary in StreamWorld.events_after(value.get("events",[]),event_cursor):
+			if event.get("live",false) and event.kind=="death" and event.get("cause","") in ["old age","starvation"]:
+				_begin_death(event,value)
+	event_cursor=latest
+	snapshot=value.duplicate(true)
 	habitat.apply_snapshot(value)
 	var present: Dictionary = {}
 	var jumps: Array = []
 	for a: Dictionary in value.animals:
+		if not a.species in PRESENTED_SPECIES: continue
 		var cfg: Dictionary = StreamWorld.SPECIES[a.species]
 		var size_factor: float = 1.0
 		if a.species=="shrimp":
@@ -81,12 +101,12 @@ func apply_snapshot(value: Dictionary) -> void:
 		var shelter_depth: float=clampf(1.0-absf(a.x-a.shelter)/75.0,0,1) if a.activity in ["Sheltering","Molting"] else 0.0
 		rig.modulate.a=1.0-shelter_depth*0.78
 	for id: int in rigs.keys():
-		if not present.has(id):
+		if not present.has(id) and not deaths.has(id):
 			rigs[id].queue_free()
 			rigs.erase(id)
 	var snapped: bool=smoother.push(value.elapsed,present,jumps,value.get("motion_remainder",0.0))
 	for id: int in rigs:
-		if snapped or id in jumps:
+		if present.has(id) and (snapped or id in jumps):
 			rigs[id].position=present[id]
 			rigs[id].previous=present[id]
 
@@ -96,9 +116,21 @@ func animate(delta: float) -> void:
 	motes.advance(delta)
 	habitat.advance(delta)
 	smoother.advance(delta)
-	for id: int in rigs:
+	for id: int in rigs.keys():
 		var rig: Node2D = rigs[id]
-		rig.position=smoother.position(id)
+		if deaths.has(id):
+			var death: Dictionary=deaths[id]
+			death.age+=maxf(delta,0)
+			if death.age>=2:
+				rig.queue_free()
+				rigs.erase(id)
+				deaths.erase(id)
+				continue
+			var t: float=death.age/2.0
+			rig.position=death.origin+Vector2(0,minf(28.0,maxf(0,640-death.origin.y))*t)
+			rig.modulate.a=death.opacity*(1-t)*(1-t)
+		else:
+			rig.position=smoother.position(id)
 		rig.selected=id==selected
 		rig.animate(delta)
 	var half: Vector2 = Vector2(640,360)/zoom
@@ -113,6 +145,7 @@ func pick(viewport_point: Vector2) -> int:
 	var id: int = -1
 	var best: float = INF
 	for key: int in rigs:
+		if deaths.has(key): continue
 		var rig: Node2D = rigs[key]
 		var diff: Vector2 = world_point-rig.position
 		var radius: Vector2 = Vector2(56,32)*rig.body_scale
@@ -128,3 +161,32 @@ func interact(viewport_point: Vector2, strength: float=1.0) -> void:
 
 func describe_environment(viewport_point: Vector2) -> String:
 	return habitat.describe((viewport_point-position)/zoom)
+
+func _begin_death(event: Dictionary, value: Dictionary) -> void:
+	var id: int=event.id
+	if deaths.has(id) or deaths.size()>=MAX_DEATHS: return
+	var archived: Dictionary={}
+	for a: Dictionary in value.get("archive",[]):
+		if a.id==id:
+			archived=a
+			break
+	if archived.is_empty() or not archived.species in PRESENTED_SPECIES: return
+	if not rigs.has(id):
+		var rig:=SwimmerRig.new()
+		rig.species=archived.species
+		rig.individual_id=id
+		rig.sex=archived.sex
+		rig.body_scale=(0.48 if archived.age<StreamWorld.SPECIES.shrimp.mature else 0.75) if archived.species=="shrimp" else (0.5 if archived.age<StreamWorld.SPECIES[archived.species].mature else 1.0)
+		rig.scale=Vector2.ONE*rig.body_scale
+		rig.facing=archived.direction
+		rig.face_target=archived.direction
+		rig.z_index=3 if archived.species=="shrimp" else 1
+		add_child(rig)
+		rigs[id]=rig
+	var rig: Node2D=rigs[id]
+	var origin:=Vector2(event.get("x",archived.x),event.get("y",archived.y))
+	if archived.species=="shrimp": origin.y-=12*rig.body_scale
+	rig.position=origin
+	rig.previous=origin
+	rig.activity="Resting"
+	deaths[id]={"age":0.0,"origin":origin,"opacity":rig.modulate.a,"appearance":archived.duplicate(true)}

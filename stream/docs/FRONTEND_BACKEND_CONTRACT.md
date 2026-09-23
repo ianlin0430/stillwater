@@ -6,7 +6,7 @@
 
 Codex：`stream_stage.gd`、`stream_habitat.gd`、`stream_motes.gd`、`stream_water.gdshader`、`swimmer_rig.gd`、`fish_motion.gdshader`、`assets/`、前端測試與展示場景。
 
-Claude：`stream_world.gd`、`stream_store.gd`、`stream_absence.gd`及其他存檔/生命週期 helper、生態測試。`main.gd` 為接線檔，請局部修改，不覆蓋整份。Codex只修改 `_scene_input` 與操作提示，不改Claude新增的 persistence-QA、absence 或儲存程式。
+Claude：`stream_world.gd`、`stream_store.gd`、`scripts/absence.gd`及其他存檔/生命週期 helper、生態測試。`main.gd` 為接線檔，請局部修改，不覆蓋整份。Codex只修改 `_scene_input` 與操作提示，不改Claude新增的 persistence-QA、absence 或儲存程式。
 
 原 `NON_ART_CLAUDE_PLAN.md` 的工程待辦可參考，但請以檔案目前內容為準：Claude已開始加入persist-QA與absence修復，不要把已完成的工作當成未做。前端環境互動與美術後續由Codex承接。
 
@@ -16,7 +16,7 @@ Claude：`stream_world.gd`、`stream_store.gd`、`stream_absence.gd`及其他存
 
 - `animals: Array[Dictionary]`：每隻 `id:int`, `species:String`, `x/y:float`，世界範圍1280×720；`direction:float`, `activity:String`, `age:float`, `sex:String`, `shelter:float` 供既有rig；`vx/vy:float` 可選，缺少視為0，用來帶動水草與短尾流。
 - `resources: Dictionary`：既有 `stem`, `floating`, `biofilm`, `detritus` 的非負有限數值。前景水草高度/葉量、浮葉數量、苔蘚覆蓋與落葉讀取它們，平滑過渡；缺欄位沿用前值，NaN忽略。`nutrients`、`microfauna`目前沒有獨立數量圖示，不要宣稱所有池都視覺化。
-- `events`：目前環境層不消費歷史事件。未來躲藏/捕食演出請新增穩定event id、actor id、target id（可選）、kind、simulation time、world position（可選），避免每次snapshot重播。先協調契約，不要在後端呼叫Node。
+- `events`、`archive`、`next_event`、`relocated_at`：以 [BACKEND_SNAPSHOT_EVENTS.md](BACKEND_SNAPSHOT_EVENTS.md) 為準。前端只播放游標之後的 live 事件；首次載入或游標回退不重播歷史。沒有捕食演出。
 
 ## 已接上的前端互動
 
@@ -37,4 +37,12 @@ Claude：`stream_world.gd`、`stream_store.gd`、`stream_absence.gd`及其他存
 
 `godot --headless --path . --script tests/test_frontend.gd`
 
-目前10項檢查涵蓋觸碰反應、暫停、效果上限/過期、resource讀取、縮放座標、互動開關，並逐byte驗證世界/RNG不被前端修改。這不是正式包完整CPU驗收；新增前景繪製需另測。
+檢查涵蓋觸碰反應、暫停、效果上限/過期、resource讀取、縮放座標、互動開關，並逐byte驗證世界/RNG不被前端修改。這不是正式包完整CPU驗收；新增前景繪製需另測。
+
+## 前端進度 2026-09-23（計畫 §0、§1）
+
+已接事件游標、live 過濾、首次／游標回退／seed 更換重設。自然死亡從 archive 取外觀，事件位置兩秒沉降淡出後移除，最多保留 24 個；消失卻無死亡事件照常移除。relocated_at 或補算時間跳躍抑制尾流。snapshot 在 stage 內深複製。
+
+驗證：test_frontend 35 checks / 0 failures；test_presentation 26 / 0；test_swimmers 103 / 0。這些是短 headless 檢查，尚未完成 §2 真實事件截图與視覺驗收。沒有跑長模擬或正式效能驗收。
+
+後續：§2 出生、移入、漂走、空殼與抱卵演出及真實 scenario 證據；§3 蝦比較圖；§3.5 花園鰻比較圖。花園鰻 backend 已在工作目錄出現，但新 rig 尚未經使用者核可，因此 stage 暫不繪製該物種，避免被通用魚 rig 畫成斧魚。其生態資料不變。Claude 請勿把目前前端標成花園鰻已完成，也尚不應跑最終 30 分鐘驗收或正式交付打包。
