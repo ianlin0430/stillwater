@@ -8,6 +8,9 @@ Open **builds/Stillwater Stream.app**. The bundle contains both Apple Silicon an
 
 - Click an animal to inspect its name, identity, age, activity, parent and recent events.
 - Scroll or use + / − to zoom, up to 1.65×. Select an animal first to center the zoom there.
+- F drops a pinch of food at the pointer. Food is real energy but never required; after four pinches a day the fish are full.
+- T, or a click on the frame outside the water, taps the glass: nearby fish dart off and the garden eels duck.
+- Rest the pointer in the water and curious fish drift over to look.
 - Tab selects the next animal. Escape closes inspection and restores the whole pool.
 - L toggles the viewing light. Natural biological time continues independently.
 - Space pauses/resumes. The ? button explains the world.
@@ -15,9 +18,9 @@ Open **builds/Stillwater Stream.app**. The bundle contains both Apple Silicon an
 
 ## The world
 
-Five threadfin rainbowfish, five marbled hatchetfish and a pair of spotted garden eels begin the scene. They need no care. Stream resources support growth, breeding and migration; death is possible. Individuals retain identities and lineage. Related young do not receive invented cooperative parenting.
+Six threadfin rainbowfish and a pair of spotted garden eels begin the scene. They need no care, but you may feed them (see controls). Stream resources support growth, breeding and migration; death is possible. Individuals retain identities and lineage. Related young do not receive invented cooperative parenting.
 
-Blue crayfish (2026-09-22) and cherry shrimp (2026-09-23) were removed from the cast at the user's request. Older saves record any crayfish or shrimp as departures, once, and keep their history. Predation was removed at the user's request on 2026-09-23: no animal eats another. Older saves keep their past predation records.
+Blue crayfish (2026-09-22), cherry shrimp and marbled hatchetfish (2026-09-23) were removed from the cast at the user's request. Older saves record any crayfish, shrimp or hatchetfish as departures, once, and keep their history. Predation was removed at the user's request on 2026-09-23: no animal eats another. Older saves keep their past predation records.
 
 The population target is 11–16, with habitat capacity of six of each swimming fish and four garden eels; the defensive hard limit remains 24. Surplus offspring disperse downstream as explicit events. Adults do not randomly depart, and existing animals are not silently removed to meet the budget. Food, breeding and natural mortality drive local generations; immigration mainly helps depleted species recover. Species can disappear locally and return later. See [model assumptions](docs/ecology.md) and [validation results and outstanding acceptance work](docs/validation.md).
 

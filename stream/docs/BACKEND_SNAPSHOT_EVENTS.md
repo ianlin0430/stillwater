@@ -7,7 +7,7 @@
 所有欄位都是**可選、有預設**的新增（2026-09-23 加了 `tint`、`brood_until`、`berried`、`brood_lost`，以及花園鰻的 `burrow_x`、`burrow_y`、`extend`、state 的 `eel_colony`）；存檔容器 `stillwater-stream-1`、world schema version 2、生態率都沒變。
 沒有這些欄位的舊存檔（含 v1 升級）照樣驗證與載入。
 
-> **2026-09-23 蝦移除（使用者決定：不要蝦子）**：`ACTIVE_SPECIES` 只剩 `threadfin`、`hatchet`、`garden_eel`；backend 不再產生任何蝦、`tint`、`brood_until`、`molt`、`berried`、`brood_lost`，也不再設定 `Grazing`/`Settling`/`Exploring`/`Retreating`/`Molting`。下文標「**舊檔專用**」的欄位與事件只可能出現在舊存檔的 `archive`、`events`、個體 `recent` 裡；`validate()` 仍接受它們。載入含蝦的存檔時，每隻活著的蝦記一次 `departure`（`live:false`），紀錄進 `archive`（保留 id、name、parent、sex、`tint`，抱卵中的 `brood_until` 移除＝卵作廢、不產生幼體）。`counts()` 只回傳現役三種（沒有 `shrimp` 鍵）；舊的 `history` 樣本可能還有 `shrimp` 鍵。
+> **2026-09-23 蝦移除（使用者決定：不要蝦子）**：`ACTIVE_SPECIES` 只剩 `threadfin`、`garden_eel`（斧頭魚也在同一天依使用者決定移除，舊檔的斧頭魚同樣在載入時記一次 `departure`）；backend 不再產生任何蝦、`tint`、`brood_until`、`molt`、`berried`、`brood_lost`，也不再設定 `Grazing`/`Settling`/`Exploring`/`Retreating`/`Molting`。下文標「**舊檔專用**」的欄位與事件只可能出現在舊存檔的 `archive`、`events`、個體 `recent` 裡；`validate()` 仍接受它們。載入含蝦的存檔時，每隻活著的蝦記一次 `departure`（`live:false`），紀錄進 `archive`（保留 id、name、parent、sex、`tint`，抱卵中的 `brood_until` 移除＝卵作廢、不產生幼體）。`counts()` 只回傳現役物種（沒有 `shrimp`、`hatchet` 鍵）；舊的 `history` 樣本可能還有 `shrimp` 鍵。
 
 ## snapshot
 
@@ -97,16 +97,42 @@ events 只保留 160 筆；若 `events_after` 最舊一筆 `seq > cursor+1`，�
 - **行為**（每個 0.2 秒 motion tick 由 backend 決定，不用 `motion_rng`）：
   - 夜裡（`light_hour<7 或 >19`，和其他魚同一個定義）：`activity:"Sleeping"`，`extend:0`。
   - 白天：`"Swaying"`，`extend:1`（站出沙面、吃漂過的小生物）。
-  - 白天有魚（threadfin 或 hatchet）在洞口左右 48 px 內、而且在洞口上方 200 px 內（大約是 threadfin 那一層的最底部）：`"Retracted"`，`extend:0`；魚離開後再過 4 秒回到 `"Swaying"`。實測白天約 3–5% 的時間是縮著的，每隻每 20 分鐘縮 2–7 次。常數在 `StreamWorld.EEL_WARY`。
+  - 白天有魚（threadfin）在洞口左右 48 px 內、而且在洞口上方 200 px 內（大約是 threadfin 那一層的最底部）：`"Retracted"`，`extend:0`；魚離開後再過 4 秒回到 `"Swaying"`。實測白天約 3–5% 的時間是縮著的，每隻每 20 分鐘縮 2–7 次。常數在 `StreamWorld.EEL_WARY`。
   - 使用者撥水/水紋讓花園鰻縮回，只是前端的呈現，backend **沒有**任何輸入介面，也不該有。
 - **出生**：`birth` 事件的 x/y 就是幼魚的新洞口（在親代的洞附近）。棲地滿（4 隻）時是 `dispersal`，沒有幼魚個體。
 - **移入**：移入的花園鰻**直接出現在自己的洞口**，`arrival` 事件的 x/y＝洞口。backend 不模擬「從上游游進來」；前端要演「從上游邊緣游進來、鑽進洞」可以純呈現地做（例如從 x=130 或 1150 游到 `burrow_x`），不需要 backend 欄位。
 - **舊存檔**：沒有 `eel_colony` 的存檔（2026-09-23 以前的 v2，以及 v1 升級）載入時，會自動來一對（一公一母）成年花園鰻，產生兩筆 `arrival`，`live:false`（不演出，只進日誌/離開摘要），物質記在 `ledger.in`。只發生一次；之後就算花園鰻死光也不會因為載入而補回（要靠一般的移入救援）。
-- 吃的是 `microfauna`（和 threadfin、hatchet 同一個池），會餓死、老死（壽命 365 天 ±15%，90 天成熟）。
+- 吃的是 `microfauna`（和 threadfin 同一個池），會餓死、老死（壽命 365 天 ±15%，90 天成熟）。
+
+## 餵食、敲玻璃、游標引魚（2026-09-23，使用者決定）
+
+三個都是 **world 的公開 API，只由 `main.gd` 呼叫**；stage 仍然只讀 snapshot。都只在即時遊玩時發生。
+
+### 餵食：真的食物，但不是必要
+- `feed(x) -> bool`：在水面（y=`FOOD.surface`=56）x 處撒一撮，5 粒、每粒 `mass` 0.05。超過每日上限（`FOOD.daily`=1.0，也就是一天 4 撮）或水裡已有 40 粒時回 `false`，前端顯示「吃飽了」。
+- 飼料以每秒 10 px 下沉，碰到沙床就 `settled`，900 秒後變成 `detritus`。
+- 魚在 260 px 內、自己水層可及、而且還吃得下時會游過去（`activity:"Feeding"`，`food_id` 指向那一粒），吃到的 80% 變成能量、20% 進 `detritus`。站出洞口的花園鰻會叼走洞口左右 22 px、上方 80 px 內漂過的飼料。
+- 物質：飼料記在 `ledger.in`，之後流向動物或碎屑，residual ≈ 0。
+- **不餵完全沒影響**：沒有飼料時不消耗 RNG、不產生新欄位；固定種子下，改動前後的狀態 digest 與兩組 RNG 都相同（seed 42/812/240921，含即時、離線與 72 小時補算）。
+- 離線補算不模擬追食，只讓已經撒下的飼料照常沉降、分解。
+- snapshot：`food: [{id, x, y, mass, settled, settled_at}]`（沒有就不存在，視為空陣列）、`fed: {day, mass}`（今天已撒的量）。事件 `fed`（`live:true`，x/y＝撒下的位置，沒有 actor）。
+
+### 敲玻璃
+- `startle(x, y, strength=1.0) -> int`（回傳注意到的動物數）：260 px 內的魚往反方向衝最多 150 px、維持在自己水層內，`activity:"Startled"` 3 秒；範圍內的花園鰻縮回 5 秒。
+- 不影響能量、繁殖或任何生態數值；不存檔。
+
+### 游標引魚
+- `set_lure(point)` / `clear_lure()`：游標在水裡停住時，45 秒內、320 px 內的魚在下一次選擇動作時有一半機率過來看，停在游標旁 36 px、自己的水層內，`activity:"Curious"` 6–12 秒。游標移動不到 8 px 不算換位置。
+- lure 不是 `state` 的一部分，不存檔；只有 lure 存在時才會從 `motion_rng` 抽亂數。
+
+### main.gd 的暫時接線（等 Codex 做正式 UI）
+- F：在游標位置撒飼料（沒有游標就在畫面中央）；被拒絕時狀態列顯示 “They’re full for today — natural food keeps them going.”
+- T，或點畫面上水域以外的邊框：敲玻璃。
+- 游標在水裡停 1.5 秒：設 lure；移開或暫停、隱藏時清掉。
 
 ## 活動名稱（`animals[].activity`）
 
-魚：`Resting`、`Swimming`、`Surface feeding`（hatchet）、`Displaying`（threadfin）。
+魚（threadfin）：`Resting`、`Swimming`、`Displaying`，以及互動造成的 `Feeding`（吃飼料）、`Startled`（被敲玻璃嚇到）、`Curious`（被游標吸引）。舊檔專用：`Surface feeding`（hatchet）。
 舊檔專用（蝦，只可能出現在 `archive`）：`Grazing`、`Settling`、`Exploring`、`Retreating`、`Molting`。
 花園鰻專用：`Swaying`（白天站出沙面）、`Retracted`（有魚經過，暫時縮回）、`Sleeping`（夜裡在洞裡）。
 `Sheltering` 在 stage 有列出，但目前 backend 不會設定（`exposure()` 已隨捕食移除）。
