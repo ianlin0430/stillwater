@@ -44,6 +44,14 @@
 
 ### 0.5 先修動作卡頓（最優先，使用者 2026-09-23 回報「動畫卡卡的」）
 
+> **已由 Claude 完成（2026-09-23，commit `9892107`），Codex 跳過這一步，直接做 §1。**
+> - 新 helper `scripts/motion_smoother.gd`：保留最近兩份 snapshot 位置，時間軸晚一個 tick，用 snapshot 的 `motion_remainder` 對齊 simulation 時間，線性插值、不外推；首次、重載、離線補算、時間跳超過一個 tick 時直接跳到最新；`relocated_at` 晚於上一份 snapshot 的個體直接跳位。
+> - `stream_stage.gd` 改用它（`targets`/`lerp(delta*9)` 已移除）；`main.gd` 只把 `step_clock` 換成「`motion_ticks` 變了才套 snapshot」。
+> - `swimmer_rig.gd` 沒改：尾擺用的每幀位移現在本身就平滑（rig `motion` 修前 12.5–31.6、修後 19.7–19.9 px/s，真速 19.7）。
+> - 測試：`tests/test_frontend.gd` 新增 30 FPS 真 world+stage 巡游速度測試（固定幀與抖動幀各一）、暫停零位移、helper 單元測試。修前畫面/真實速度比 0.23–3.79，修後 1.00–1.01。
+> - 對照片：`artifacts/motion-smoothness/`（見其 README）。
+> - 做 §1 的 `relocated_at` 尾流時，沿用 stage 的 `jumps` 判斷即可。
+
 **根因**（Claude 依目前程式邏輯推算，0.5.0 正式包和 Frontend Preview 都有）：
 - simulation 的位置每 0.2 秒才更新一次（`advance_live` 以 0.2 秒 motion tick 積分）。
 - `main.gd` 用自己的 `step_clock` 每 0.2 秒套一次 snapshot，跟 motion tick 沒有對齊。
