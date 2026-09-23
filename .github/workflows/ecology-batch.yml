@@ -23,6 +23,12 @@ on:
         type: boolean
         default: false
 
+# An explicit bash shell turns on pipefail, so a failing test or acceptance
+# gate fails the job instead of being hidden behind tee/tail.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   seeds:
     name: ${{ inputs.mode }} ${{ inputs.days }}d seed ${{ matrix.seed }}
