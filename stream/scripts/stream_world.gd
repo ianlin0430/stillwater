@@ -29,6 +29,8 @@ const STREAM_OUT: Dictionary = {"nutrients":0.05,"microfauna":0.015,"detritus":0
 const SHRIMP_DETRITUS_K: float = 30.0
 # Swimming depth bands, a little wider than the authored targets in _choose_activity.
 const DEPTH: Dictionary = {"threadfin":[200.0,420.0],"hatchet":[88.0,208.0]}
+# A female shrimp carries her brood this many days before it hatches (brood_until).
+const BROOD_DAYS: float = 5.0
 const RESCUE_RATE: float = 1.0/96.0
 const ARRIVAL_RATE: float = 1.0/504.0
 # An unexplained position jump larger than this in one motion tick is a relocation
@@ -106,9 +108,21 @@ func spawn(species: String, age: float = 0, parent: int = 0) -> Dictionary:
 	var p: Vector2 = _place(species)
 	var a: Dictionary = {"id":state.next_id,"species":species,"name":cfg.label+" "+str(state.next_id),"sex":"female" if rng.randf()<0.5 else "male","age":age,"parent":parent,"born":state.elapsed,"body":cfg.body*(0.45 if age<cfg.mature else 1.0),"energy":cfg.reserve*(0.35 if age<cfg.mature else 0.67),"x":p.x,"y":p.y,"tx":p.x,"ty":p.y,"direction":1.0 if p.x<640 else -1.0,"activity":"Resting","decision_at":0.0,"last_breed":-cfg.cooldown,"next_molt":age+(rng.randf_range(8,16) if species in ["crayfish","shrimp"] else 99999.0),"molting_until":-1.0,"shelter":240.0 if state.next_id%2==1 else 1030.0,"recent":[],"hunger":0.0}
 	a.lifespan=cfg.lifespan*rng.randf_range(0.85,1.15)
+	if species=="shrimp":
+		a.tint=_tint(a)
 	state.next_id += 1
 	state.animals.append(a)
 	return a
+
+# Appearance only: derived from seed and id so it never draws on rng/motion_rng.
+# Young take roughly their mother's tint.
+func _tint(a: Dictionary) -> float:
+	var h:=RandomNumberGenerator.new()
+	h.seed=int(state.seed)*1000003+int(a.id)*7919+17
+	for m: Dictionary in state.animals:
+		if m.id==a.parent and m.has("tint"):
+			return clampf(m.tint+h.randf_range(-0.08,0.08),0,1)
+	return h.randf_range(0.3,0.95)
 
 # Moving a newly placed animal sideways: spawn sampled y against its own x, so a
 # shrimp kept that height and could end up inside the stream bed.
@@ -406,9 +420,16 @@ func _ecology(offline: bool) -> void:
 			a.next_molt=a.age+(14 if a.age<cfg.mature else 28)
 			a.molting_until=state.elapsed/DAY+0.16
 			_event("molt",a,a.name+" molted and is sheltering while its shell hardens.",{"until":a.molting_until*DAY})
-		if a.age>=cfg.mature and a.sex=="female" and a.energy>cfg.reserve*0.74 and a.age-a.last_breed>=cfg.cooldown:
+		if a.has("brood_until") and state.elapsed>=a.brood_until:
+			a.erase("brood_until")
+			_breed(a)
+		elif not a.has("brood_until") and a.age>=cfg.mature and a.sex=="female" and a.energy>cfg.reserve*0.74 and a.age-a.last_breed>=cfg.cooldown:
 			if males.has(a.species) and rng.randf()<cfg.breed/1440*factor:
-				_breed(a)
+				a.last_breed=a.age
+				if a.species=="shrimp":
+					_berry(a)
+				else:
+					_breed(a)
 	if state.ecology_ticks%60==0:
 		_migration()
 	if state.ecology_ticks%1440==0:
@@ -419,7 +440,6 @@ func _breed(parent: Dictionary) -> void:
 	if parent.species not in ACTIVE_SPECIES:
 		return
 	var cfg: Dictionary = SPECIES[parent.species]
-	parent.last_breed=parent.age
 	var cost: float = cfg.body*0.45+cfg.reserve*0.35
 	for i in int(cfg.brood):
 		if parent.energy<cost+cfg.reserve*0.2:
@@ -433,16 +453,29 @@ func _breed(parent: Dictionary) -> void:
 			_bed_align(child,clampf(parent.x+rng.randf_range(-30,30),120,1150))
 			_event("birth",child,"A young "+cfg.label.to_lower()+" was born to "+parent.name+".",{"target":parent.id})
 
+# Shrimp only: the brood hatches in _ecology once brood_until passes.
+func _berry(a: Dictionary) -> void:
+	a.last_breed=a.age
+	a.brood_until=state.elapsed+BROOD_DAYS*DAY
+	_event("berried",a,a.name+" is carrying eggs.",{"until":a.brood_until})
+
 func _remove(a: Dictionary, cause: String) -> void:
 	if not state.animals.has(a):
 		return
+	# A brood not yet hatched is lost with her; its cost was never taken.
+	var extra: Dictionary = {"cause":cause}
+	var text: String = a.name+" died from "+cause+"."
+	if a.has("brood_until"):
+		a.erase("brood_until")
+		extra.brood_lost=true
+		text+=" Her eggs did not hatch."
 	var mass: float = a.body+a.energy
 	if cause=="departure":
 		state.ledger.out+=mass
 		_event("departure",a,a.name+" moved downstream.")
 	else:
 		state.resources.detritus+=mass
-		_event("death",a,a.name+" died from "+cause+".",{"cause":cause})
+		_event("death",a,text,extra)
 	state.causes[cause]=state.causes.get(cause,0)+1
 	a.cause=cause
 	a.ended=state.elapsed
@@ -529,6 +562,10 @@ func restore(saved: Dictionary) -> bool:
 	for a: Dictionary in state.animals.duplicate():
 		if a.species not in ACTIVE_SPECIES:
 			_remove(a,"departure")
+	# Saves from before tints: assign them the same way spawn does.
+	for a: Dictionary in state.animals:
+		if a.species=="shrimp" and not a.has("tint"):
+			a.tint=_tint(a)
 	return true
 
 # R12: add the new pools from the stream (ledger.in) and give every animal a lifespan.
@@ -586,9 +623,11 @@ static func validate(saved: Dictionary) -> bool:
 		for key: String in ["age","born","body","energy","x","y","tx","ty","direction","decision_at","last_breed","next_molt","molting_until","shelter","hunger","parent"]:
 			if not _number(a.get(key)):
 				return false
-		for key: String in ["vx","vy","relocated_at"]:
+		for key: String in ["vx","vy","relocated_at","brood_until","tint"]:
 			if a.has(key) and not _number(a[key]):
 				return false
+		if a.get("brood_until",0)<0 or a.get("tint",0)<0 or a.get("tint",0)>1:
+			return false
 		if version>1 and a in saved.animals and (not _number(a.get("lifespan")) or a.lifespan<=0):
 			return false
 		if a.age<0 or a.body<0 or a.energy<0 or not a.get("recent") is Array or a.recent.size()>6:

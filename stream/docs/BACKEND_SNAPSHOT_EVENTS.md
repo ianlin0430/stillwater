@@ -4,7 +4,7 @@
 前端契約（Codex）見 `FRONTEND_BACKEND_CONTRACT.md`；本檔只描述 backend 提供什麼。
 注意：該契約寫的 `stream_absence.gd` 實際檔名是 `scripts/absence.gd`。
 
-所有欄位都是**可選、有預設**的新增；存檔容器 `stillwater-stream-1`、world schema version 2、生態率都沒變。
+所有欄位都是**可選、有預設**的新增（2026-09-23 加了 `tint`、`brood_until`、`berried`、`brood_lost`）；存檔容器 `stillwater-stream-1`、world schema version 2、生態率都沒變。
 沒有這些欄位的舊存檔（含 v1 升級）照樣驗證與載入。
 
 ## snapshot
@@ -18,6 +18,8 @@
 | `events` | Array | 最近 160 個事件（見下），舊到新。 |
 | `animals[].vx`, `animals[].vy` | float，可缺 | 每模擬秒像素速度，即移動積分器的速度：`位置(t) ≈ 位置(t-0.2) + v*0.2`。**缺少視為 0**（剛出生/移入、尚未跑過第一個 motion tick，或 0.4.1 前的存檔）。 |
 | `animals[].relocated_at` | float，可缺 | 最近一次「瞬間重定位」的模擬時間。缺少＝從未。 |
+| `animals[].tint` | float 0–1，可缺 | **只有蝦**。個體固定的顏色深淺（紅色深度／色點密度），純外觀、不影響生態。開場的蝦各不相同；幼蝦 = 母蝦 tint ± 0.08（夾在 0–1）；移入者自己一個值。**缺少視為 0.6**（魚沒有這欄）。舊存檔載入時會補上。 |
+| `animals[].brood_until` | float，可缺 | **只有抱卵中的母蝦**有。孵化的模擬秒（同 `elapsed` 時鐘）。孵化或死亡時移除。 |
 | `archive[]` | Array | 最近 96 個離開的個體（含 `cause`、`ended`、最後 x/y、species、age）。 |
 
 ### 瞬間重定位
@@ -43,20 +45,31 @@
 | `x`, `y` | float，可選 | 事件當下主角位置（世界座標 1280×720）。 |
 | `live` | bool | `true`＝即時 tick 產生，前端可演出；`false`＝離線補算、載入升級或開場，只進日誌/離開摘要。缺少視為 false。 |
 | `cause` | String，可選 | 僅 `death`：`"starvation"`、`"old age"`。舊存檔的歷史事件可能還有 `"predation"`。 |
-| `until` | float，可選 | 僅 `molt`：躲藏結束的模擬秒（= `molting_until*86400`）。 |
+| `until` | float，可選 | `molt`：躲藏結束的模擬秒（= `molting_until*86400`）。`berried`：預定孵化的模擬秒（= 當下的 `brood_until`）。 |
+| `brood_lost` | bool，可選 | 僅 `death`：她死時正在抱卵，卵沒有孵出（沒有 birth/dispersal）。 |
 | `text` | String | 日誌文字（英文），不要解析它。 |
 
 | kind | actor (`id`) | `target` | 位置 | 何時 |
 |---|---|---|---|---|
 | `begin` | 0 | — | — | 新世界開場（live=false）。 |
 | `molt` | 脫殼的蝦 | — | 蝦 | 開始脫殼；之後 `activity=="Molting"`，游向 `shelter` x 躲藏，到 `until` 為止。 |
-| `birth` | 新生幼體 | 親代 | 幼體（親代 ±30 px） | 幼體已在同一份 snapshot 的 `animals`。 |
+| `berried` | 母蝦 | — | 母蝦 | 開始抱卵；同一份 snapshot 她帶 `brood_until`。約 5 模擬日後孵化。 |
+| `birth` | 新生幼體 | 親代 | 幼體（親代 ±30 px） | 幼體已在同一份 snapshot 的 `animals`。蝦的 birth 發生在孵化那一刻。 |
 | `dispersal` | 親代 | — | 親代 | 棲地滿，幼體直接漂走；**沒有**幼體個體。 |
 | `arrival` | 移入者 | — | 移入者（x=130 或 1150） | 個體已在 `animals`。 |
 | `death` | 死亡個體 | — | 死亡個體 | 個體**同一份 snapshot**就不在 `animals`、已在 `archive`。 |
 | `departure` | 離開個體 | — | 個體 | 目前只在載入舊存檔移除螯蝦時（live=false）。成年個體不會隨機離開。 |
 
 保證：個體被移除時，事件與移除發生在同一個 `_remove` 呼叫裡，所以不會有「先消失、事件晚到」。
+
+### 抱卵與孵化（2026-09-23）
+
+- 成熟母蝦符合既有繁殖條件時，**不再當場生**：她得到 `brood_until = elapsed + 5*86400`，發 `berried` 事件，繁殖冷卻（7 天）從這一刻起算。
+- 抱卵期間不會再開始另一窩。她照常吃、動、脫殼。
+- 期滿後的第一個生態 tick（每模擬分鐘一次，所以最晚晚 60 秒）孵化：移除 `brood_until`，照原本規則產生 `birth`（或棲地滿時的 `dispersal`），親代 = 她。孵化時才扣繁殖成本，所以她當時的體力決定孵出 1 或 2 隻（可能 0 隻：體力不夠時沒有事件）。
+- 離線補算照樣孵化，事件 `live==false`；每窩只孵一次（孵化即移除 `brood_until`）。
+- 抱卵中死亡：卵一起消失，不產生任何幼體，`death` 事件帶 `brood_lost: true`，日誌文字多一句 "Her eggs did not hatch."；存進 `archive` 的個體沒有 `brood_until`。
+- 魚不抱卵，繁殖行為不變（符合條件就當場 `birth`/`dispersal`）。
 
 ### 前端消費方式（建議）
 

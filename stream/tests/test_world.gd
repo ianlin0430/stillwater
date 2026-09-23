@@ -225,6 +225,8 @@ func _initialize() -> void:
 	a.advance_live(0.2)
 	check(swimmer.vx<=3.0001 and swimmer.x>old_x,"Fish accelerate gradually from rest")
 	ecosystem_checks()
+	brood_checks()
+	tint_checks()
 	var acceptance=preload("res://tests/ecology_acceptance.gd")
 	check(acceptance.reproduction_passes({"births":17,"dispersal":14,"arrivals":7}),"Dispersed offspring count toward reproduction")
 	check(not acceptance.reproduction_passes({"births":17,"dispersal":2,"arrivals":7}),"Nineteen offspring do not meet the twenty-offspring threshold")
@@ -394,3 +396,170 @@ func ecosystem_checks() -> void:
 	r2.advance_offline(StreamWorld.DAY)
 	check(same(r1,r2),"Offline seeded run reproducible across batching")
 	check(StreamWorld.POOLS.all(func(k): return r1.snapshot().resources.has(k)),"Snapshot exposes all pools")
+
+# advance_offline caps each call at MAX_AWAY; longer spans go in pieces.
+func offline(w: StreamWorld, seconds: float) -> void:
+	while seconds>0:
+		w.advance_offline(minf(seconds,StreamWorld.MAX_AWAY))
+		seconds-=StreamWorld.MAX_AWAY
+
+# Young hatched from `parent`: births name it as target, dispersals as actor.
+func young_of(events: Array, parent: int) -> Array:
+	return events.filter(func(e): return e.kind=="birth" and e.get("target")==parent or e.kind=="dispersal" and e.id==parent)
+
+func a_female(w: StreamWorld) -> Dictionary:
+	var mom: Dictionary=w.state.animals.filter(func(x): return x.species=="shrimp" and x.sex=="female")[0]
+	mom.age=maxf(mom.age,30.0)
+	mom.lifespan=9999.0
+	mom.energy=StreamWorld.SPECIES.shrimp.reserve
+	return mom
+
+func by_id(w: StreamWorld, id: int) -> Dictionary:
+	for x: Dictionary in w.state.animals:
+		if x.id==id:
+			return x
+	return {}
+
+# 2026-09-23 user decision: a female shrimp carries her brood for BROOD_DAYS before it hatches.
+func brood_checks() -> void:
+	var w:=StreamWorld.new(3,1000)
+	var mom: Dictionary=a_female(w)
+	var cursor: int=w.state.next_event-1
+	var offspring: int=w.state.totals.birth+w.state.totals.dispersal
+	w._berry(mom)
+	var fresh: Array=StreamWorld.events_after(w.state.events,cursor)
+	var e: Dictionary=fresh[0] if fresh.size()==1 else {}
+	check(StreamWorld.BROOD_DAYS==5.0 and absf(mom.get("brood_until",-1.0)-(w.state.elapsed+5.0*StreamWorld.DAY))<0.001,"Brood hatches five simulated days after she becomes berried")
+	check(e.get("kind")=="berried" and e.get("id")==mom.id and e.get("x")==mom.x and e.get("y")==mom.y and e.has("live") and absf(e.get("until",0.0)-mom.get("brood_until",-1.0))<0.001,"Berried event names the female, her position and the hatch time")
+	check(w.state.totals.birth+w.state.totals.dispersal==offspring and mom.last_breed==mom.age,"No young the moment she becomes berried; the cooldown starts")
+	mom.last_breed=-100.0
+	reset_material(w)
+	var saved: Dictionary=w.export_state()
+	check(StreamWorld.validate(saved),"Mid-brood save validates")
+	var r:=StreamWorld.new()
+	check(r.restore(saved) and by_id(r,mom.id).get("brood_until")==mom.get("brood_until"),"Mid-brood save restores the brood")
+	offline(w,StreamWorld.DAY*4.9)
+	offline(r,StreamWorld.DAY*4.9)
+	var events: Array=StreamWorld.events_after(w.state.events,cursor)
+	check(mom.has("brood_until") and young_of(events,mom.id).is_empty(),"Still berried before five days")
+	check(events.filter(func(x): return x.kind=="berried" and x.id==mom.id).size()==1,"A berried female starts no second brood")
+	mom.energy=StreamWorld.SPECIES.shrimp.reserve
+	by_id(r,mom.id).energy=mom.energy
+	reset_material(w)
+	reset_material(r)
+	var until: float=mom.get("brood_until",0.0)
+	w.advance_offline(StreamWorld.DAY*0.2)
+	r.advance_offline(StreamWorld.DAY*0.2)
+	var hatched: Array=young_of(StreamWorld.events_after(w.state.events,cursor),mom.id)
+	check(not mom.has("brood_until") and hatched.size()>=1 and hatched.all(func(x): return x.time>=until and x.time<until+60.001),"Brood hatches when the period ends, parent is the female")
+	check(same(w,r),"A save written mid-brood hatches on time after restore")
+	check(absf(w.residual())<0.00001 and StreamWorld.validate(w.export_state()),"Hatching conserves material and validates")
+	# Offline catch-up across long absences hatches once.
+	w=StreamWorld.new(3,1000)
+	mom=a_female(w)
+	cursor=w.state.next_event-1
+	w._berry(mom)
+	mom.last_breed=mom.age+100.0
+	for i in 3:
+		w.catch_up(1000+StreamWorld.MAX_AWAY*(i+1))
+	hatched=young_of(StreamWorld.events_after(w.state.events,cursor),mom.id)
+	check(hatched.size() in [1,2] and hatched.all(func(x): return x.time==hatched[0].time) and not mom.has("brood_until"),"72-hour catch-ups hatch the brood exactly once")
+	# Died while berried: the brood is lost, no young.
+	w=StreamWorld.new(3,1000)
+	mom=a_female(w)
+	cursor=w.state.next_event-1
+	w._berry(mom)
+	mom.age=mom.lifespan
+	reset_material(w)
+	w.advance_offline(60)
+	offline(w,StreamWorld.DAY*6)
+	events=StreamWorld.events_after(w.state.events,cursor)
+	var death: Array=events.filter(func(x): return x.kind=="death" and x.id==mom.id)
+	check(death.size()==1 and death[0].get("brood_lost")==true and young_of(events,mom.id).is_empty(),"A female dying while berried loses her brood; the death records it")
+	check(w.state.archive.filter(func(x): return x.id==mom.id and not x.has("brood_until")).size()==1 and absf(w.residual())<0.00001,"Archived female carries no brood; material still balances")
+	# The natural path: shrimp hatch five days after berried, fish breed as before.
+	w=StreamWorld.new(42,1000)
+	cursor=w.state.next_event-1
+	var species: Dictionary={}
+	var seen: Array=[]
+	for day in 30:
+		for x: Dictionary in w.state.animals:
+			species[x.id]=x.species
+		w.advance_offline(StreamWorld.DAY)
+		seen.append_array(StreamWorld.events_after(w.state.events,cursor))
+		cursor=w.state.next_event-1
+	var berried: Array=seen.filter(func(x): return x.kind=="berried")
+	var shrimp_young: int=0
+	var timing_ok: bool=true
+	for x: Dictionary in seen.filter(func(x): return x.kind in ["birth","dispersal"]):
+		var parent: int=x.target if x.kind=="birth" else x.id
+		if species.get(parent)=="shrimp":
+			shrimp_young+=1
+			timing_ok=timing_ok and berried.any(func(b): return b.id==parent and x.time>=b.until and x.time<b.until+60.001)
+	check(berried.size()>0 and shrimp_young>0 and timing_ok,"Every shrimp birth follows its mother's berried period (%d broods, %d young)" % [berried.size(),shrimp_young])
+	check(berried.all(func(b): return species.get(b.id)=="shrimp"),"Only shrimp become berried")
+	var old: Dictionary=legacy_predation_save()
+	old.animals[0].brood_until="soon"
+	check(not StreamWorld.validate(old),"Non-numeric brood_until rejected")
+	old.animals[0].brood_until=-1.0
+	check(not StreamWorld.validate(old),"Negative brood_until rejected")
+	old.animals[0].brood_until=NAN
+	check(not StreamWorld.validate(old),"Non-finite brood_until rejected")
+
+func untinted(w: StreamWorld) -> PackedByteArray:
+	var s: Dictionary=w.export_state()
+	for x: Dictionary in s.animals+s.archive:
+		x.erase("tint")
+	return var_to_bytes(s)
+
+# Individual colour: appearance only, never drawn from rng/motion_rng.
+func tint_checks() -> void:
+	var w:=StreamWorld.new(240921,1000)
+	var tints: Array=w.state.animals.filter(func(x): return x.species=="shrimp").map(func(x): return x.get("tint",-1.0))
+	check(tints.size()==6 and tints.all(func(t): return t>=0.0 and t<=1.0) and tints.max()-tints.min()>=0.15,"Opening shrimp get varied tints %s" % str(tints))
+	check(w.state.animals.all(func(x): return x.species=="shrimp" or not x.has("tint")),"Only shrimp carry a tint")
+	check(StreamWorld.new(240921,1000).state.animals.filter(func(x): return x.species=="shrimp").map(func(x): return x.tint)==tints,"Tints are deterministic per seed")
+	var rs: String=str(w.rng.state)
+	var ms: String=str(w.motion_rng.state)
+	for i in 50:
+		w._tint({"id":i+1,"parent":w.state.animals[0].id})
+	check(str(w.rng.state)==rs and str(w.motion_rng.state)==ms,"Tint draws on neither rng nor motion_rng")
+	var mom: Dictionary=a_female(w)
+	var before: int=w.state.animals.size()
+	w._breed(mom)
+	var kids: Array=w.state.animals.slice(before)
+	check(kids.size()>0 and kids.all(func(k): return absf(k.tint-mom.tint)<=0.0801 and k.tint>=0.0 and k.tint<=1.0),"Offspring tint stays near the mother's")
+	var a:=StreamWorld.new(42,1000)
+	var b:=StreamWorld.new(42,1000)
+	for x: Dictionary in b.state.animals:
+		if x.has("tint"):
+			x.tint=0.0
+	for x: StreamWorld in [a,b]:
+		x.advance_live(600)
+		offline(x,StreamWorld.DAY*12)
+		x.advance_live(600)
+	check(a.state.totals.birth+a.state.totals.dispersal>0 and untinted(a)==untinted(b),"Tint never changes ecology or motion (export identical apart from tint)")
+	# Older saves have no tint: one is assigned on load, the same every time.
+	var old: Dictionary=legacy_predation_save()
+	for x: Dictionary in old.animals+old.archive:
+		x.erase("tint")
+		x.erase("brood_until")
+	check(StreamWorld.validate(old),"Save without tint or brood validates")
+	var o1:=StreamWorld.new()
+	var o2:=StreamWorld.new()
+	o1.restore(old)
+	o2.restore(old)
+	check(o1.state.animals.all(func(x): return x.species!="shrimp" or x.get("tint",-1.0)>=0.0 and x.tint<=1.0) and same(o1,o2),"Loading assigns every shrimp a deterministic tint")
+	offline(o1,StreamWorld.DAY*6)
+	check(StreamWorld.validate(o1.export_state()) and o1.state.totals.predation==3,"Old save keeps running after tint is assigned")
+	var f:=FileAccess.open("res://tests/fixtures/v1-world.var",FileAccess.READ)
+	var v1: Dictionary=f.get_var()
+	f.close()
+	var up:=StreamWorld.new()
+	check(up.restore(v1) and up.state.animals.all(func(x): return x.species!="shrimp" or x.has("tint")),"v1 save gets tints on load")
+	old.animals[0].tint=1.5
+	check(not StreamWorld.validate(old),"Tint above 1 rejected")
+	old.animals[0].tint=-0.1
+	check(not StreamWorld.validate(old),"Tint below 0 rejected")
+	old.animals[0].tint="red"
+	check(not StreamWorld.validate(old),"Non-numeric tint rejected")

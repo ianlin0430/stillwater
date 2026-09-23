@@ -282,3 +282,38 @@ threshold changed.
 ### Live 180-day ecology (GitHub Actions)
 
 未驗證 — pending the cloud run recorded below.
+
+## Berried shrimp and individual tint (2026-09-23)
+
+User decision 2026-09-23. A mature female shrimp meeting the breeding condition becomes berried
+(`berried` event, `brood_until` = elapsed + 5 days) and the brood hatches at the first ecology tick after
+that; the brood cost is taken at hatching. The cooldown counts from the berried start and no second brood
+starts while berried. Death while berried loses the brood (`death.brood_lost`, no young). Fish breed as
+before. Every shrimp carries an appearance-only `tint` in [0,1] from a private `RandomNumberGenerator`
+seeded by world seed and id (young: mother ± 0.08, clamped), so `rng` and `motion_rng` are never drawn;
+shrimp loaded without one get it on restore. Container `stillwater-stream-1` and `VERSION` 2 unchanged;
+both fields optional; `validate()` rejects non-numeric, non-finite, negative `brood_until` and `tint`
+outside [0,1]. No acceptance threshold changed; predation gate stays `== 0`.
+
+### Local quick suites (macOS, Godot 4.6.3 headless)
+
+| Check | Result | Evidence |
+|---|---|---|
+| Core regression suite | 已通過 — 137 checks (106 before + 31 new), 0 failures; 72-hour catch-up 315 ms | `tests/test_world.gd` |
+| Berried: 5-day `brood_until`, `berried` event (actor, x/y, live, until), no young at berried, cooldown start | 已通過 | `tests/test_world.gd` (`brood_checks`) |
+| Hatch within 60 s after `brood_until`, parent = female; residual < 1e-5; validates | 已通過 | `brood_checks` |
+| Save written mid-brood validates, restores `brood_until`, and hatches byte-identically to the unsaved world | 已通過 | `brood_checks` |
+| Three consecutive 72-hour `catch_up`s: brood hatches exactly once (all young at one time) | 已通過 | `brood_checks` |
+| Death while berried: `brood_lost`, no young over 6 more days, archive has no `brood_until`, material balances | 已通過 | `brood_checks` |
+| Seed 42, 30 offline days: every shrimp birth/dispersal falls within 60 s after its mother's `berried.until`; only shrimp are berried | 已通過 | `brood_checks` |
+| `tint`: 6 opening shrimp in [0,1] with spread ≥ 0.15; fish have none; deterministic per seed; 50 `_tint` calls leave `rng`/`motion_rng` states unchanged; young within 0.08 of mother | 已通過 | `tests/test_world.gd` (`tint_checks`) |
+| Tint never affects ecology: seed 42 with all tints forced to 0 vs normal, 10 live min + 12 offline days + 10 live min, `export_state()` identical after removing `tint` | 已通過 | `tint_checks` |
+| Old saves: legacy predation save with tints removed and the v1 fixture validate, restore, get deterministic tints, keep `totals.predation==3` and keep validating after 6 days | 已通過 | `tint_checks` |
+| Bad `brood_until` ("soon", −1, NAN) and `tint` (1.5, −0.1, "red") rejected; missing accepted | 已通過 | `brood_checks`, `tint_checks` |
+| Against the previous commit's `stream_world.gd` (one-off script, not committed), seeds 42/812/240921: `export_state()` minus `tint` identical at t=0, after 30 live min and after 1 more offline day, `rng` and `motion_rng` states equal (no breeding yet in that span) | 已通過 | one-off comparison, 2026-09-23 |
+| Swimmer / roaming / lifecycle / persist-QA / presentation | 已通過 — 103 / no failures (3 seeds) / 63 (user file hashes unchanged) / 27 / 26 | respective suites |
+| Frontend suite (Codex, run read-only on Codex's uncommitted tree) | 已通過 — 10 checks | `tests/test_frontend.gd` |
+
+### Live 180-day ecology (GitHub Actions)
+
+未驗證 — pending the cloud run recorded below.
