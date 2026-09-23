@@ -25,7 +25,7 @@ var viewing_light: bool = false
 var last_wall: float = 0
 var last_ticks: int = 0
 var started_ticks: int = 0
-var step_clock: float = 0
+var shown_ticks: int = -1
 var save_clock: float = 0
 var ui_clock: float = 0
 var save_path: String = StreamStore.DEFAULT_PATH
@@ -423,12 +423,11 @@ func _process(delta: float) -> void:
 	elif not paused:
 		world.advance_live(minf(delta,0.25))
 	last_wall=now
-	step_clock+=delta
 	ui_clock+=delta
 	save_clock+=delta
-	if step_clock>=0.2:
+	if world.state.motion_ticks!=shown_ticks:
 		stage.apply_snapshot(world.snapshot())
-		step_clock=0
+		shown_ticks=world.state.motion_ticks
 	if not paused:
 		stage.animate(minf(delta,0.1))
 	else:

@@ -45,5 +45,77 @@ func run() -> void:
 	check(h.brush.distance_to(at)<0.001,"Disabled interaction does not produce input effects")
 	for i in 120: stage.animate(1.0/30)
 	check(h.impulses.is_empty(),"Interaction effects expire")
+	_motion(false)
+	_motion(true)
+	_smoother()
 	print(JSON.stringify({"checks":checks,"failures":failures}))
 	quit(0 if failures.is_empty() else 1)
+
+# Drives a real world and stage exactly as main.gd does, at 30 FPS, and measures rendered fish speed.
+func _motion(jitter: bool) -> void:
+	var world:=StreamWorld.new(42,1000)
+	var stage:=StreamStage.new()
+	root.add_child(stage)
+	stage.apply_snapshot(world.snapshot())
+	var applied: int=world.state.motion_ticks
+	var noise:=RandomNumberGenerator.new()
+	noise.seed=7
+	var dt: float=1.0/30
+	var frames: Array[float]=[]
+	var rendered: Dictionary={}
+	var truth: Dictionary={}
+	for f in 300:
+		if jitter: dt=noise.randf_range(0.7,1.3)/30
+		world.advance_live(minf(dt,0.25))
+		if world.state.motion_ticks!=applied:
+			stage.apply_snapshot(world.snapshot())
+			applied=world.state.motion_ticks
+		stage.animate(minf(dt,0.1))
+		frames.append(dt)
+		for a: Dictionary in world.state.animals:
+			if a.species=="shrimp" or not stage.rigs.has(a.id): continue
+			if not rendered.has(a.id):
+				rendered[a.id]=[]
+				truth[a.id]=[]
+			rendered[a.id].append(stage.rigs[a.id].position)
+			truth[a.id].append(Vector2(a.get("vx",0.0),a.get("vy",0.0)))
+	var low: float=INF
+	var high: float=0
+	var samples: int=0
+	for id: int in rendered:
+		var v: Array=truth[id]
+		for f in range(12,v.size()):
+			var steady: bool=v[f].length()>8
+			for k in range(f-12,f+1):
+				steady=steady and v[k].distance_to(v[f])<v[f].length()*0.03
+			if not steady: continue
+			var ratio: float=rendered[id][f].distance_to(rendered[id][f-1])/frames[f]/v[f].length()
+			low=minf(low,ratio)
+			high=maxf(high,ratio)
+			samples+=1
+	print("motion%s: %d cruising frames, rendered/true speed %.2f..%.2f" % [" (jittered frames)" if jitter else "",samples,low,high])
+	check(samples>=60 and low>=0.75 and high<=1.25,"Cruising fish render within 25%% of true speed%s (%.2f..%.2f over %d frames)" % [" with jittered frames" if jitter else "",low,high,samples])
+	var held: Dictionary={}
+	for id: int in stage.rigs: held[id]=stage.rigs[id].position
+	var moved: float=0
+	for f in 90:
+		if f==45: stage.apply_snapshot(world.snapshot())
+		stage.animate(0)
+		for id: int in held: moved=maxf(moved,stage.rigs[id].position.distance_to(held[id]))
+	check(moved==0,"Paused stage renders no motion (max %.3f px)" % moved)
+	stage.queue_free()
+
+func _smoother() -> void:
+	var m=preload("res://scripts/motion_smoother.gd").new()
+	check(m.push(0.0,{1:Vector2(0,0)}),"First snapshot snaps")
+	m.advance(1.0/30)
+	m.push(0.2,{1:Vector2(10,0),2:Vector2(50,50)})
+	m.advance(1.0/30)
+	check(m.position(1)==Vector2(0,0) and m.position(2)==Vector2(50,50),"Interpolation starts one tick behind; new animals appear in place")
+	m.advance(0.1)
+	check(m.position(1).is_equal_approx(Vector2(5,0)),"Positions interpolate linearly on simulation time")
+	m.advance(1.0)
+	check(m.position(1)==Vector2(10,0),"Interpolation clamps at the latest snapshot without overshoot")
+	m.push(0.4,{1:Vector2(90,0)},[1])
+	check(m.position(1)==Vector2(90,0) and not m.from.has(2),"Relocation jumps directly; removed animals drop their history")
+	check(m.push(9.0,{1:Vector2(20,20)}) and m.position(1)==Vector2(20,20),"A time jump (catch-up, reload) snaps to the latest position")

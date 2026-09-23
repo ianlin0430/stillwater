@@ -1,8 +1,9 @@
 class_name StreamStage
 extends Node2D
 
+const MotionSmoother=preload("res://scripts/motion_smoother.gd")
 var rigs: Dictionary = {}
-var targets: Dictionary = {}
+var smoother=MotionSmoother.new()
 var selected: int = -1
 var zoom: float = 1.0
 var center: Vector2 = Vector2(640,360)
@@ -42,8 +43,8 @@ func apply_snapshot(value: Dictionary) -> void:
 	snapshot=value
 	habitat.apply_snapshot(value)
 	var present: Dictionary = {}
+	var jumps: Array = []
 	for a: Dictionary in value.animals:
-		present[a.id]=true
 		var cfg: Dictionary = StreamWorld.SPECIES[a.species]
 		var size_factor: float = 1.0
 		if a.species=="shrimp":
@@ -53,7 +54,9 @@ func apply_snapshot(value: Dictionary) -> void:
 		var p := Vector2(a.x,a.y)
 		if a.species=="shrimp":
 			p.y-=12*size_factor
-		targets[a.id]=p
+		present[a.id]=p
+		if a.get("relocated_at",-1)>smoother.elapsed:
+			jumps.append(a.id)
 		if not rigs.has(a.id):
 			var new_rig: Node2D = SwimmerRig.new()
 			new_rig.species=a.species
@@ -81,16 +84,21 @@ func apply_snapshot(value: Dictionary) -> void:
 		if not present.has(id):
 			rigs[id].queue_free()
 			rigs.erase(id)
-			targets.erase(id)
+	var snapped: bool=smoother.push(value.elapsed,present,jumps,value.get("motion_remainder",0.0))
+	for id: int in rigs:
+		if snapped or id in jumps:
+			rigs[id].position=present[id]
+			rigs[id].previous=present[id]
 
 func animate(delta: float) -> void:
 	water_clock+=delta
 	water_material.set_shader_parameter("water_clock",water_clock)
 	motes.advance(delta)
 	habitat.advance(delta)
+	smoother.advance(delta)
 	for id: int in rigs:
 		var rig: Node2D = rigs[id]
-		rig.position=rig.position.lerp(targets[id],minf(1,delta*9))
+		rig.position=smoother.position(id)
 		rig.selected=id==selected
 		rig.animate(delta)
 	var half: Vector2 = Vector2(640,360)/zoom
