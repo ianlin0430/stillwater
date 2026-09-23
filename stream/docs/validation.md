@@ -254,3 +254,31 @@ Real Cmd-Q remains UNVERIFIED: the harness was closed before its cmd_q case ran.
 
 Still open after this step: live ecology validation for the new roaming (step 3), natural event
 presentation (step 4), and full 0.5.0 packaged performance acceptance (step 5).
+
+## Predation removed (2026-09-23)
+
+User decision 2026-09-23: no animal eats another, live or offline. `_predation`, `exposure()`, the
+nursery constants, `PREY_*`, `OFFLINE_ENCOUNTER` and the `feeding` event were removed; `death` events
+no longer carry `target`. Molting shelter, the shrimp `Retreating` startle, births, old age, starvation,
+dispersal, rescue arrivals, identities and lineage are unchanged. Save schema unchanged (`VERSION` 2);
+`totals.predation` is still required and keeps whatever an older save holds. The long-run gate
+`predation 3–20` became `predation == 0` and the `predation_conditions` audit was dropped; no other
+threshold changed.
+
+### Local quick suites (macOS, Godot 4.6.3 headless)
+
+| Check | Result | Evidence |
+|---|---|---|
+| Core regression suite | 已通過 — 106 checks, 0 failures; 72-hour catch-up 308 ms | `tests/test_world.gd` |
+| Legacy save with 3 predation deaths + 3 `feeding` events | 已通過 — validates, restores, round-trips through `StreamStore`, keeps the records, `totals.predation` and `causes.predation` stay 3 after one offline day and one live minute, and still validates | `tests/test_world.gd` (`legacy_predation_save`) |
+| No predation live (1 800 s) or offline (3 days), hungry fish above exposed shrimplets on a bare bed | 已通過 — `totals.predation` 0, no `predation` cause, no `feeding` event | `tests/test_world.gd` (`no_predation`) |
+| Swimmer rig suite | 已通過 — 103 checks | `tests/test_swimmers.gd` |
+| Roaming suite | 已通過 — no failures, seeds 42 / 812 / 240921 | `tests/test_roaming.gd` |
+| Lifecycle/time-boundary suite | 已通過 — 63 checks; user file hashes unchanged | `tests/test_lifecycle.gd` |
+| Persist-QA helper suite | 已通過 — 27 checks | `tests/test_persist_qa.gd` |
+| Presentation suite | 已通過 — 26 checks (death event has no `target`) | `tests/test_presentation.gd` |
+| Frontend suite (Codex, run read-only) | 已通過 — 10 checks | `tests/test_frontend.gd` |
+
+### Live 180-day ecology (GitHub Actions)
+
+未驗證 — pending the cloud run recorded below.

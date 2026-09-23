@@ -42,7 +42,7 @@
 | `time` | float | 模擬秒（同 `elapsed`）。 |
 | `x`, `y` | float，可選 | 事件當下主角位置（世界座標 1280×720）。 |
 | `live` | bool | `true`＝即時 tick 產生，前端可演出；`false`＝離線補算、載入升級或開場，只進日誌/離開摘要。缺少視為 false。 |
-| `cause` | String，可選 | 僅 `death`：`"starvation"`、`"old age"`、`"predation"`。 |
+| `cause` | String，可選 | 僅 `death`：`"starvation"`、`"old age"`。舊存檔的歷史事件可能還有 `"predation"`。 |
 | `until` | float，可選 | 僅 `molt`：躲藏結束的模擬秒（= `molting_until*86400`）。 |
 | `text` | String | 日誌文字（英文），不要解析它。 |
 
@@ -53,8 +53,7 @@
 | `birth` | 新生幼體 | 親代 | 幼體（親代 ±30 px） | 幼體已在同一份 snapshot 的 `animals`。 |
 | `dispersal` | 親代 | — | 親代 | 棲地滿，幼體直接漂走；**沒有**幼體個體。 |
 | `arrival` | 移入者 | — | 移入者（x=130 或 1150） | 個體已在 `animals`。 |
-| `feeding` | 魚 | 被吃的幼蝦 | 魚 | 幼蝦被魚吃（非血腥）；緊接下一個 seq 是該幼蝦的 `death`。 |
-| `death` | 死亡個體 | 捕食的魚（僅 predation） | 死亡個體 | 個體**同一份 snapshot**就不在 `animals`、已在 `archive`。 |
+| `death` | 死亡個體 | — | 死亡個體 | 個體**同一份 snapshot**就不在 `animals`、已在 `archive`。 |
 | `departure` | 離開個體 | — | 個體 | 目前只在載入舊存檔移除螯蝦時（live=false）。成年個體不會隨機離開。 |
 
 保證：個體被移除時，事件與移除發生在同一個 `_remove` 呼叫裡，所以不會有「先消失、事件晚到」。
@@ -74,19 +73,14 @@ cursor=value.get("next_event",1)-1
 `StreamWorld.events_after(events, seq)` 是 static、純函式，不需要 world 物件。
 events 只保留 160 筆；若 `events_after` 最舊一筆 `seq > cursor+1`，代表中間有略過（一般是離線補算），不需補播。
 
-範例（幼蝦被吃，數值為示意）：
-
-```
-{"seq":412,"kind":"feeding","id":9,"target":23,"time":86520.0,"x":612.4,"y":388.0,"live":true,"text":"Glimmer caught a young shrimp."}
-{"seq":413,"kind":"death","id":23,"target":9,"cause":"predation","time":86520.0,"x":598.1,"y":596.2,"live":true,"text":"Cherry shrimp 23 died from predation."}
-```
+捕食已於 2026-09-23 依使用者決定移除：backend 不再產生 `feeding`，`death` 也不再帶 `target`。舊存檔裡的 `feeding` 事件與 `cause=="predation"` 的 `death` 仍然合法、可載入；它們沒有 `seq` 或 `live==false` 時不會播放，前端不用為它們做任何演出。
 
 ## 活動名稱（`animals[].activity`）
 
 `Resting`、`Grazing`、`Settling`、`Exploring`、`Swimming`、`Retreating`（蝦受驚短衝，非捕食者）、`Molting`（躲藏）、`Surface feeding`（hatchet）、`Displaying`（threadfin）。
-`Sheltering` 在 `exposure()` 與 stage 有列出，但目前 backend 不會設定。本次沒有新增或改名任何活動。
+`Sheltering` 在 stage 有列出，但目前 backend 不會設定（`exposure()` 已隨捕食移除）。本次沒有新增或改名任何活動。
 
 ## 呈現唯讀
 
-`snapshot()`、`events_after()`、`counts()`、`natural_light()`、`sub_light()`、`biofilm_max()`、`animal_scale()`、`exposure()` 及讀取 `state.animals/archive/recent`（選取資訊面板）不消耗 RNG、不改 `export_state()` 位元組（`test_presentation.gd` 驗證）。選取、zoom、viewing light 都在前端，backend 沒有對應狀態。
+`snapshot()`、`events_after()`、`counts()`、`natural_light()`、`sub_light()`、`biofilm_max()`、`animal_scale()` 及讀取 `state.animals/archive/recent`（選取資訊面板）不消耗 RNG、不改 `export_state()` 位元組（`test_presentation.gd` 驗證）。選取、zoom、viewing light 都在前端，backend 沒有對應狀態。
 （`main.gd` 的 `_update_biological_clock()` 會把系統時間寫入 `state.light_hour`，那是生物時鐘，不是 viewing light。）

@@ -20,11 +20,11 @@ Current calibration: daily stream inputs are 0.7 nutrient units and 0.35 microfa
 
 Plant amounts currently exist in the simulation and read-only snapshots. The painted pixel background does **not** yet change with plant biomass. No plant art, resource dashboard, fluid solver, oxygen model or management interaction was added in this stage.
 
-## Predation and recovery
+## No predation; recovery
 
-Hungry fish can occasionally catch immature shrimp outside the nursery. Nursery position, shelter/molting state and rooted-plant cover provide protection. Live encounters require proximity; offline encounters use a bounded probabilistic approximation.
+Predation was removed by user decision on 2026-09-23: no animal eats another, live or offline. Fish only eat microfauna and shrimp only graze biofilm and detritus. The nursery, the stem-cover exposure rule and the live column rule (`PREY_RANGE`/`PREY_DIVE`) went with it. Molting shrimp still shelter while the shell hardens, and the shrimp's brief `Retreating` startle is a current response, not an escape from a predator.
 
-Live proximity is measured in the water column below the fish (rule change 2026-09-23): the horizontal gap must be at most 220 px (`PREY_RANGE`) and the shrimplet at most 290 px (`PREY_DIVE`) below the fish. With the bed at about y 600, only a threadfin in the lower half of its layer (y ≥ ~310) can reach a shrimplet; hatchetfish keep to their surface band (y 88–208) and never take shrimp in live play. The earlier plain 220 px radius could not reach the bed from the hatchetfish band and only from the bottom edge of the threadfin band, so live predation ran at about a tenth of the offline approximation (1/2/0 against 11–16 per 180 days). The column rule qualifies about 38% of exposed shrimplet-minutes, matching what the offline factors imply (encounter 0.5 × outside-nursery share 0.65, over the ~86% of juvenile time spent outside the nursery). Offline catch-up still credits the catch to a randomly chosen hungry fish, which may be a hatchetfish; this attribution difference only moves the prey's material to that fish's reserve. Presentation and event wording are non-graphic. Starvation, old age and local species absence are possible and are reported, not suppressed. The model has no added predator species.
+Juveniles now die only of starvation or old age, so more of them reach maturity; the habitat caps (eight shrimp, five of each fish, hard limit 24) and downstream dispersal absorb the surplus. Saves made before the change keep their `predation` totals, causes, archived deaths and `feeding` events; the total never grows. Starvation, old age and local species absence are possible and are reported, not suppressed.
 
 ## Time, determinism and saves
 

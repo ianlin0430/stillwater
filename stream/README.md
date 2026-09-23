@@ -17,7 +17,7 @@ Open **builds/Stillwater Stream.app**. The bundle contains both Apple Silicon an
 
 Six cherry shrimp, four threadfin rainbowfish, and four marbled hatchetfish begin the scene. They need no care. Stream resources support growth, breeding, molts and migration; death is possible. Individuals retain identities and lineage. Related young do not receive invented cooperative parenting.
 
-Blue crayfish were removed from the cast at the user's request on 2026-09-22. Older saves record any crayfish as departures. In ecology v2, hungry fish may occasionally catch immature shrimp outside protected nursery/plant cover. Events remain non-graphic.
+Blue crayfish were removed from the cast at the user's request on 2026-09-22. Older saves record any crayfish as departures. Predation was removed at the user's request on 2026-09-23: no animal eats another. Older saves keep their past predation records.
 
 The population target is 12–18, with habitat capacity of eight shrimp and five of each fish species; the defensive hard limit remains 24. Surplus offspring disperse downstream as explicit events. Adults do not randomly depart, and existing animals are not silently removed to meet the budget. Food, breeding and natural mortality drive local generations; immigration mainly helps depleted species recover. Species can disappear locally and return later. See [model assumptions](docs/ecology.md) and [validation results and outstanding acceptance work](docs/validation.md).
 
