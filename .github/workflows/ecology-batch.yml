@@ -65,7 +65,10 @@ jobs:
             godot --headless --path . --script "tests/$t.gd" 2>&1 | tee "../$t.log"
           done
 
+      # Still runs when a core test failed, so the long-run numbers are reported;
+      # the job stays failed either way.
       - name: Long run
+        if: ${{ !cancelled() }}
         working-directory: stream
         run: |
           godot --headless --path . --script tests/long_run.gd -- \
