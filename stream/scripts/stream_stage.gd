@@ -14,6 +14,8 @@ var snapshot: Dictionary = {}
 var water_clock: float = 0
 var motes: Node2D
 var water_material: ShaderMaterial
+var habitat: Node2D
+var interaction_enabled: bool=true
 
 func _ready() -> void:
 	texture_filter=CanvasItem.TEXTURE_FILTER_NEAREST
@@ -30,11 +32,15 @@ func _ready() -> void:
 	motes.set_script(preload("res://scripts/stream_motes.gd"))
 	motes.z_index=2
 	add_child(motes)
+	habitat=preload("res://scripts/stream_habitat.gd").new()
+	habitat.z_index=0
+	add_child(habitat)
 	dimmer=CanvasModulate.new()
 	add_child(dimmer)
 
 func apply_snapshot(value: Dictionary) -> void:
 	snapshot=value
+	habitat.apply_snapshot(value)
 	var present: Dictionary = {}
 	for a: Dictionary in value.animals:
 		present[a.id]=true
@@ -81,6 +87,7 @@ func animate(delta: float) -> void:
 	water_clock+=delta
 	water_material.set_shader_parameter("water_clock",water_clock)
 	motes.advance(delta)
+	habitat.advance(delta)
 	for id: int in rigs:
 		var rig: Node2D = rigs[id]
 		rig.position=rig.position.lerp(targets[id],minf(1,delta*9))
@@ -106,3 +113,10 @@ func pick(viewport_point: Vector2) -> int:
 			best=distance
 			id=key
 	return id
+
+func interact(viewport_point: Vector2, strength: float=1.0) -> void:
+	if interaction_enabled:
+		habitat.touch((viewport_point-position)/zoom,strength)
+
+func describe_environment(viewport_point: Vector2) -> String:
+	return habitat.describe((viewport_point-position)/zoom)

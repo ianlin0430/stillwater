@@ -209,7 +209,7 @@ func _setup_ui() -> void:
 	var help_box := VBoxContainer.new()
 	help_panel.add_child(help_box)
 	var help_text := Label.new()
-	help_text.text="A small world beneath the surface\n\nClick an animal to read its story.\nScroll or use + / − to look closer. Tab selects the next animal.\nSpace pauses; Escape returns to the whole pool.\nL switches the viewing light.\n\nNatural food, arrivals, births and departures need no care.\nThe world advances while you’re away, up to three days.\nNothing runs on your Mac after you quit.\n\nReal species, a fictional shared habitat.\nQuiet mode: 30 FPS. Saves are automatic."
+	help_text.text="A small world beneath the surface\n\nClick an animal to read its story.\nDrag through water or plants to feel the current.\nR makes a ripple without the mouse.\nScroll or use + / − to look closer. Tab selects the next animal.\nSpace pauses; Escape returns to the whole pool.\nL switches the viewing light.\n\nNatural food, arrivals, births and departures need no care.\nThe world advances while you’re away, up to three days.\nNothing runs on your Mac after you quit.\n\nReal species, a fictional shared habitat.\nQuiet mode: 30 FPS. Saves are automatic."
 	help_text.add_theme_font_size_override("font_size",13)
 	help_box.add_child(help_text)
 	help_box.add_child(_button("Back to the stream",func() -> void: help_panel.hide()))
@@ -247,15 +247,26 @@ func _panel(at: Vector2, minimum: Vector2) -> PanelContainer:
 	return panel
 
 func _scene_input(event: InputEvent) -> void:
-	if event is InputEventMouseButton and event.pressed:
-		if event.button_index==MOUSE_BUTTON_WHEEL_UP:
-			_zoom(0.10)
-		elif event.button_index==MOUSE_BUTTON_WHEEL_DOWN:
-			_zoom(-0.10)
-		elif event.button_index==MOUSE_BUTTON_LEFT:
-			var fit: float=minf(display.size.x/1280,display.size.y/720)
-			var offset: Vector2=(display.size-Vector2(1280,720)*fit)/2
-			_select(stage.pick((event.position-offset)/fit))
+	# Frontend-only interactions. Mouse coordinates account for letterboxing and zoom.
+	var fit: float=minf(display.size.x/1280,display.size.y/720)
+	if fit<=0: return
+	var offset: Vector2=(display.size-Vector2(1280,720)*fit)/2
+	if event is InputEventMouse:
+		var point: Vector2=(event.position-offset)/fit
+		if not Rect2(0,0,1280,720).has_point(point): return
+		if event is InputEventMouseMotion:
+			display.tooltip_text=stage.describe_environment(point)
+			if not paused and event.button_mask&MOUSE_BUTTON_MASK_LEFT:
+				stage.interact(point,clampf(event.relative.length()/12.0,0.2,1.0))
+		elif event is InputEventMouseButton and event.pressed:
+			if event.button_index==MOUSE_BUTTON_WHEEL_UP:
+				_zoom(0.10)
+			elif event.button_index==MOUSE_BUTTON_WHEEL_DOWN:
+				_zoom(-0.10)
+			elif event.button_index==MOUSE_BUTTON_LEFT:
+				var hit: int=stage.pick(point)
+				_select(hit)
+				if hit<0 and not paused: stage.interact(point)
 
 func _select(id: int) -> void:
 	selected=id
@@ -301,6 +312,9 @@ func _input(event: InputEvent) -> void:
 				_select(-1)
 				stage.zoom=1
 				stage.center=Vector2(640,360)
+			KEY_R:
+				if not paused: stage.interact(Vector2(640,360))
+				get_viewport().set_input_as_handled()
 			KEY_TAB:
 				if not event.shift_pressed and not world.state.animals.is_empty():
 					var index: int=-1
@@ -343,7 +357,7 @@ func _refresh() -> void:
 	stage.natural_light=clampf(sin((hour-6)/12*PI),0,1)
 	stage.viewing_light=viewing_light
 	climate.text=("Night" if hour<6 or hour>=20 else "Evening" if hour>=17 else "Morning" if hour<11 else "Daylight")+" · "+str(world.state.animals.size())+" lives"
-	status.text="Click a creature to read its story · Scroll to look closer" if not paused else "Paused · the stream will continue when you resume"
+	status.text="Click a creature · Drag water or plants to explore · Scroll to look closer" if not paused else "Paused · the stream will continue when you resume"
 	if qa_clock<away_until and not away_text.is_empty():
 		status.text=away_text
 	if not failure_status.is_empty():
