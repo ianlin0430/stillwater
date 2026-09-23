@@ -62,7 +62,7 @@
 - 不加無意義的 idle 抖動。
 
 ### 3d. 外觀反映身份與狀態
-backend 會在 snapshot 提供（欄位名已定，實作中；完成後更新 `BACKEND_SNAPSHOT_EVENTS.md`）：
+backend 已在 snapshot 提供（commit `3ffccee`，細節見 `BACKEND_SNAPSHOT_EVENTS.md`；抱卵中死亡的 `death` 事件會帶 `brood_lost:true`）：
 
 | 欄位 | 來源 | 前端呈現 |
 |---|---|---|
