@@ -44,15 +44,21 @@ const DEPTH: Dictionary = {"threadfin":[200.0,420.0],"hatchet":[88.0,208.0]}
 const OFFLINE_ENCOUNTER: float = 0.5
 const RESCUE_RATE: float = 1.0/96.0
 const ARRIVAL_RATE: float = 1.0/504.0
+# An unexplained position jump larger than this in one motion tick is a relocation
+# (animals carry relocated_at). Fish layer clamping stays under 1 px; the shrimp
+# surface snap when Exploring starts off the bed is what crosses it.
+const RELOCATION: float = 3.0
 const NAMES: Dictionary = {"shrimp":["Ember","Poppy","Ruby","Coral","Fern","Pepper"],"threadfin":["Silk","Reed","Willow","Glimmer"],"hatchet":["Marble","Mica","Dapple","Flint"]}
 var rng := RandomNumberGenerator.new()
 var motion_rng := RandomNumberGenerator.new()
 var state: Dictionary
+# True only while a live ecology tick runs; stamps events the stage may play.
+var _live: bool = false
 
 func _init(world_seed: int = 240921, wall_time: float = 0) -> void:
 	rng.seed = world_seed
 	motion_rng.seed = world_seed + 7919
-	state = {"version":VERSION,"seed":world_seed,"elapsed":0.0,"ecology_remainder":0.0,"motion_remainder":0.0,"motion_ticks":0,"ecology_ticks":0,"next_id":1,"wall_checkpoint":wall_time,"animals":[],"archive":[],"events":[],"history":[],"resources":OPENING.duplicate(),"ledger":{"initial":0.0,"in":0.0,"out":0.0},"totals":{"birth":0,"death":0,"arrival":0,"departure":0,"dispersal":0,"molt":0,"predation":0},"causes":{},"light_hour":12.0}
+	state = {"version":VERSION,"seed":world_seed,"elapsed":0.0,"ecology_remainder":0.0,"motion_remainder":0.0,"motion_ticks":0,"ecology_ticks":0,"next_id":1,"next_event":1,"wall_checkpoint":wall_time,"animals":[],"archive":[],"events":[],"history":[],"resources":OPENING.duplicate(),"ledger":{"initial":0.0,"in":0.0,"out":0.0},"totals":{"birth":0,"death":0,"arrival":0,"departure":0,"dispersal":0,"molt":0,"predation":0},"causes":{},"light_hour":12.0}
 	for species: String in ACTIVE_SPECIES:
 		var n: int = int(SPECIES[species].initial)
 		var lo: float = 25.0 if species=="shrimp" else 40.0
@@ -124,8 +130,14 @@ func _bed_align(a: Dictionary, x: float) -> void:
 		a.y=floor_y(x)+(a.y-floor_y(a.x))
 	a.x=x
 
-func _event(kind: String, a: Dictionary, text: String) -> void:
-	var e: Dictionary = {"time":state.elapsed,"kind":kind,"id":a.get("id",0),"text":text}
+# `id` is the actor; `seq` is the event's own id (see docs/BACKEND_SNAPSHOT_EVENTS.md).
+func _event(kind: String, a: Dictionary, text: String, extra: Dictionary = {}) -> void:
+	var e: Dictionary = {"time":state.elapsed,"kind":kind,"id":a.get("id",0),"text":text,"seq":state.next_event,"live":_live}
+	state.next_event+=1
+	if a.has("x"):
+		e.x=a.x
+		e.y=a.y
+	e.merge(extra)
 	state.events.append(e)
 	if state.events.size()>160:
 		state.events.pop_front()
@@ -218,7 +230,8 @@ func _move(delta: float) -> void:
 					desired+=apart.normalized()*(90-apart.length())*0.16
 		var velocity:=Vector2(a.get("vx",0.0),a.get("vy",0.0))
 		velocity=velocity.move_toward(desired,acceleration*delta)
-		var next: Vector2=p+velocity*delta
+		var free: Vector2=p+velocity*delta
+		var next: Vector2=free
 		if species in ["threadfin","hatchet"]:
 			# Keep each fish in its own layer: the shoaling push used to carry
 			# hatchetfish down into the threadfin band.
@@ -233,6 +246,8 @@ func _move(delta: float) -> void:
 				next.y=minf(next.y,floor_y(next.x))
 		if absf(velocity.x)>1.3 and a.activity!="Retreating":
 			a.direction=1.0 if velocity.x>0 else -1.0
+		if next.distance_to(free)>RELOCATION:
+			a.relocated_at=state.elapsed
 		a.x=next.x
 		a.y=next.y
 		a.vx=velocity.x
@@ -320,6 +335,7 @@ func _excrete(amount: float) -> void:
 
 func _ecology(offline: bool) -> void:
 	state.ecology_ticks+=1
+	_live=not offline
 	state.light_hour=fmod(state.light_hour+1.0/60.0,24.0)
 	var r: Dictionary = state.resources
 	var supply: float = state.get("supply_scale",1.0)
@@ -402,7 +418,7 @@ func _ecology(offline: bool) -> void:
 		if a.age>=a.next_molt:
 			a.next_molt=a.age+(14 if a.age<cfg.mature else 28)
 			a.molting_until=state.elapsed/DAY+0.16
-			_event("molt",a,a.name+" molted and is sheltering while its shell hardens.")
+			_event("molt",a,a.name+" molted and is sheltering while its shell hardens.",{"until":a.molting_until*DAY})
 		if a.age>=cfg.mature and a.sex=="female" and a.energy>cfg.reserve*0.74 and a.age-a.last_breed>=cfg.cooldown:
 			if males.has(a.species) and rng.randf()<cfg.breed/1440*factor:
 				_breed(a)
@@ -411,6 +427,7 @@ func _ecology(offline: bool) -> void:
 		_migration()
 	if state.ecology_ticks%1440==0:
 		_sample()
+	_live=false
 
 # R9: chance a shrimplet is out in the open, from 0 (safe) to 1.
 func exposure(a: Dictionary, offline: bool) -> float:
@@ -470,7 +487,7 @@ func _breed(parent: Dictionary) -> void:
 		else:
 			var child: Dictionary = spawn(parent.species,0,parent.id)
 			_bed_align(child,clampf(parent.x+rng.randf_range(-30,30),120,1150))
-			_event("birth",child,"A young "+cfg.label.to_lower()+" was born to "+parent.name+".")
+			_event("birth",child,"A young "+cfg.label.to_lower()+" was born to "+parent.name+".",{"target":parent.id})
 
 func _remove(a: Dictionary, cause: String, predator: Dictionary = {}) -> void:
 	if not state.animals.has(a):
@@ -485,9 +502,9 @@ func _remove(a: Dictionary, cause: String, predator: Dictionary = {}) -> void:
 			predator.energy+=gain
 			mass-=gain
 			state.totals.predation+=1
-			_event("feeding",predator,predator.name+" caught a young shrimp.")
+			_event("feeding",predator,predator.name+" caught a young shrimp.",{"target":a.id})
 		state.resources.detritus+=mass
-		_event("death",a,a.name+" died from "+cause+".")
+		_event("death",a,a.name+" died from "+cause+".",{"cause":cause,"target":predator.id} if not predator.is_empty() else {"cause":cause})
 	state.causes[cause]=state.causes.get(cause,0)+1
 	a.cause=cause
 	a.ended=state.elapsed
@@ -544,6 +561,10 @@ func residual() -> float:
 func snapshot() -> Dictionary:
 	return state.duplicate(true)
 
+# Events a stage has not seen yet: those with an id above `seq`. Legacy events have no id.
+static func events_after(events: Array, seq: int) -> Array:
+	return events.filter(func(e: Dictionary) -> bool: return e.get("seq",0)>seq)
+
 func export_state() -> Dictionary:
 	var saved: Dictionary = snapshot()
 	saved.rng=str(rng.state)
@@ -560,6 +581,9 @@ func restore(saved: Dictionary) -> bool:
 	motion_rng.state=int(state.motion_rng)
 	state.erase("rng")
 	state.erase("motion_rng")
+	# Saves from before event ids start numbering at 1 (validate forbids ids without it).
+	if not state.has("next_event"):
+		state.next_event=1
 	if state.version==1:
 		_upgrade_v1()
 	# The user explicitly removed crayfish from this pool. Preserve every other
@@ -594,6 +618,9 @@ static func validate(saved: Dictionary) -> bool:
 			return false
 	if saved.ecology_remainder>=60 or saved.motion_remainder>=0.201:
 		return false
+	if saved.has("next_event") and (not saved.next_event is int or saved.next_event<1):
+		return false
+	var next_event: int = saved.get("next_event",0)
 	for key: String in ["rng","motion_rng"]:
 		if not saved.get(key) is String or not saved[key].is_valid_int():
 			return false
@@ -620,7 +647,7 @@ static func validate(saved: Dictionary) -> bool:
 		for key: String in ["age","born","body","energy","x","y","tx","ty","direction","decision_at","last_breed","next_molt","molting_until","shelter","hunger","parent"]:
 			if not _number(a.get(key)):
 				return false
-		for key: String in ["vx","vy"]:
+		for key: String in ["vx","vy","relocated_at"]:
 			if a.has(key) and not _number(a[key]):
 				return false
 		if version>1 and a in saved.animals and (not _number(a.get("lifespan")) or a.lifespan<=0):
@@ -628,10 +655,10 @@ static func validate(saved: Dictionary) -> bool:
 		if a.age<0 or a.body<0 or a.energy<0 or not a.get("recent") is Array or a.recent.size()>6:
 			return false
 		for e: Variant in a.recent:
-			if not _valid_event(e):
+			if not _valid_event(e,next_event):
 				return false
 	for e: Variant in saved.events:
-		if not _valid_event(e):
+		if not _valid_event(e,next_event):
 			return false
 	if version>1:
 		if not saved.get("causes") is Dictionary:
@@ -644,5 +671,7 @@ static func validate(saved: Dictionary) -> bool:
 static func _number(value: Variant) -> bool:
 	return (value is int or value is float) and is_finite(float(value))
 
-static func _valid_event(e: Variant) -> bool:
-	return e is Dictionary and e.get("text") is String and e.get("kind") is String and e.get("id") is int and _number(e.get("time"))
+static func _valid_event(e: Variant, next_event: int) -> bool:
+	if not e is Dictionary or e.has("seq") and (not e.seq is int or e.seq<1 or e.seq>=next_event):
+		return false
+	return e.get("text") is String and e.get("kind") is String and e.get("id") is int and _number(e.get("time"))
