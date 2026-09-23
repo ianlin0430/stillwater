@@ -86,18 +86,10 @@ func _initialize() -> void:
 	w.advance_live(60)
 	var snap: Dictionary=w.snapshot()
 	var death: Dictionary=find(StreamWorld.events_after(snap.events,cursor),"death")
-	check(death.get("id")==old.id and death.get("cause")=="old age" and death.get("live")==true,"Death event names actor, cause and is live")
+	check(death.get("id")==old.id and death.get("cause")=="old age" and death.get("live")==true and not death.has("target"),"Death event names actor, cause and is live, with no target")
 	var record: Array=snap.archive.filter(func(a): return a.id==old.id)
 	check(record.size()==1 and death.get("x")==record[0].x and death.get("y")==record[0].y,"Death event is placed where the animal was")
 	check(snap.animals.all(func(a): return a.id!=old.id) and snap.archive.any(func(a): return a.id==old.id),"Same snapshot: gone from animals, kept in archive")
-	# A shrimplet taken by a fish: feeding (fish -> shrimplet) then death (shrimplet -> fish).
-	cursor=w.state.next_event-1
-	var young: Dictionary=w.spawn("shrimp",2)
-	var fish: Dictionary=w.state.animals.filter(func(a): return a.species=="threadfin")[0]
-	w._remove(young,"predation",fish)
-	var taken: Array=StreamWorld.events_after(w.snapshot().events,cursor)
-	check(taken.size()==2 and taken[0].kind=="feeding" and taken[0].id==fish.id and taken[0].target==young.id,"Feeding event: fish is actor, shrimplet is target")
-	check(taken.size()==2 and taken[1].kind=="death" and taken[1].id==young.id and taken[1].target==fish.id and taken[1].cause=="predation" and taken[1].seq==taken[0].seq+1,"Death event: shrimplet is actor, fish is target, next id")
 	# Birth, arrival and dispersal.
 	cursor=w.state.next_event-1
 	var mother: Dictionary=w.state.animals.filter(func(a): return a.species=="shrimp" and a.sex=="female")[0]
@@ -171,7 +163,6 @@ func _initialize() -> void:
 	w.residual()
 	for a: Dictionary in w.state.animals+w.state.archive:
 		w.animal_scale(a)
-		w.exposure(a,false)
 		a.recent.slice(-2)
 	check(state_bytes(w)==bytes and [w.rng.state,w.motion_rng.state]==rngs,"Snapshots and selection/scale/light reads do not change state or RNGs")
 	print(JSON.stringify({"checks":checks,"failures":failures.size()}))

@@ -14,6 +14,41 @@ func same(a: StreamWorld, b: StreamWorld) -> bool:
 func reset_material(w: StreamWorld) -> void:
 	w.state.ledger={"initial":w.material(),"in":0.0,"out":0.0}
 
+# A save from before 2026-09-23: three juvenile shrimp were taken by fish.
+func legacy_predation_save() -> Dictionary:
+	var w:=StreamWorld.new(21,1000)
+	w.advance_offline(3600)
+	var fish: Dictionary=w.state.animals.filter(func(x): return x.species=="threadfin")[0]
+	for i in 3:
+		var young: Dictionary=w.spawn("shrimp",4)
+		w._event("feeding",fish,fish.name+" caught a young shrimp.",{"target":young.id})
+		w._remove(young,"predation")
+		w.state.events[-1].target=fish.id
+	w.state.totals.predation=3
+	return w.export_state()
+
+# Hungry fish directly above exposed shrimplets on a bare bed, the old worst case.
+func no_predation() -> bool:
+	for offline: bool in [false,true]:
+		var w:=StreamWorld.new(42,1000)
+		w.state.resources.stem=0.0
+		for i in 2:
+			var young: Dictionary=w.spawn("shrimp",3)
+			young.x=900.0+i*40
+			young.y=StreamWorld.floor_y(young.x)
+		for f: Dictionary in w.state.animals:
+			if f.species!="shrimp":
+				f.energy=StreamWorld.SPECIES[f.species].reserve*0.4
+				f.x=910.0
+				f.y=StreamWorld.DEPTH[f.species][1]
+		if offline:
+			w.advance_offline(StreamWorld.DAY*3)
+		else:
+			w.advance_live(1800)
+		if w.state.totals.predation!=0 or w.state.causes.has("predation") or w.state.events.any(func(e): return e.kind=="feeding"):
+			return false
+	return not StreamWorld.new().has_method("exposure")
+
 func _initialize() -> void:
 	var start: int=Time.get_ticks_msec()
 	var a:=StreamWorld.new(42,1000)
@@ -116,14 +151,25 @@ func _initialize() -> void:
 	check(a.state.totals.death>0,"Starvation remains possible")
 	check(absf(a.residual())<0.00001,"Starvation recycles remaining material")
 	a=StreamWorld.new(33)
-	var predator: Dictionary=a.state.animals[6]
-	var prey: Dictionary=a.state.animals[0]
-	a._remove(prey,"predation",predator)
-	var energy: float=predator.energy
-	a._remove(prey,"predation",predator)
-	check(predator.energy==energy,"Predation never consumes an individual twice")
-	check(absf(a.residual())<0.00001,"Predation transfers food and waste")
-	check(a.state.archive[-1].cause=="predation","Cause of death remains inspectable")
+	var gone: Dictionary=a.state.animals[0]
+	a._remove(gone,"old age")
+	var deaths: int=a.state.totals.death
+	a._remove(gone,"old age")
+	check(a.state.totals.death==deaths,"An individual is never removed twice")
+	check(absf(a.residual())<0.00001,"Death returns material as detritus")
+	check(a.state.archive[-1].cause=="old age","Cause of death remains inspectable")
+	# Predation was removed on 2026-09-23; saves made before still load.
+	var legacy: Dictionary=legacy_predation_save()
+	check(StreamWorld.validate(legacy),"Save with past predation deaths and feeding events validates")
+	var old_world:=StreamWorld.new()
+	check(old_world.restore(legacy),"Save with past predation restores")
+	check(StreamStore.save(path,old_world)==OK and old_world.restore(StreamStore.read(path)),"Save with past predation round-trips through the store")
+	check(old_world.state.archive.filter(func(x): return x.get("cause")=="predation").size()==3 and old_world.state.events.filter(func(e): return e.kind=="feeding").size()==3,"Past predation records remain inspectable")
+	old_world.advance_offline(StreamWorld.DAY)
+	old_world.advance_live(60)
+	check(old_world.state.totals.predation==3 and old_world.state.causes.predation==3,"Past predation totals stay as saved")
+	check(StreamWorld.validate(old_world.export_state()),"Advanced legacy save still validates")
+	check(no_predation(),"No animal eats another, live or offline")
 	a=StreamWorld.new(3)
 	for i in 4:
 		a.spawn("shrimp",30)
@@ -285,24 +331,6 @@ func ecosystem_checks() -> void:
 		while w2.state.animals.size()>6:
 			w2.state.animals.pop_back()
 	check(sunk<=0.0001,"Relocated shrimp stay on the stream bed")
-	# R9: nursery, hiding, molting and stem cover protect shrimplets.
-	w=StreamWorld.new(4)
-	var young: Dictionary=w.spawn("shrimp",2)
-	w.state.resources.stem=0.0
-	young.x=640.0
-	check(w.exposure(young,false)==0.0,"Nursery protects shrimplets")
-	young.x=300.0
-	check(w.exposure(young,false)==1.0,"Open bed without stems is exposed")
-	w.state.resources.stem=StreamWorld.PLANTS.stem.max
-	check(absf(w.exposure(young,false)-0.4)<0.0001,"Dense stems give 60% cover")
-	young.activity="Sheltering"
-	check(w.exposure(young,false)==0.0,"Hiding shrimplets are safe")
-	young.activity="Grazing"
-	young.molting_until=w.state.elapsed/StreamWorld.DAY+1
-	check(w.exposure(young,false)==0.0,"Molting shrimplets are safe")
-	young.molting_until=-1.0
-	young.age=StreamWorld.SPECIES.shrimp.mature
-	check(w.exposure(young,true)==0.0,"Adults are never prey")
 	# R8: individual lifespans vary by at most 15%.
 	var spans_ok: bool=true
 	var ages_ok: bool=true

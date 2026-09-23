@@ -27,21 +27,8 @@ const DECAY: float = 0.08
 const STREAM_IN: Dictionary = {"nutrients":0.7,"microfauna":0.35}
 const STREAM_OUT: Dictionary = {"nutrients":0.05,"microfauna":0.015,"detritus":0.04,"floating":0.005}
 const SHRIMP_DETRITUS_K: float = 30.0
-const NURSERY_X: float = 640.0
-const NURSERY_HALF: float = 95.0
-const NURSERY_SHARE: float = 0.35
-const PREY_RATE: float = 0.3
-# Live encounters: fish take shrimplets from the water column below them. The
-# horizontal gap must be within PREY_RANGE and the shrimplet at most PREY_DIVE
-# below the fish, i.e. a threadfin in the lower half of its layer (y>=~310 over a
-# bed at ~600). A plain 220 px radius never reached the bed from the hatchetfish
-# band and only from the bottom edge of the threadfin band, so live predation ran
-# at about a tenth of the offline approximation.
-const PREY_RANGE: float = 220.0
-const PREY_DIVE: float = 290.0
 # Swimming depth bands, a little wider than the authored targets in _choose_activity.
 const DEPTH: Dictionary = {"threadfin":[200.0,420.0],"hatchet":[88.0,208.0]}
-const OFFLINE_ENCOUNTER: float = 0.5
 const RESCUE_RATE: float = 1.0/96.0
 const ARRIVAL_RATE: float = 1.0/504.0
 # An unexplained position jump larger than this in one motion tick is a relocation
@@ -422,54 +409,11 @@ func _ecology(offline: bool) -> void:
 		if a.age>=cfg.mature and a.sex=="female" and a.energy>cfg.reserve*0.74 and a.age-a.last_breed>=cfg.cooldown:
 			if males.has(a.species) and rng.randf()<cfg.breed/1440*factor:
 				_breed(a)
-	_predation(offline)
 	if state.ecology_ticks%60==0:
 		_migration()
 	if state.ecology_ticks%1440==0:
 		_sample()
 	_live=false
-
-# R9: chance a shrimplet is out in the open, from 0 (safe) to 1.
-func exposure(a: Dictionary, offline: bool) -> float:
-	if a.species!="shrimp" or a.age>=SPECIES.shrimp.mature:
-		return 0.0
-	if a.activity in ["Sheltering","Molting"] or a.molting_until>state.elapsed/DAY:
-		return 0.0
-	var open: float = 1.0-0.6*minf(1.0,state.resources.stem/PLANTS.stem.max)
-	if offline:
-		return open*(1.0-NURSERY_SHARE)
-	return 0.0 if absf(a.x-NURSERY_X)<=NURSERY_HALF else open
-
-func _predation(offline: bool) -> void:
-	var hunters: Array = []
-	for b: Dictionary in state.animals:
-		if b.species in ["threadfin","hatchet"] and b.hunger>0.3:
-			hunters.append(b)
-	if hunters.is_empty():
-		return
-	for a: Dictionary in state.animals.duplicate():
-		var chance: float = PREY_RATE/1440*exposure(a,offline)
-		if chance<=0:
-			continue
-		var hunter: Dictionary = {}
-		if offline:
-			chance*=OFFLINE_ENCOUNTER
-		else:
-			var best: float = PREY_RANGE
-			for b: Dictionary in hunters:
-				var drop: float = a.y-b.y
-				if drop<0 or drop>PREY_DIVE:
-					continue
-				var d: float = absf(a.x-b.x)
-				if d<best:
-					best=d
-					hunter=b
-			if hunter.is_empty():
-				continue
-		if rng.randf()<chance:
-			if hunter.is_empty():
-				hunter=hunters[rng.randi_range(0,hunters.size()-1)]
-			_remove(a,"predation",hunter)
 
 func _breed(parent: Dictionary) -> void:
 	if parent.species not in ACTIVE_SPECIES:
@@ -489,7 +433,7 @@ func _breed(parent: Dictionary) -> void:
 			_bed_align(child,clampf(parent.x+rng.randf_range(-30,30),120,1150))
 			_event("birth",child,"A young "+cfg.label.to_lower()+" was born to "+parent.name+".",{"target":parent.id})
 
-func _remove(a: Dictionary, cause: String, predator: Dictionary = {}) -> void:
+func _remove(a: Dictionary, cause: String) -> void:
 	if not state.animals.has(a):
 		return
 	var mass: float = a.body+a.energy
@@ -497,14 +441,8 @@ func _remove(a: Dictionary, cause: String, predator: Dictionary = {}) -> void:
 		state.ledger.out+=mass
 		_event("departure",a,a.name+" moved downstream.")
 	else:
-		if not predator.is_empty():
-			var gain: float = minf(mass*0.7,SPECIES[predator.species].reserve-predator.energy)
-			predator.energy+=gain
-			mass-=gain
-			state.totals.predation+=1
-			_event("feeding",predator,predator.name+" caught a young shrimp.",{"target":a.id})
 		state.resources.detritus+=mass
-		_event("death",a,a.name+" died from "+cause+".",{"cause":cause,"target":predator.id} if not predator.is_empty() else {"cause":cause})
+		_event("death",a,a.name+" died from "+cause+".",{"cause":cause})
 	state.causes[cause]=state.causes.get(cause,0)+1
 	a.cause=cause
 	a.ended=state.elapsed
@@ -632,6 +570,7 @@ static func validate(saved: Dictionary) -> bool:
 	for group: String in ["resources","ledger","totals"]:
 		if not saved.get(group) is Dictionary:
 			return false
+		# totals.predation stays for older saves; predation was removed on 2026-09-23 and it never grows.
 		var keys: Array = {"resources":["biofilm","detritus","microfauna"] if version==1 else POOLS,"ledger":["initial","in","out"],"totals":["birth","death","arrival","departure","dispersal","molt","predation"]}[group]
 		for key: String in keys:
 			if not _number(saved[group].get(key)) or saved[group][key]<0:

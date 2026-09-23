@@ -1,5 +1,5 @@
 extends SceneTree
-# Live-path movement and predation-condition checks for the 0.4.1 roaming rules.
+# Live-path movement checks for the 0.4.1 roaming rules.
 var failures: Array[String]=[]
 var worst_below_bed: float=0.0
 
@@ -73,80 +73,6 @@ func check_spans(species: String, s: Dictionary) -> void:
 	if ordered[-1]-ordered[0]<20:
 		failures.append("Individuals follow overly uniform routes: "+species)
 
-# R9 conditions in the live path: size, hunger, nursery, molting and proximity.
-func predation_conditions() -> Dictionary:
-	var world:=StreamWorld.new(42,1000)
-	world.state.resources.stem=0.0
-	world.state.animals.clear()
-	var hunter: Dictionary=world.spawn("threadfin",60)
-	hunter.x=740.0
-	hunter.y=StreamWorld.floor_y(740.0)-180.0
-	hunter.hunger=0.9
-	var roles: Dictionary={}
-	for role: String in ["nursery","molting","exposed","distant","adult"]:
-		var a: Dictionary=world.spawn("shrimp",5 if role!="adult" else 60)
-		a.x={"nursery":700.0,"molting":780.0,"exposed":760.0,"distant":1150.0,"adult":800.0}[role]
-		a.y=StreamWorld.floor_y(a.x)
-		if role=="molting":
-			a.molting_until=world.state.elapsed/StreamWorld.DAY+1.0
-		roles[a.id]=role
-	var taken: Dictionary={"nursery":0,"molting":0,"exposed":0,"distant":0,"adult":0}
-	var alive: Dictionary={}
-	for id: int in roles:
-		for a: Dictionary in world.state.animals:
-			if a.id==id: alive[id]=a
-	for i in 400000:
-		world._predation(false)
-		for id: int in roles:
-			if not world.state.animals.has(alive[id]):
-				taken[roles[id]]+=1
-				world.state.animals.append(alive[id])
-	var fed: Dictionary={"exposed":0}
-	hunter.hunger=0.1
-	for i in 200000:
-		world._predation(false)
-		for id: int in roles:
-			if not world.state.animals.has(alive[id]):
-				fed.exposed+=1
-				world.state.animals.append(alive[id])
-	for role: String in ["nursery","molting","distant","adult"]:
-		if taken[role]>0:
-			failures.append("Live predation ignored its documented condition: "+role)
-	if taken.exposed<1:
-		failures.append("Live predation never reached an exposed shrimplet")
-	if fed.exposed>0:
-		failures.append("A satiated fish still hunted")
-	return {"hungry_hunter":taken,"satiated_hunter":fed}
-
-# Live encounters happen in the column below a fish, from each fish's own band.
-func encounter_geometry() -> Dictionary:
-	var world:=StreamWorld.new(42,1000)
-	world.state.resources.stem=0.0
-	world.state.animals.clear()
-	var prey: Dictionary=world.spawn("shrimp",5)
-	prey.x=900.0
-	prey.y=StreamWorld.floor_y(900.0)
-	var taken: Dictionary={}
-	for role: String in ["threadfin_low","threadfin_top","hatchet_low"]:
-		world.state.animals=[prey]
-		var hunter: Dictionary=world.spawn(role.split("_")[0],60)
-		var band: Array=StreamWorld.DEPTH[hunter.species]
-		hunter.x=prey.x+60.0
-		# Lower half of the threadfin layer; the other roles sit at their band edges.
-		hunter.y={"threadfin_low":band[1]-60.0,"threadfin_top":band[0],"hatchet_low":band[1]}[role]
-		hunter.hunger=0.9
-		taken[role]=0
-		for i in 400000:
-			world._predation(false)
-			if not world.state.animals.has(prey):
-				taken[role]+=1
-				world.state.animals.append(prey)
-	if taken.threadfin_low<1:
-		failures.append("A hungry threadfin low in its band never reached a shrimplet below it")
-	if taken.threadfin_top>0 or taken.hatchet_low>0:
-		failures.append("A fish reached the bed from too high in the water")
-	return taken
-
 func _initialize() -> void:
 	var runs: Array=[]
 	for seed_value: int in [42,812,240921]:
@@ -171,7 +97,5 @@ func _initialize() -> void:
 	# Same tolerance as the long_run depth audit (tests/long_run.gd audit_depth).
 	if worst_below_bed>1.0:
 		failures.append("Shrimp sank through the stream bed")
-	var predation: Dictionary=predation_conditions()
-	predation.geometry=encounter_geometry()
-	print(JSON.stringify({"runs":runs,"predation":predation,"worst_below_bed":snappedf(worst_below_bed,0.01),"failures":failures}))
+	print(JSON.stringify({"runs":runs,"worst_below_bed":snappedf(worst_below_bed,0.01),"failures":failures}))
 	quit(0 if failures.is_empty() else 1)

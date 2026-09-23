@@ -6,22 +6,9 @@ const ACCEPTANCE = preload("res://tests/ecology_acceptance.gd")
 func plant_max(world: StreamWorld, plant: String) -> float:
 	return world.biofilm_max() if plant=="biofilm" else StreamWorld.PLANTS[plant].max
 
-# Live mode steps the same hours through advance_live, so movement, proximity and
-# the nursery rule take part instead of the offline probabilistic approximation.
+# Live mode steps the same hours through advance_live, so movement takes part
+# instead of the offline approximation.
 const BANDS: Dictionary = StreamWorld.DEPTH
-
-func audit_predation(world: StreamWorld, mode: String, seen: Dictionary, audit: Dictionary) -> void:
-	for a: Dictionary in world.state.archive:
-		if a.get("cause","")!="predation" or seen.has(a.id):
-			continue
-		seen[a.id]=true
-		audit.checked+=1
-		if a.age>=StreamWorld.SPECIES[a.species].mature:
-			audit.mature_prey+=1
-		if a.molting_until>a.ended/StreamWorld.DAY or a.activity in ["Molting","Sheltering"]:
-			audit.molt_violations+=1
-		if mode!="offline" and absf(a.x-StreamWorld.NURSERY_X)<=StreamWorld.NURSERY_HALF:
-			audit.nursery_violations+=1
 
 func audit_depth(world: StreamWorld, depth: Dictionary) -> void:
 	for a: Dictionary in world.state.animals:
@@ -37,8 +24,6 @@ func audit_depth(world: StreamWorld, depth: Dictionary) -> void:
 func simulate(seed_value: int, days: int, mode: String = "offline") -> Dictionary:
 	var start: int=Time.get_ticks_msec()
 	var world:=StreamWorld.new(seed_value)
-	var seen: Dictionary={}
-	var audit: Dictionary={"checked":0,"mature_prey":0,"molt_violations":0,"nursery_violations":0}
 	var depth: Dictionary={"checked":0,"violations":0}
 	var rows: Array=[]
 	var peak: int=world.state.animals.size()
@@ -65,7 +50,6 @@ func simulate(seed_value: int, days: int, mode: String = "offline") -> Dictionar
 					world.advance_live(3600.0)
 				audit_depth(world,depth)
 			peak=maxi(peak,world.state.animals.size())
-			audit_predation(world,mode,seen,audit)
 		max_residual=maxf(max_residual,absf(world.residual()))
 		if not StreamWorld.validate(world.export_state()):
 			invalid+=1
@@ -107,7 +91,7 @@ func simulate(seed_value: int, days: int, mode: String = "offline") -> Dictionar
 	var plants: Dictionary={}
 	for plant: String in PLANT_POOLS:
 		plants[plant]={"days_above_5pct":float(plant_ok[plant])/days,"lowest_share":plant_low[plant]}
-	return {"seed":seed_value,"mode":mode,"absent_days":absent_days,"predation_audit":audit,"depth":depth,"days":days,"births":totals.birth,"arrivals":totals.arrival,"old_age":causes.get("old age",0),"first_old_age_day":first_old_age,"starvation":causes.get("starvation",0),"predation":totals.predation,"departures":totals.departure,"dispersal":totals.dispersal,"band_12_18":float(in_band)/days,"max_population":peak,"presence":presence,"longest_absence":longest_gap,"plants":plants,"max_material_residual":max_residual,"invalid_days":invalid,"removed_species_returned":removed_species,"causes":causes,"totals":totals,"monthly":rows,"seconds":(Time.get_ticks_msec()-start)/1000.0}
+	return {"seed":seed_value,"mode":mode,"absent_days":absent_days,"depth":depth,"days":days,"births":totals.birth,"arrivals":totals.arrival,"old_age":causes.get("old age",0),"first_old_age_day":first_old_age,"starvation":causes.get("starvation",0),"predation":totals.predation,"departures":totals.departure,"dispersal":totals.dispersal,"band_12_18":float(in_band)/days,"max_population":peak,"presence":presence,"longest_absence":longest_gap,"plants":plants,"max_material_residual":max_residual,"invalid_days":invalid,"removed_species_returned":removed_species,"causes":causes,"totals":totals,"monthly":rows,"seconds":(Time.get_ticks_msec()-start)/1000.0}
 
 func judge(run: Dictionary) -> Dictionary:
 	var ok: Dictionary={}
@@ -115,14 +99,14 @@ func judge(run: Dictionary) -> Dictionary:
 	ok.local_replacement=ACCEPTANCE.local_replacement_passes(run)
 	ok.old_age=run.old_age>=5 and run.first_old_age_day>0 and run.first_old_age_day<=60
 	ok.starvation=run.starvation<run.old_age
-	ok.predation=run.predation>=3 and run.predation<=20
+	# Predation was removed on 2026-09-23: no animal eats another.
+	ok.predation=run.predation==0 and not run.causes.has("predation")
 	ok.population=run.band_12_18>=0.8 and run.max_population<=18
 	ok.presence=run.presence.values().all(func(v): return v>=0.95) and run.longest_absence.values().all(func(v): return v<=30)
 	ok.no_departures=run.departures==0
 	ok.conservation=run.max_material_residual<0.00001
 	ok.plants=run.plants.values().all(func(p): return p.days_above_5pct>=0.95)
 	ok.valid=run.invalid_days==0 and not run.removed_species_returned
-	ok.predation_conditions=run.predation_audit.mature_prey==0 and run.predation_audit.molt_violations==0 and run.predation_audit.nursery_violations==0
 	ok.depth_bands=run.depth.violations==0
 	return ok
 
@@ -157,7 +141,7 @@ func _initialize() -> void:
 			if not run.acceptance[key]:
 				report.failures.append("Seed %d failed %s" % [seed_value,key])
 		report.runs.append(run)
-		print("SEED %d mode %s absent %s audit %s depth %s" % [seed_value,run.mode,JSON.stringify(run.absent_days),JSON.stringify(run.predation_audit),JSON.stringify(run.depth)])
+		print("SEED %d mode %s absent %s depth %s" % [seed_value,run.mode,JSON.stringify(run.absent_days),JSON.stringify(run.depth)])
 		print("SEED %d births %d arrivals %d old_age %d first_old_age_day %d starvation %d predation %d band %.3f max %d presence %s plants %s residual %s dispersal %d departures %d (%.1fs)" % [seed_value,run.births,run.arrivals,run.old_age,run.first_old_age_day,run.starvation,run.predation,run.band_12_18,run.max_population,JSON.stringify(run.presence),JSON.stringify(run.plants),String.num_scientific(run.max_material_residual),run.dispersal,run.departures,run.seconds])
 	if not o.year:
 		write_report(report,o.out)
