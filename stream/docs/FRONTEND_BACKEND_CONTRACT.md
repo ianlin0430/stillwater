@@ -46,3 +46,13 @@ Claude：`stream_world.gd`、`stream_store.gd`、`scripts/absence.gd`及其他�
 驗證：test_frontend 35 checks / 0 failures；test_presentation 26 / 0；test_swimmers 103 / 0。這些是短 headless 檢查，尚未完成 §2 真實事件截图與視覺驗收。沒有跑長模擬或正式效能驗收。
 
 後續：§2 出生、移入、漂走、空殼與抱卵演出及真實 scenario 證據；§3 蝦比較圖；§3.5 花園鰻比較圖。花園鰻 backend 已在工作目錄出現，但新 rig 尚未經使用者核可，因此 stage 暫不繪製該物種，避免被通用魚 rig 畫成斧魚。其生態資料不變。Claude 請勿把目前前端標成花園鰻已完成，也尚不應跑最終 30 分鐘驗收或正式交付打包。
+
+## 2026-09-23 後續：§2 完成、§3-1 候選待確認
+
+新增 `scripts/stream_events.gd`：birth 1.5 秒淡入、arrival 2 秒從邊緣淡入、dispersal 4 秒幼體剪影、molt 原地淡色空殼至 until 後兩秒消失。fade/ghost 各上限 24。brood_until 控制腹下卵團；brood_lost 死亡時保留卵團一起淡出。暫停不前進，所有狀態僅存在前端。
+
+瞬移時 rig.reset_contact 重新放置步足，避免腳停在舊位置拉長。移入過場只是畫面位移，不寫回 snapshot。
+
+短測試：test_frontend 54/0、test_swimmers 103/0、test_presentation 26/0。真事件截圖與 fixture 限制見 `artifacts/event-review/README.md`；工具可重跑。比較圖見 `artifacts/shrimp-review/`，來源與操作見 `docs/shrimp-candidate-provenance.md`。
+
+尚未完成：蝦候選核可與正式整合、花園鰻 rig 與核可、短效能自查、正式包。仍請 Claude 等候最終前端交付後再做 30 分鐘驗收。沒有新增 backend 欄位需求。

@@ -18,6 +18,9 @@ var phase: float = 0
 var body_scale: float = 1
 var dim: float = 1
 var selected: bool = false
+var berried: bool = false
+var molting: bool = false
+var exuvia: bool = false
 var motion: float = 0
 var previous: Vector2
 var fish: Polygon2D
@@ -54,12 +57,21 @@ func _ready() -> void:
 	if species!="shrimp":
 		_setup_fish()
 	else:
-		for i in 10:
-			var foot: Vector2=position+Vector2((-12+(i%5)*8)*face_target,13+(i/5)*1.2)*body_scale
-			feet.append(foot)
-			foot_start.append(foot)
-			foot_end.append(foot)
-			foot_t.append(1.0)
+		reset_contact()
+
+func reset_contact() -> void:
+	previous=position
+	if species!="shrimp": return
+	feet.clear()
+	foot_start.clear()
+	foot_end.clear()
+	foot_t.clear()
+	for i in 10:
+		var foot: Vector2=position+Vector2((-12+(i%5)*8)*face_target,13+(i/5)*1.2)*body_scale
+		feet.append(foot)
+		foot_start.append(foot)
+		foot_end.append(foot)
+		foot_t.append(1.0)
 
 func _setup_fish() -> void:
 	fish=Polygon2D.new()
@@ -160,8 +172,28 @@ func _leg(a: Vector2,b: Vector2,width: float,tint: Color) -> void:
 	draw_set_transform(Vector2.ZERO)
 
 func _draw() -> void:
+	if exuvia:
+		var shell:=PackedVector2Array([Vector2(23,-5),Vector2(12,-12),Vector2(-4,-10),Vector2(-33,-4),Vector2(-40,0),Vector2(-31,5),Vector2(-5,8),Vector2(14,5)])
+		for i in shell.size(): shell[i].x*=facing
+		draw_colored_polygon(shell,Color(0.83,0.84,0.64,0.16))
+		shell.append(shell[0])
+		draw_polyline(shell,Color(0.91,0.90,0.72,0.9),1.3,false)
+		for i in 5:
+			var x: float=-6-i*5
+			draw_line(Vector2(x*facing,-7),Vector2((x-1)*facing,5),Color(0.91,0.90,0.72,0.7),1,false)
+		for i in 4:
+			draw_polyline(PackedVector2Array([Vector2((i*5-2)*facing,5),Vector2((i*6-7)*facing,10),Vector2((i*7-10)*facing,13)]),Color(0.91,0.90,0.72,0.7),1,false)
+		return
 	if species=="shrimp":
 		_draw_shrimp()
+		draw_set_transform(Vector2.ZERO)
+		if molting:
+			draw_line(Vector2(-28*tail_facing,-4),Vector2(12*facing,-6),Color(0.94,0.86,0.72,0.45),3,false)
+		if berried:
+			for i in 9:
+				var egg:=Vector2((-19+(i%5)*4)*facing,8+(i/5)*3)
+				draw_circle(egg,2.0,Color("a5a653"))
+				draw_rect(Rect2(egg-Vector2(1,1),Vector2.ONE),Color("d5ce83"))
 	if species=="threadfin" and sex=="male":
 		_draw_threadfin_rays()
 	if selected:

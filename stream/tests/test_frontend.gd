@@ -45,6 +45,7 @@ func run() -> void:
 	check(h.brush.distance_to(at)<0.001,"Disabled interaction does not produce input effects")
 	for i in 120: stage.animate(1.0/30)
 	check(h.impulses.is_empty(),"Interaction effects expire")
+	_life_effects()
 	_events()
 	_motion(false)
 	_motion(true)
@@ -168,6 +169,7 @@ func _events() -> void:
 	stage.habitat.impulses.clear()
 	stage.apply_snapshot(relocated)
 	stage.animate(0.1)
+	check(stage.rigs[a.id].feet[0].distance_to(stage.rigs[a.id].position)<30,"Relocation replants feet beside the new body position")
 	check(stage.habitat.wake_clock[a.id]>=stage.habitat.clock-0.1,"Relocation suppresses wake even for short jumps")
 	var changed: Dictionary=next.duplicate(true)
 	changed.seed=999
@@ -189,4 +191,54 @@ func _events() -> void:
 	stage.animate(2.1)
 	check(stage.deaths.is_empty(),"All capped death actors expire")
 	check(var_to_bytes(world.export_state())==untouched,"Event and relocation presentation leave world and both RNGs unchanged")
+	stage.queue_free()
+
+func _life_effects() -> void:
+	var world:=StreamWorld.new(42,1000)
+	var bytes:=var_to_bytes(world.export_state())
+	var stage:=StreamStage.new()
+	root.add_child(stage)
+	var snap:=world.snapshot()
+	stage.apply_snapshot(snap)
+	var actor: Dictionary=snap.animals[0]
+	var fx=stage.events_layer
+	for kind: String in ["birth","arrival"]:
+		fx.accept({"kind":kind,"id":actor.id},snap)
+		stage.animate(0)
+		check(stage.rigs[actor.id].modulate.a==0,"New "+kind+" begins transparent")
+		stage.animate(0.5)
+		check(stage.rigs[actor.id].modulate.a>0 and stage.rigs[actor.id].modulate.a<1,"Mid "+kind+" fades in")
+		var age: float=fx.fades[actor.id].age
+		var pos: Vector2=stage.rigs[actor.id].position
+		stage.animate(0)
+		check(fx.fades[actor.id].age==age and stage.rigs[actor.id].position==pos,"Pause freezes "+kind)
+		stage.animate(2)
+		check(not fx.fades.has(actor.id) and stage.rigs[actor.id].modulate.a==1,"Completed "+kind+" returns to normal")
+	fx.accept({"kind":"dispersal","id":actor.id},snap)
+	stage.animate(1)
+	check(fx.ghosts.size()==1 and fx.ghosts[0].rig.position.x>actor.x,"Dispersing youngster drifts downstream")
+	stage.animate(3)
+	check(fx.ghosts.is_empty(),"Dispersal expires at four seconds")
+	fx.accept({"kind":"molt","id":actor.id,"until":10.0},snap)
+	stage.animate(3)
+	check(fx.ghosts.size()==1 and fx.ghosts[0].expired==0,"Exuvia remains until simulation deadline")
+	snap.elapsed=10.0
+	stage.apply_snapshot(snap)
+	stage.animate(1)
+	check(fx.ghosts.size()==1 and fx.ghosts[0].rig.modulate.a<0.32,"Exuvia fades after deadline")
+	stage.animate(1)
+	check(fx.ghosts.is_empty(),"Expired exuvia removed")
+	actor.brood_until=20.0
+	actor.molting_until=20.0/86400
+	stage.apply_snapshot(snap)
+	check(stage.rigs[actor.id].berried and stage.rigs[actor.id].molting,"Snapshot activates eggs and pale molt state")
+	actor.erase("brood_until")
+	actor.molting_until=0.0
+	stage.apply_snapshot(snap)
+	check(not stage.rigs[actor.id].berried and not stage.rigs[actor.id].molting,"Hatching and molt completion remove identity overlays")
+	for i in 50: fx.accept({"kind":"dispersal","id":actor.id},snap)
+	check(fx.ghosts.size()==24,"Transient life effects have a hard cap")
+	fx.clear()
+	check(fx.ghosts.is_empty() and fx.fades.is_empty(),"World reset clears all transients")
+	check(var_to_bytes(world.export_state())==bytes,"Life effects do not modify simulation or RNG")
 	stage.queue_free()
