@@ -118,6 +118,35 @@ func predation_conditions() -> Dictionary:
 		failures.append("A satiated fish still hunted")
 	return {"hungry_hunter":taken,"satiated_hunter":fed}
 
+# Live encounters happen in the column below a fish, from each fish's own band.
+func encounter_geometry() -> Dictionary:
+	var world:=StreamWorld.new(42,1000)
+	world.state.resources.stem=0.0
+	world.state.animals.clear()
+	var prey: Dictionary=world.spawn("shrimp",5)
+	prey.x=900.0
+	prey.y=StreamWorld.floor_y(900.0)
+	var taken: Dictionary={}
+	for role: String in ["threadfin_low","threadfin_top","hatchet_low"]:
+		world.state.animals=[prey]
+		var hunter: Dictionary=world.spawn(role.split("_")[0],60)
+		var band: Array=StreamWorld.DEPTH[hunter.species]
+		hunter.x=prey.x+60.0
+		# Lower half of the threadfin layer; the other roles sit at their band edges.
+		hunter.y={"threadfin_low":band[1]-60.0,"threadfin_top":band[0],"hatchet_low":band[1]}[role]
+		hunter.hunger=0.9
+		taken[role]=0
+		for i in 400000:
+			world._predation(false)
+			if not world.state.animals.has(prey):
+				taken[role]+=1
+				world.state.animals.append(prey)
+	if taken.threadfin_low<1:
+		failures.append("A hungry threadfin low in its band never reached a shrimplet below it")
+	if taken.threadfin_top>0 or taken.hatchet_low>0:
+		failures.append("A fish reached the bed from too high in the water")
+	return taken
+
 func _initialize() -> void:
 	var runs: Array=[]
 	for seed_value: int in [42,812,240921]:
@@ -143,5 +172,6 @@ func _initialize() -> void:
 	if worst_below_bed>1.0:
 		failures.append("Shrimp sank through the stream bed")
 	var predation: Dictionary=predation_conditions()
+	predation.geometry=encounter_geometry()
 	print(JSON.stringify({"runs":runs,"predation":predation,"worst_below_bed":snappedf(worst_below_bed,0.01),"failures":failures}))
 	quit(0 if failures.is_empty() else 1)

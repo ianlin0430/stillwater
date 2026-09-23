@@ -31,7 +31,14 @@ const NURSERY_X: float = 640.0
 const NURSERY_HALF: float = 95.0
 const NURSERY_SHARE: float = 0.35
 const PREY_RATE: float = 0.3
+# Live encounters: fish take shrimplets from the water column below them. The
+# horizontal gap must be within PREY_RANGE and the shrimplet at most PREY_DIVE
+# below the fish, i.e. a threadfin in the lower half of its layer (y>=~310 over a
+# bed at ~600). A plain 220 px radius never reached the bed from the hatchetfish
+# band and only from the bottom edge of the threadfin band, so live predation ran
+# at about a tenth of the offline approximation.
 const PREY_RANGE: float = 220.0
+const PREY_DIVE: float = 290.0
 # Swimming depth bands, a little wider than the authored targets in _choose_activity.
 const DEPTH: Dictionary = {"threadfin":[200.0,420.0],"hatchet":[88.0,208.0]}
 const OFFLINE_ENCOUNTER: float = 0.5
@@ -433,7 +440,10 @@ func _predation(offline: bool) -> void:
 		else:
 			var best: float = PREY_RANGE
 			for b: Dictionary in hunters:
-				var d: float = Vector2(b.x,b.y).distance_to(Vector2(a.x,a.y))
+				var drop: float = a.y-b.y
+				if drop<0 or drop>PREY_DIVE:
+					continue
+				var d: float = absf(a.x-b.x)
 				if d<best:
 					best=d
 					hunter=b
