@@ -37,7 +37,7 @@ func no_predation() -> bool:
 			young.x=900.0+i*40
 			young.y=StreamWorld.floor_y(young.x)
 		for f: Dictionary in w.state.animals:
-			if f.species!="shrimp":
+			if f.species in StreamWorld.DEPTH:
 				f.energy=StreamWorld.SPECIES[f.species].reserve*0.4
 				f.x=910.0
 				f.y=StreamWorld.DEPTH[f.species][1]
@@ -53,8 +53,8 @@ func _initialize() -> void:
 	var start: int=Time.get_ticks_msec()
 	var a:=StreamWorld.new(42,1000)
 	var b:=StreamWorld.new(42,1000)
-	check(a.state.animals.size()==14,"14 initial fish and shrimp")
-	check(a.counts()=={"shrimp":6,"threadfin":4,"hatchet":4},"Fish and shrimp only")
+	check(a.state.animals.size()==16,"16 initial fish, shrimp and garden eels")
+	check(a.counts()=={"shrimp":6,"threadfin":4,"hatchet":4,"garden_eel":2},"Fish, shrimp and two garden eels")
 	check(a.spawn("crayfish").is_empty(),"Removed species cannot spawn")
 	check(StreamWorld.validate(a.export_state()),"Initial state validates")
 	a.advance_live(120)
@@ -227,6 +227,7 @@ func _initialize() -> void:
 	ecosystem_checks()
 	brood_checks()
 	tint_checks()
+	eel_checks()
 	var acceptance=preload("res://tests/ecology_acceptance.gd")
 	check(acceptance.reproduction_passes({"births":17,"dispersal":14,"arrivals":7}),"Dispersed offspring count toward reproduction")
 	check(not acceptance.reproduction_passes({"births":17,"dispersal":2,"arrivals":7}),"Nineteen offspring do not meet the twenty-offspring threshold")
@@ -344,8 +345,8 @@ func ecosystem_checks() -> void:
 			var base: float=StreamWorld.SPECIES[animal.species].lifespan
 			spans_ok=spans_ok and animal.lifespan>=base*0.85 and animal.lifespan<=base*1.15
 			if animal.age>1:
-				var lo: float=25.0 if animal.species=="shrimp" else 40.0
-				var hi: float=100.0 if animal.species=="shrimp" else 150.0
+				var lo: float=25.0 if animal.species=="shrimp" else 100.0 if animal.species=="garden_eel" else 40.0
+				var hi: float=100.0 if animal.species=="shrimp" else 220.0 if animal.species=="garden_eel" else 150.0
 				ages_ok=ages_ok and animal.age>=lo and animal.age<=hi and animal.age<animal.lifespan
 	check(spans_ok,"Lifespans within 0.85-1.15 of species lifespan")
 	check(ages_ok,"Opening ages staggered within R11 ranges")
@@ -375,7 +376,7 @@ func ecosystem_checks() -> void:
 			kept.append([animal.id,animal.name,animal.parent,animal.sex])
 	var now_ids: Array=[]
 	var lifespans_ok: bool=true
-	for animal: Dictionary in up.state.animals:
+	for animal: Dictionary in up.state.animals.filter(func(x): return x.species!="garden_eel"):
 		now_ids.append([animal.id,animal.name,animal.parent,animal.sex])
 		lifespans_ok=lifespans_ok and animal.has("lifespan") and animal.lifespan>animal.age
 	check(kept==now_ids,"Upgrade keeps ids, names and lineage")
@@ -563,3 +564,128 @@ func tint_checks() -> void:
 	check(not StreamWorld.validate(old),"Tint below 0 rejected")
 	old.animals[0].tint="red"
 	check(not StreamWorld.validate(old),"Non-numeric tint rejected")
+
+func eels(w: StreamWorld) -> Array:
+	return w.state.animals.filter(func(x): return x.species=="garden_eel")
+
+func at_burrow(e: Dictionary) -> bool:
+	return e.has("burrow_x") and e.x==e.burrow_x and e.y==e.burrow_y and absf(e.burrow_y-StreamWorld.floor_y(e.burrow_x))<0.0001 and e.get("vx",0.0)==0.0 and e.get("vy",0.0)==0.0
+
+func apart(list: Array) -> bool:
+	for i in list.size():
+		for j in range(i+1,list.size()):
+			if absf(list[i].burrow_x-list[j].burrow_x)<30:
+				return false
+	return true
+
+# 2026-09-23 user decision: spotted garden eels, fixed burrows on the sand bed.
+func eel_checks() -> void:
+	var cfg: Dictionary=StreamWorld.SPECIES.get("garden_eel",{})
+	check(cfg.get("label")=="Spotted garden eel" and cfg.get("latin")=="Heteroconger hassi" and cfg.get("lifespan")==365.0 and cfg.get("mature")==90.0 and cfg.get("pool")=="microfauna" and StreamWorld.CAP.get("garden_eel")==4,"Garden eel: one-year life, 90-day maturity, microfauna, habitat for four")
+	var w:=StreamWorld.new(42,1000)
+	var pair: Array=eels(w)
+	check(pair.size()==2 and pair.any(func(x): return x.sex=="female") and pair.any(func(x): return x.sex=="male") and pair.all(func(x): return x.age>=cfg.mature),"A new world opens with a mature pair of garden eels")
+	check(pair.all(at_burrow) and pair.all(func(x): return x.burrow_x>=560 and x.burrow_x<=760) and apart(pair),"Each eel sits in its own burrow in the middle of the sand bed")
+	# Day: out and swaying. A fish just above: retracted for a few seconds.
+	for f: Dictionary in w.state.animals.duplicate():
+		if f.species in ["threadfin","hatchet"] and f!=w.state.animals.filter(func(x): return x.species=="threadfin")[0]:
+			w.state.animals.erase(f)
+	reset_material(w)
+	var fish: Dictionary=w.state.animals.filter(func(x): return x.species=="threadfin")[0]
+	var eel: Dictionary=eels(w)[0]
+	w.state.light_hour=12.0
+	fish.x=100.0
+	fish.tx=100.0
+	w.advance_live(1)
+	check(pair.all(func(x): return x.activity=="Swaying" and x.extend==1.0),"By day eels stand out of the sand, swaying")
+	fish.x=eel.burrow_x
+	fish.y=StreamWorld.DEPTH.threadfin[1]
+	fish.tx=fish.x
+	fish.ty=fish.y
+	fish.activity="Resting"
+	fish.decision_at=w.state.elapsed+60
+	w.advance_live(0.4)
+	check(eel.activity=="Retracted" and eel.extend==0.0,"A fish passing just above the burrow makes the eel retract")
+	fish.x=100.0
+	fish.tx=100.0
+	w.advance_live(2)
+	check(eel.activity=="Retracted","It stays down for a few seconds")
+	w.advance_live(4)
+	check(eel.activity=="Swaying" and eel.extend==1.0,"Then it comes back out")
+	w.state.light_hour=23.0
+	w.advance_live(1)
+	check(pair.all(func(x): return x.activity=="Sleeping" and x.extend==0.0),"At night every eel sleeps inside its burrow")
+	w.state.light_hour=6.0
+	w.advance_live(3600*4)
+	check(pair.all(at_burrow),"Eels never leave their burrows")
+	check(absf(w.residual())<0.00001 and StreamWorld.validate(w.export_state()),"Eel world conserves material and validates")
+	# Young dig a new burrow beside the colony; a full colony sends them downstream.
+	w=StreamWorld.new(3,1000)
+	var mom: Dictionary=eels(w).filter(func(x): return x.sex=="female")[0]
+	mom.energy=cfg.reserve
+	reset_material(w)
+	var births: int=w.state.totals.birth
+	w._breed(mom)
+	mom.energy=cfg.reserve
+	w._breed(mom)
+	var colony: Array=eels(w)
+	check(w.state.totals.birth-births==2 and colony.size()==4 and colony.all(at_burrow) and apart(colony),"Newborn eels dig their own burrows without overlapping")
+	check(colony.all(func(x): return absf(x.burrow_x-mom.burrow_x)<=110),"New burrows stay near the colony")
+	var w2:=StreamWorld.new(3,1000)
+	var mom2: Dictionary=eels(w2).filter(func(x): return x.sex=="female")[0]
+	mom2.energy=cfg.reserve
+	w2._breed(mom2)
+	mom2.energy=cfg.reserve
+	w2._breed(mom2)
+	check(eels(w2).map(func(x): return x.burrow_x)==colony.map(func(x): return x.burrow_x),"Burrow placement is deterministic")
+	var dispersed: int=w.state.totals.dispersal
+	mom.energy=cfg.reserve
+	reset_material(w)
+	w._breed(mom)
+	check(w.state.totals.dispersal>dispersed and eels(w).size()==4 and absf(w.residual())<0.00001,"A full colony sends young downstream")
+	# Rescue brings eels back like other species.
+	w=StreamWorld.new(11,1000)
+	for e: Dictionary in eels(w):
+		w.state.animals.erase(e)
+	reset_material(w)
+	for i in 3:
+		w.advance_offline(StreamWorld.MAX_AWAY)
+	check(eels(w).size()>0 and eels(w).all(at_burrow) and apart(eels(w)),"Rescue arrival settles an eel into a free burrow")
+	# A world whose eels died out does not get a free pair on load.
+	w=StreamWorld.new(12,1000)
+	for e: Dictionary in eels(w):
+		w._remove(e,"old age")
+	var r:=StreamWorld.new()
+	check(r.restore(w.export_state()) and eels(r).is_empty(),"Loading never replaces eels that lived and died here")
+	# Saves from before the eels: a pair arrives on load (live=false), once.
+	var f:=FileAccess.open("res://tests/fixtures/v2-pre-eel.var",FileAccess.READ)
+	var old: Dictionary=f.get_var()
+	f.close()
+	check(old.version==2 and old.animals.all(func(x): return x.species!="garden_eel") and StreamWorld.validate(old),"Pre-eel v2 save validates")
+	var up:=StreamWorld.new()
+	var arrivals: int=old.totals.arrival
+	check(up.restore(old),"Pre-eel v2 save restores")
+	var came: Array=eels(up)
+	var fresh: Array=StreamWorld.events_after(up.state.events,old.next_event-1)
+	check(came.size()==2 and came.any(func(x): return x.sex=="female") and came.any(func(x): return x.sex=="male") and came.all(at_burrow) and apart(came),"Two garden eels arrive in their own burrows")
+	check(up.state.totals.arrival==arrivals+2 and fresh.size()==2 and fresh.all(func(e): return e.kind=="arrival" and e.live==false and e.x==by_id(up,e.id).burrow_x),"They arrive as two arrival events that do not play")
+	check(old.animals.map(func(x): return x.id)==up.state.animals.filter(func(x): return x.species!="garden_eel").map(func(x): return x.id),"Everyone else is untouched")
+	check(absf(up.residual())<0.00001 and StreamWorld.validate(up.export_state()),"Arrivals are accounted for and the save validates")
+	var again:=StreamWorld.new()
+	check(again.restore(up.export_state()) and eels(again).size()==2 and again.state.totals.arrival==arrivals+2,"A second load adds no more eels")
+	offline(again,StreamWorld.DAY*3)
+	again.advance_live(600)
+	check(StreamWorld.validate(again.export_state()) and absf(again.residual())<0.00001 and eels(again).all(at_burrow),"Upgraded save keeps running")
+	f=FileAccess.open("res://tests/fixtures/v1-world.var",FileAccess.READ)
+	var v1: Dictionary=f.get_var()
+	f.close()
+	var v1w:=StreamWorld.new()
+	check(v1w.restore(v1) and eels(v1w).size()==2 and absf(v1w.residual())<0.00001,"v1 save also gets two eels")
+	# Validation.
+	var bad: Dictionary=StreamWorld.new(5).export_state()
+	var e0: Dictionary=bad.animals.filter(func(x): return x.species=="garden_eel")[0]
+	e0.erase("burrow_x")
+	check(not StreamWorld.validate(bad),"Eel without a burrow rejected")
+	bad=StreamWorld.new(5).export_state()
+	bad.animals.filter(func(x): return x.species=="garden_eel")[0].extend=1.5
+	check(not StreamWorld.validate(bad),"Extend above 1 rejected")

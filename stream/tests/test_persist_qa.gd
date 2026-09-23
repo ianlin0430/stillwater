@@ -30,7 +30,7 @@ func _initialize() -> void:
 	check(PersistQA.digest({})=="","Empty state has empty digest")
 	var s: Dictionary=PersistQA.summary(w.export_state())
 	check(s==PersistQA.summary(disk),"Summary equal after save+read")
-	check(s.animals.size()==14 and s.animals[0].keys()==["id","name","parent","species"],"Summary lists alive animals with id/name/parent/species")
+	check(s.animals.size()==16 and s.animals[0].keys()==["id","name","parent","species"],"Summary lists alive animals with id/name/parent/species")
 	check(s.rng==str(w.rng.state) and s.motion_rng==str(w.motion_rng.state) and s.seed==7,"Summary carries both RNG states and seed")
 	check(s.events==w.state.events.size() and s.last_event==w.state.events.back(),"Summary carries event count and last event")
 	check(s.wall_checkpoint==w.state.wall_checkpoint and s.elapsed==w.state.elapsed and s.resources==w.state.resources,"Summary carries checkpoint, elapsed, resources")

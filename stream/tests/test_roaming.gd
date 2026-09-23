@@ -7,11 +7,16 @@ func track(seed_value: int, hour: float, ticks: int) -> Dictionary:
 	var world:=StreamWorld.new(seed_value,1000)
 	world.state.light_hour=hour
 	var tracks: Dictionary={}
-	for a: Dictionary in world.state.animals:
+	for a: Dictionary in world.state.animals.filter(func(x): return x.species!="garden_eel"):
 		tracks[a.id]={"species":a.species,"low":a.x,"high":a.x,"previous":Vector2(a.x,a.y),"max_step":0.0,"edge":0,"rim":0,"flip":0,"vy":0.0,"distance":0.0,"still":0,"below":0.0}
 	for tick in ticks:
 		world.advance_live(0.2)
 		for a: Dictionary in world.state.animals:
+			if a.species=="garden_eel":
+				# Eels never roam: they stay in their burrow (tests/test_world.gd eel_checks).
+				if a.x!=a.burrow_x or a.y!=a.burrow_y:
+					failures.append("Garden eel left its burrow")
+				continue
 			if a.species=="shrimp":
 				# Every shrimp, including young born mid-run, stays on the bed.
 				worst_below_bed=maxf(worst_below_bed,a.y-StreamWorld.floor_y(a.x))
