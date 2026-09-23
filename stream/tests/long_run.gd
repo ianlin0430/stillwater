@@ -9,11 +9,11 @@ func plant_max(world: StreamWorld, plant: String) -> float:
 # Live mode steps the same hours through advance_live, so movement takes part
 # instead of the offline approximation.
 const BANDS: Dictionary = StreamWorld.DEPTH
-# Population target band, changed with the cast (2026-09-23, shrimp removed): the top is
-# the combined habitat caps (6+6+4=16; was 22), the bottom one below the opening cast of
-# 12 (was 14). Same >= 80% share as before, so this follows the species change and is
-# not a looser gate.
-const POPULATION_BAND: Array[int] = [11,16]
+# Population target band, changed with the cast (2026-09-23, shrimp then hatchetfish removed):
+# the top is the combined habitat caps (8+4=12; was 16, 22 with shrimp), the bottom is the
+# opening cast of 8 (the user's band 8-12). Same >= 80% share as before, so this follows the
+# species change and is not a looser gate.
+const POPULATION_BAND: Array[int] = [8,12]
 
 func audit_depth(world: StreamWorld, depth: Dictionary) -> void:
 	for a: Dictionary in world.state.animals:
@@ -36,9 +36,11 @@ func simulate(seed_value: int, days: int, mode: String = "offline") -> Dictionar
 	var max_residual: float=0
 	var invalid: int=0
 	var in_band: int=0
-	var present: Dictionary={"threadfin":0,"hatchet":0,"garden_eel":0}
-	var gap: Dictionary={"threadfin":0,"hatchet":0,"garden_eel":0}
-	var longest_gap: Dictionary={"threadfin":0,"hatchet":0,"garden_eel":0}
+	var present: Dictionary={}
+	for species: String in StreamWorld.ACTIVE_SPECIES:
+		present[species]=0
+	var gap: Dictionary=present.duplicate()
+	var longest_gap: Dictionary=present.duplicate()
 	var plant_ok: Dictionary={"stem":0,"floating":0,"biofilm":0}
 	var plant_low: Dictionary={"stem":INF,"floating":INF,"biofilm":INF}
 	var first_old_age: int=-1
@@ -156,7 +158,7 @@ func _initialize() -> void:
 		return
 	var year: Dictionary=simulate(240921,365)
 	var last: Dictionary=year.monthly[-1]
-	year.acceptance={"species_persist":year.longest_absence.values().all(func(v): return v<=30) and last.threadfin>0 and last.hatchet>0 and last.garden_eel>0,"conservation":year.max_material_residual<0.00001,"valid":year.invalid_days==0}
+	year.acceptance={"species_persist":year.longest_absence.values().all(func(v): return v<=30) and StreamWorld.ACTIVE_SPECIES.all(func(k): return last[k]>0),"conservation":year.max_material_residual<0.00001,"valid":year.invalid_days==0}
 	for key: String in year.acceptance:
 		if not year.acceptance[key]:
 			report.failures.append("365-day run failed "+key)

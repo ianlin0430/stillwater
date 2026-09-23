@@ -73,7 +73,7 @@ func _initialize() -> void:
 	check(s.relocated_at==w.state.elapsed and s.y==StreamWorld.DEPTH.threadfin[1],"An instantaneous snap records relocated_at")
 	# Natural death: the event arrives in the same snapshot the animal disappears from.
 	var cursor: int=w.state.next_event-1
-	var old: Dictionary=w.state.animals.filter(func(a): return a.species=="hatchet")[0]
+	var old: Dictionary=w.state.animals.filter(func(a): return a.species=="threadfin")[2]
 	old.age=old.lifespan
 	w.advance_live(60)
 	var snap: Dictionary=w.snapshot()
@@ -97,13 +97,13 @@ func _initialize() -> void:
 	var gone: Dictionary=find(StreamWorld.events_after(w.state.events,cursor),"dispersal")
 	check(gone.get("id")==mother.id and gone.get("x")==mother.x,"Dispersal event is placed at the parent")
 	cursor=w.state.next_event-1
-	w._arrive("hatchet")
+	w._arrive("threadfin")
 	var came: Dictionary=find(StreamWorld.events_after(w.state.events,cursor),"arrival")
 	var newcomer: Array=w.state.animals.filter(func(a): return a.id==came.get("id"))
 	check(newcomer.size()==1 and came.x==newcomer[0].x and came.y==newcomer[0].y,"Arrival event is placed at the newcomer")
 	# Offline catch-up events are not live.
 	cursor=w.state.next_event-1
-	w.state.animals.filter(func(a): return a.species=="hatchet")[1].age=999.0
+	w.state.animals.filter(func(a): return a.species=="threadfin")[1].age=999.0
 	w.advance_offline(120)
 	var quiet: Array=StreamWorld.events_after(w.state.events,cursor)
 	check(not quiet.is_empty() and quiet.all(func(e): return e.live==false),"Offline events are marked not live")

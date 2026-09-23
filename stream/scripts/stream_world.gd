@@ -5,21 +5,21 @@ const VERSION: int = 2
 const MAX_ANIMALS: int = 24
 const MAX_AWAY: float = 259200.0
 const DAY: float = 86400.0
-const ACTIVE_SPECIES: Array[String] = ["threadfin","hatchet","garden_eel"]
+const ACTIVE_SPECIES: Array[String] = ["threadfin","garden_eel"]
 const SPECIES: Dictionary = {
-	# Legacy entries: shrimp (2026-09-23) and crayfish (2026-09-22) were removed from the
-	# cast; kept only so older saves validate, upgrade and still show their history.
+	# Legacy entries: hatchetfish and shrimp (2026-09-23) and crayfish (2026-09-22) were removed
+	# from the cast; kept only so older saves validate, upgrade and still show their history.
 	"shrimp": {"label":"Cherry shrimp","latin":"Neocaridina davidi","initial":0,"mature":21.0,"lifespan":120.0,"body":0.3,"reserve":3.0,"cost":0.22,"bite":0.5,"brood":2,"breed":0.12,"cooldown":7.0,"pool":"biofilm"},
 	"crayfish": {"label":"Blue crayfish","latin":"Procambarus alleni","initial":0,"mature":35.0,"lifespan":540.0,"body":3.0,"reserve":12.0,"cost":0.65,"bite":1.2,"brood":2,"breed":0.035,"cooldown":21.0,"pool":"detritus"},
-	"threadfin": {"label":"Threadfin rainbowfish","latin":"Iriatherina werneri","initial":5,"mature":28.0,"lifespan":180.0,"body":0.7,"reserve":4.0,"cost":0.3,"bite":0.7,"brood":2,"breed":0.06,"cooldown":10.0,"pool":"microfauna","k_food":10.0},
-	"hatchet": {"label":"Marbled hatchetfish","latin":"Carnegiella strigata","initial":5,"mature":28.0,"lifespan":180.0,"body":0.8,"reserve":4.0,"cost":0.32,"bite":0.75,"brood":2,"breed":0.04,"cooldown":14.0,"pool":"microfauna","k_food":10.0},
+	"threadfin": {"label":"Threadfin rainbowfish","latin":"Iriatherina werneri","initial":6,"mature":28.0,"lifespan":180.0,"body":0.7,"reserve":4.0,"cost":0.3,"bite":0.7,"brood":2,"breed":0.06,"cooldown":10.0,"pool":"microfauna","k_food":10.0},
+	"hatchet": {"label":"Marbled hatchetfish","latin":"Carnegiella strigata","initial":0,"mature":28.0,"lifespan":180.0,"body":0.8,"reserve":4.0,"cost":0.32,"bite":0.75,"brood":2,"breed":0.04,"cooldown":14.0,"pool":"microfauna","k_food":10.0},
 	# Added 2026-09-23 by user decision; a marine fish, kept in this freshwater stream on purpose.
 	"garden_eel": {"label":"Spotted garden eel","latin":"Heteroconger hassi","initial":2,"mature":90.0,"lifespan":365.0,"body":0.9,"reserve":5.0,"cost":0.22,"bite":0.55,"brood":2,"breed":0.04,"cooldown":20.0,"pool":"microfauna","k_food":10.0}}
 # Ecology v2 (docs/plans/2026-09-22-self-sustaining-ecosystem.md). Rates are per day, applied per one-minute tick.
-# Fish-only since 2026-09-23 (user decision): caps 6+6+4 = 16, opening cast 5+5+2 = 12
-# (SPECIES.initial). These two are the only places the cast sizes live; the arrival
-# limit (habitat_cap) and the long-run band follow from them.
-const CAP: Dictionary = {"threadfin":6,"hatchet":6,"garden_eel":4}
+# Provisional cast since 2026-09-23 (user decision, hatchetfish removed): caps 8+4 = 12,
+# opening cast 6+2 = 8 (SPECIES.initial). These two are the only places the cast sizes
+# live; the arrival limit (habitat_cap) and the long-run band follow from them.
+const CAP: Dictionary = {"threadfin":8,"garden_eel":4}
 const POOLS: Array[String] = ["nutrients","stem","floating","biofilm","microfauna","detritus"]
 # Opening pools (R11, set with the earlier shrimp cast); also the v1 upgrade fill (R12).
 const OPENING: Dictionary = {"nutrients":0.4,"stem":45.0,"floating":24.0,"biofilm":32.0,"microfauna":24.0,"detritus":8.0}
@@ -33,7 +33,7 @@ const DECAY: float = 0.08
 const STREAM_IN: Dictionary = {"nutrients":0.7,"microfauna":0.35}
 const STREAM_OUT: Dictionary = {"nutrients":0.05,"microfauna":0.015,"detritus":0.04,"floating":0.005}
 # Swimming depth bands, a little wider than the authored targets in _choose_activity.
-const DEPTH: Dictionary = {"threadfin":[200.0,420.0],"hatchet":[88.0,208.0]}
+const DEPTH: Dictionary = {"threadfin":[200.0,420.0]}
 const RESCUE_RATE: float = 1.0/96.0
 const ARRIVAL_RATE: float = 1.0/504.0
 # An unexplained position jump larger than this in one motion tick is a relocation
@@ -46,7 +46,7 @@ const RELOCATION: float = 3.0
 # above the burrow mouth (the bottom of the threadfin layer) sends it down for `seconds`.
 const BURROWS: Array[float] = [650.0,684.0,616.0,718.0,582.0,752.0,548.0,786.0]
 const EEL_WARY: Dictionary = {"dx":48.0,"dy":200.0,"seconds":4.0}
-const NAMES: Dictionary = {"threadfin":["Silk","Reed","Willow","Glimmer","Wisp"],"hatchet":["Marble","Mica","Dapple","Flint","Slate"],"garden_eel":["Dune","Sprig"]}
+const NAMES: Dictionary = {"threadfin":["Silk","Reed","Willow","Glimmer","Wisp","Fern"],"garden_eel":["Dune","Sprig"]}
 var rng := RandomNumberGenerator.new()
 var motion_rng := RandomNumberGenerator.new()
 var state: Dictionary
@@ -76,14 +76,9 @@ func _init(world_seed: int = 240921, wall_time: float = 0) -> void:
 			if i<NAMES[species].size():
 				animal.name = NAMES[species][i]
 			animal.sex = "female" if i%2==0 else "male"
-			if species=="garden_eel":
-				pass
-			elif species=="threadfin":
+			if species=="threadfin":
 				animal.x=200.0+i*880.0/maxf(1,n-1)
 				animal.y=275.0+(i%2)*55
-			else:
-				animal.x=300.0+i*820.0/maxf(1,n-1)
-				animal.y=125.0+(i%2)*30
 			animal.tx=animal.x
 			animal.ty=animal.y
 	state.ledger.initial = material()
@@ -102,8 +97,6 @@ func _place(species: String) -> Vector2:
 	var y: float = floor_y(x)
 	if species=="threadfin":
 		y = motion_rng.randf_range(220,400)
-	elif species=="hatchet":
-		y = motion_rng.randf_range(90,190)
 	return Vector2(x,y)
 
 func spawn(species: String, age: float = 0, parent: int = 0) -> Dictionary:
@@ -203,10 +196,10 @@ func _move(delta: float) -> void:
 			_choose_activity(a)
 		var target:=Vector2(a.tx,a.ty)
 		var offset: Vector2=target-p
-		var speed: float=17.0 if species=="threadfin" else 11.0
+		var speed: float=17.0
 		speed*=0.82+0.36*float((int(a.id)*37)%101)/100.0
 		var acceleration: float=15.0
-		if a.activity in ["Resting","Surface feeding","Displaying"]:
+		if a.activity in ["Resting","Displaying"]:
 			speed=1.2
 		var desired: Vector2=offset.normalized()*minf(speed,sqrt(2.0*acceleration*offset.length()))
 		# Gentle changing headings, fading out on approach; no per-frame randomness.
@@ -222,8 +215,7 @@ func _move(delta: float) -> void:
 		var velocity:=Vector2(a.get("vx",0.0),a.get("vy",0.0))
 		velocity=velocity.move_toward(desired,acceleration*delta)
 		var free: Vector2=p+velocity*delta
-		# Keep each fish in its own layer: the shoaling push used to carry
-		# hatchetfish down into the threadfin band.
+		# Keep each fish in its own layer (the shoaling push once carried hatchetfish down).
 		var band: Array = DEPTH[species]
 		var next: Vector2=free.clamp(Vector2(100,band[0]),Vector2(1180,band[1]))
 		if absf(velocity.x)>1.3:
@@ -275,15 +267,15 @@ func _choose_activity(a: Dictionary) -> void:
 	a.decision_at=state.elapsed+motion_rng.randf_range(18,45)
 	a.activity="Swimming"
 	a.tx=_roaming_x(a,290,0.42)
-	a.ty=motion_rng.randf_range(100,205) if a.species=="hatchet" else motion_rng.randf_range(205,415)
+	a.ty=motion_rng.randf_range(205,415)
 	if r<0.16:
-		a.activity="Surface feeding" if a.species=="hatchet" else "Displaying"
+		a.activity="Displaying"
 	elif night and r<0.6:
 		a.activity="Resting"
 	# Give trips enough time to reach a destination instead of repeatedly
 	# abandoning distant targets. Rest/feed choices keep their independent dwell time.
 	if a.activity=="Swimming":
-		var cruise: float=17.0 if a.species=="threadfin" else 11.0
+		var cruise: float=17.0
 		cruise*=0.82+0.36*float((int(a.id)*37)%101)/100.0
 		var distance: float=Vector2(a.tx-a.x,a.ty-a.y).length()
 		a.decision_at=state.elapsed+distance/cruise+motion_rng.randf_range(5,14)
@@ -464,7 +456,7 @@ func _sample() -> void:
 	if state.history.size()>400:
 		state.history.pop_front()
 
-# The combined habitat caps (16; 22 with the shrimp, 18 before the garden eels).
+# The combined habitat caps (12; 16 with the hatchetfish, 22 with the shrimp).
 static func habitat_cap() -> int:
 	var total: int = 0
 	for species: String in CAP:
@@ -518,8 +510,8 @@ func restore(saved: Dictionary) -> bool:
 		state.next_event=1
 	if state.version==1:
 		_upgrade_v1()
-	# The user explicitly removed crayfish (2026-09-22) and shrimp (2026-09-23) from
-	# this pool. Preserve every other identity, archive each departure and account
+	# The user explicitly removed crayfish (2026-09-22), shrimp and hatchetfish (2026-09-23)
+	# from this pool. Preserve every other identity, archive each departure and account
 	# for its exported material. An unhatched shrimp brood leaves with its mother:
 	# its cost was never taken, so no young and no extra material.
 	for a: Dictionary in state.animals.duplicate():

@@ -1,13 +1,15 @@
 extends SceneTree
 # Live-path movement checks for the 0.4.1 roaming rules (fish only since 2026-09-23).
 var failures: Array[String]=[]
+# Roaming destinations are clamped to x 130..1150 (StreamWorld._roaming_x).
+const SPAN: float=1020.0
 
 func track(seed_value: int, hour: float, ticks: int) -> Dictionary:
 	var world:=StreamWorld.new(seed_value,1000)
 	world.state.light_hour=hour
 	var tracks: Dictionary={}
 	for a: Dictionary in world.state.animals.filter(func(x): return x.species!="garden_eel"):
-		tracks[a.id]={"species":a.species,"low":a.x,"high":a.x,"previous":Vector2(a.x,a.y),"max_step":0.0,"edge":0,"rim":0,"flip":0,"vy":0.0,"distance":0.0,"still":0}
+		tracks[a.id]={"species":a.species,"low":a.x,"high":a.x,"previous":Vector2(a.x,a.y),"max_step":0.0,"edge":0,"rim":0,"flip":0,"vy":0.0,"distance":0.0,"still":0,"xs":[],"turns":[],"heading":0.0}
 	for tick in ticks:
 		world.advance_live(0.2)
 		for a: Dictionary in world.state.animals:
@@ -24,6 +26,12 @@ func track(seed_value: int, hour: float, ticks: int) -> Dictionary:
 			t.max_step=maxf(t.max_step,p.distance_to(t.previous))
 			t.distance+=p.distance_to(t.previous)
 			t.previous=p
+			t.xs.append(a.x)
+			var vx: float=a.get("vx",0.0)
+			if absf(vx)>3.0:
+				if t.heading!=0.0 and signf(vx)!=t.heading:
+					t.turns.append(a.x)
+				t.heading=signf(vx)
 			if a.x<90 or a.x>1190 or not is_finite(a.y):
 				failures.append("Invalid movement bounds")
 			if a.x<=108 or a.x>=1172:
@@ -41,6 +49,9 @@ func track(seed_value: int, hour: float, ticks: int) -> Dictionary:
 			if a.y<=band[0]+1.0 or a.y>=band[1]-1.0:
 				t.rim+=1
 	var summary: Dictionary={}
+	var by_species: Dictionary={}
+	for t: Dictionary in tracks.values():
+		by_species[t.species]=by_species.get(t.species,[])+[t]
 	for t: Dictionary in tracks.values():
 		var s: Dictionary=summary.get(t.species,{"spans":[],"edge":0.0,"rim":0.0,"flips_per_minute":0.0,"distance":0.0,"resting_share":0.0,"n":0})
 		s.spans.append(snappedf(t.high-t.low,0.1))
@@ -59,6 +70,24 @@ func track(seed_value: int, hour: float, ticks: int) -> Dictionary:
 		s.rim=snappedf(s.rim,0.001)
 		s.flips_per_minute=snappedf(s.flips_per_minute,0.01)
 		s.spans.sort()
+		# Route variety (see check_routes): mean horizontal separation of every pair of
+		# individuals over the run, and the spread of the places they turn around.
+		var group: Array=by_species[species]
+		var pairs: Array=[]
+		for i in group.size():
+			for j in range(i+1,group.size()):
+				var total: float=0.0
+				for k in ticks:
+					total+=absf(group[i].xs[k]-group[j].xs[k])
+				pairs.append(snappedf(total/ticks/SPAN,0.001))
+		pairs.sort()
+		var turns: Array=[]
+		for t: Dictionary in group:
+			turns.append_array(t.turns)
+		turns.sort()
+		s.pair_separation=pairs
+		s.turns=turns.size()
+		s.turn_iqr=snappedf((turns[turns.size()*3/4]-turns[turns.size()/4])/SPAN,0.001) if turns.size()>=4 else 0.0
 	return summary
 
 func check_spans(species: String, s: Dictionary) -> void:
@@ -66,10 +95,28 @@ func check_spans(species: String, s: Dictionary) -> void:
 	var median: float=ordered[ordered.size()/2]
 	if median<500:
 		failures.append("Ten-minute daytime roaming remains too localized: "+species)
-	if ordered[-1]-ordered[0]<20:
-		failures.append("Individuals follow overly uniform routes: "+species)
+
+# Replaces the old "spread of ten-minute spans >= 20 px" test, which was ceiling-bound: every fish
+# crosses nearly the whole 1020 px roaming width in ten minutes, so the spans sat at 0.90-1.00 of
+# SPAN and their spread said nothing about the routes (seed 812 failed at 18.3 px while the fish
+# were as independent as before). Neither measure below saturates:
+# - two fish sharing one route (lockstep, held ~90 px apart by the shoaling push) would sit near
+#   0.09 of SPAN apart on average; independent fish anywhere in the width average about 1/3;
+# - fish bouncing wall to wall would turn only at the two ends (turn IQR near 1.0 of SPAN with no
+#   turns in between, or near 0 if all turn at one place); varied routes turn all over the width.
+func check_routes(species: String, s: Dictionary) -> void:
+	if s.pair_separation[0]<0.15:
+		failures.append("Two individuals follow one route (mean separation %.3f of the width): %s" % [s.pair_separation[0],species])
+	if s.turn_iqr<0.3 or s.turn_iqr>0.9:
+		failures.append("Individuals turn around at the same places (turn IQR %.3f of the width): %s" % [s.turn_iqr,species])
 
 func _initialize() -> void:
+	# The route checks themselves must flag a lockstep, wall-to-wall route.
+	check_routes("synthetic",{"pair_separation":[0.09],"turn_iqr":1.0})
+	var seen: bool=failures.size()==2
+	failures.clear()
+	if not seen:
+		failures.append("Route checks miss a uniform synthetic route")
 	var runs: Array=[]
 	for seed_value: int in [42,812,240921]:
 		var day: Dictionary=track(seed_value,12.0,9000)
@@ -77,6 +124,7 @@ func _initialize() -> void:
 		for species: String in day:
 			var s: Dictionary=day[species]
 			check_spans(species,s)
+			check_routes(species,s)
 			if s.edge>0.05:
 				failures.append("Individuals hug the stream walls: "+species)
 			if s.rim>0.15:
@@ -89,7 +137,7 @@ func _initialize() -> void:
 			if night[species].resting_share<=s.resting_share:
 				failures.append("Night no longer settles "+species)
 		runs.append({"seed":seed_value,"day":day,"night":night})
-	if runs.any(func(r): return r.day.keys()!=["threadfin","hatchet"] and r.day.keys()!=["hatchet","threadfin"]):
-		failures.append("Roaming tracks species other than the two fish")
+	if runs.any(func(r): return r.day.keys()!=["threadfin"]):
+		failures.append("Roaming tracks species other than the threadfin")
 	print(JSON.stringify({"runs":runs,"failures":failures}))
 	quit(0 if failures.is_empty() else 1)
