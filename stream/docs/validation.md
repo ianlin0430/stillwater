@@ -375,3 +375,13 @@ Root cause, by evidence (no parameters changed):
 3. **The biofilm food channel is orphaned.** With shrimp, biofilm averaged 18–24; now it sits at its cap (~47–48) because nothing grazes it, while every animal competes for microfauna. A biofilm grazer (e.g. a snail) would reopen that channel and raise carrying capacity.
 
 Status: 失敗（未修）. Parameters and gates are deliberately left unchanged until the final cast is chosen (user decision 2026-09-24).
+
+## Stillwater Reef cast — sizing, gates and local checks (2026-09-24)
+
+Cast: lawnmower blenny (biofilm), firefish, green chromis and spotted garden eel (microfauna); threadfin dropped. Caps 3/3/6/4 = 16, opening 2/2/5/2 = 11, rescue only at one or none. Sizing probe (`tools/cast_probe.gd`, offline, unfed, seeds 42/812/240921) and the derived gates are in [ecology](ecology.md) ("Sizing", "Acceptance gates"); the gates were computed from the configured cast and committed (`4d0675a`) before any live run of this cast was judged.
+
+Offline 180 days on the committed code (identical to probe G): starvation 0/0/0, old age 9/9/10 (first on day 40/44/24), retained births 10/10/11, dispersed 17/13/11 (offspring 27/23/22), arrivals 3/3/2, population 11–16 every day. 365 days offline: starvation 0/0/0, births 19/15/18, arrivals 7/11/7. These are offline numbers, not the live acceptance.
+
+Local suites on `4d0675a` (headless): test_world 309/309, test_swimmers 103/103, test_roaming pass (chromis school: pair separation ≤ 0.111 of the width, turn IQR 0.48–0.75, no edge or band-rim hugging, night slower and more resting), test_lifecycle 63/63, test_persist_qa 27/27, test_presentation 29/29. test_frontend (Codex's, with Codex's uncommitted edits in the tree) fails 2 checks plus index errors: its fixtures pick a `threadfin` that no longer exists and the stage presents only threadfin/hatchet — the reef rigs are Codex's work. Old saves: v1, pre-eel v2 (shrimp + hatchetfish), hatchet-era and threadfin-era fixtures (real saves written by `f4db093` and `fdf54e4`) validate, their removed species depart once, the reef cast arrives once (`live:false`), material balances, and a second load changes nothing.
+
+Cloud (live, 180 days, seeds 42/812/240921, on `4d0675a`): unfed run 35957509294, fed daily run 35957512152 — results pending.

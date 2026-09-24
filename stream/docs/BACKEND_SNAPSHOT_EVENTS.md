@@ -1,11 +1,13 @@
 # Backend 快照與自然事件（backend 側契約）
 
-更新：2026-09-23。實作在 `scripts/stream_world.gd`，測試 `tests/test_presentation.gd`。
+更新：2026-09-24（Stillwater Reef 新陣容）。實作在 `scripts/stream_world.gd`，測試 `tests/test_presentation.gd`、`tests/test_world.gd`（`blenny_checks`、`firefish_checks`、`chromis_checks`、`reef_cast_checks`）。
 前端契約（Codex）見 `FRONTEND_BACKEND_CONTRACT.md`；本檔只描述 backend 提供什麼。
 注意：該契約寫的 `stream_absence.gd` 實際檔名是 `scripts/absence.gd`。
 
 所有欄位都是**可選、有預設**的新增（2026-09-23 加了 `tint`、`brood_until`、`berried`、`brood_lost`，以及花園鰻的 `burrow_x`、`burrow_y`、`extend`、state 的 `eel_colony`）；存檔容器 `stillwater-stream-1`、world schema version 2、生態率都沒變。
-沒有這些欄位的舊存檔（含 v1 升級）照樣驗證與載入。
+沒有這些欄位的舊存檔（含 v1 升級）照樣驗證與載入。2026-09-24 再加：火焰鰕虎的 `burrow_x`/`burrow_y`/`extend`/`hover_y`、state 的 `reef_cast`；同樣都是可選、schema 不變。
+
+> **2026-09-24 珊瑚礁陣容（使用者決定，最終）**：`ACTIVE_SPECIES` = `lawnmower_blenny`、`firefish`、`green_chromis`、`garden_eel`（這個順序）。**threadfin 移除**，和斧頭魚、蝦一樣成為舊檔專用：載入舊存檔時每隻活著的 threadfin 記一次 `departure`（`live:false`），接著（每個存檔只一次，`reef_cast` 旗標）新陣容的開場成員 2 blenny、2 firefish、5 chromis 以一般 `arrival`（`live:false`，不演出）出現。新世界開場就有 `reef_cast:true`。`counts()` 只有這四個鍵。各物種欄位、活動與互動見文末「珊瑚礁陣容」。**stage 目前只畫 `threadfin`/`hatchet`（`PRESENTED_SPECIES`），所以新陣容在畫面上看不到，但不會當掉**；四個物種都需要 Codex 畫 rig。
 
 > **2026-09-23 蝦移除（使用者決定：不要蝦子）**：`ACTIVE_SPECIES` 只剩 `threadfin`、`garden_eel`（斧頭魚也在同一天依使用者決定移除，舊檔的斧頭魚同樣在載入時記一次 `departure`）；backend 不再產生任何蝦、`tint`、`brood_until`、`molt`、`berried`、`brood_lost`，也不再設定 `Grazing`/`Settling`/`Exploring`/`Retreating`/`Molting`。下文標「**舊檔專用**」的欄位與事件只可能出現在舊存檔的 `archive`、`events`、個體 `recent` 裡；`validate()` 仍接受它們。載入含蝦的存檔時，每隻活著的蝦記一次 `departure`（`live:false`），紀錄進 `archive`（保留 id、name、parent、sex、`tint`，抱卵中的 `brood_until` 移除＝卵作廢、不產生幼體）。`counts()` 只回傳現役物種（沒有 `shrimp`、`hatchet` 鍵）；舊的 `history` 樣本可能還有 `shrimp` 鍵。
 
@@ -22,8 +24,10 @@
 | `animals[].relocated_at` | float，可缺 | 最近一次「瞬間重定位」的模擬時間。缺少＝從未。 |
 | `tint` | float 0–1，可缺 | **舊檔專用**（只在 `archive` 裡的蝦）。曾是蝦的純外觀顏色深淺。backend 不再產生，也不再在載入時補上。 |
 | `brood_until` | float，可缺 | **舊檔專用**。曾是抱卵中母蝦的孵化時間；載入時隨蝦離開而移除，現役個體不會有。 |
-| `animals[].burrow_x`, `animals[].burrow_y` | float | **只有花園鰻**（必有）。固定的沙洞口，`burrow_y = StreamWorld.floor_y(burrow_x)`。一輩子不變；`x==burrow_x`、`y==burrow_y`。 |
-| `animals[].extend` | float 0–1 | **只有花園鰻**。backend 給的目標伸出比例：`0`＝完全在沙裡，`1`＝完全站出。只會是 0 或 1，前端自己平滑地往它動。 |
+| `animals[].burrow_x`, `animals[].burrow_y` | float | **花園鰻與火焰鰕虎**（必有）。固定的沙洞口，`burrow_y = StreamWorld.floor_y(burrow_x)`。一輩子不變；`x==burrow_x`、`y==burrow_y`。 |
+| `animals[].extend` | float 0–1 | **花園鰻與火焰鰕虎**。backend 給的目標：`0`＝在洞裡，`1`＝出洞（鰻：站出沙面；火焰鰕虎：懸停在洞口上方 `hover_y`）。只會是 0 或 1，前端自己平滑地往它動。 |
+| `animals[].hover_y` | float px | **只有火焰鰕虎**（必有，24–40，每隻固定）。出洞時懸停在洞口上方的高度：畫在 `(burrow_x, burrow_y - extend_平滑後 × hover_y)`。 |
+| `reef_cast` | bool | state 頂層。`true`＝珊瑚礁陣容已經到過（新世界開場就是 true）。前端不用讀。 |
 | `eel_colony` | bool | state 頂層。`true`＝這個世界已經有過花園鰻（新世界開場就是 true）。前端不用讀。 |
 | `archive[]` | Array | 最近 96 個離開的個體（含 `cause`、`ended`、最後 x/y、species、age）。 |
 
@@ -59,11 +63,11 @@
 | `begin` | 0 | — | — | 新世界開場（live=false）。 |
 | `molt` | 脫殼的蝦 | — | 蝦 | **舊檔專用**，不再產生。 |
 | `berried` | 母蝦 | — | 母蝦 | **舊檔專用**，不再產生。 |
-| `birth` | 新生幼體 | 親代 | 幼體（親代 ±30 px；花園鰻＝新洞口） | 幼體已在同一份 snapshot 的 `animals`。 |
+| `birth` | 新生幼體 | 親代 | 幼體（親代 ±30 px，blenny 在沙床上；花園鰻與火焰鰕虎＝自己那一區的新洞口） | 幼體已在同一份 snapshot 的 `animals`。 |
 | `dispersal` | 親代 | — | 親代 | 棲地滿，幼體直接漂走；**沒有**幼體個體。 |
-| `arrival` | 移入者 | — | 移入者（x=130 或 1150；花園鰻＝牠的沙洞口） | 個體已在 `animals`。 |
+| `arrival` | 移入者 | — | 移入者（x=130 或 1150，blenny 在那裡的沙床上、chromis 在自己的水層；花園鰻與火焰鰕虎＝牠的沙洞口） | 個體已在 `animals`。載入舊存檔時的珊瑚礁開場成員也是 `arrival`，`live:false`。 |
 | `death` | 死亡個體 | — | 死亡個體 | 個體**同一份 snapshot**就不在 `animals`、已在 `archive`。 |
-| `departure` | 離開個體 | — | 個體 | 只在載入舊存檔移除螯蝦或蝦時（live=false），每隻一次、重開不重複。成年個體不會隨機離開。 |
+| `departure` | 離開個體 | — | 個體 | 只在載入舊存檔移除已下架物種（螯蝦、蝦、斧頭魚、threadfin）時（live=false），每隻一次、重開不重複。成年個體不會隨機離開。 |
 
 保證：個體被移除時，事件與移除發生在同一個 `_remove` 呼叫裡，所以不會有「先消失、事件晚到」。
 
@@ -97,12 +101,12 @@ events 只保留 160 筆；若 `events_after` 最舊一筆 `seq > cursor+1`，�
 - **行為**（每個 0.2 秒 motion tick 由 backend 決定，不用 `motion_rng`）：
   - 夜裡（`light_hour<7 或 >19`，和其他魚同一個定義）：`activity:"Sleeping"`，`extend:0`。
   - 白天：`"Swaying"`，`extend:1`（站出沙面、吃漂過的小生物）。
-  - 白天有魚（threadfin）在洞口左右 48 px 內、而且在洞口上方 200 px 內（大約是 threadfin 那一層的最底部）：`"Retracted"`，`extend:0`；魚離開後再過 4 秒回到 `"Swaying"`。實測白天約 3–5% 的時間是縮著的，每隻每 20 分鐘縮 2–7 次。常數在 `StreamWorld.EEL_WARY`。
+  - 白天有魚（2026-09-24 起是 green_chromis；原本是 threadfin）在洞口左右 48 px 內、而且在洞口上方 200 px 內（大約是 chromis 那一層的最底部）：`"Retracted"`，`extend:0`；魚離開後再過 4 秒回到 `"Swaying"`。實測白天約 3–5% 的時間是縮著的，每隻每 20 分鐘縮 2–7 次。常數在 `StreamWorld.EEL_WARY`。
   - 使用者撥水/水紋讓花園鰻縮回，只是前端的呈現，backend **沒有**任何輸入介面，也不該有。
 - **出生**：`birth` 事件的 x/y 就是幼魚的新洞口（在親代的洞附近）。棲地滿（4 隻）時是 `dispersal`，沒有幼魚個體。
 - **移入**：移入的花園鰻**直接出現在自己的洞口**，`arrival` 事件的 x/y＝洞口。backend 不模擬「從上游游進來」；前端要演「從上游邊緣游進來、鑽進洞」可以純呈現地做（例如從 x=130 或 1150 游到 `burrow_x`），不需要 backend 欄位。
 - **舊存檔**：沒有 `eel_colony` 的存檔（2026-09-23 以前的 v2，以及 v1 升級）載入時，會自動來一對（一公一母）成年花園鰻，產生兩筆 `arrival`，`live:false`（不演出，只進日誌/離開摘要），物質記在 `ledger.in`。只發生一次；之後就算花園鰻死光也不會因為載入而補回（要靠一般的移入救援）。
-- 吃的是 `microfauna`（和 threadfin 同一個池），會餓死、老死（壽命 365 天 ±15%，90 天成熟）。
+- 吃的是 `microfauna`（和 firefish、chromis 同一個池），會餓死、老死（壽命 365 天 ±15%，90 天成熟）。
 
 ## 餵食、敲玻璃、游標引魚（2026-09-23，使用者決定）
 
@@ -132,12 +136,50 @@ events 只保留 160 筆；若 `events_after` 最舊一筆 `seq > cursor+1`，�
 
 ## 活動名稱（`animals[].activity`）
 
-魚（threadfin）：`Resting`、`Swimming`、`Displaying`，以及互動造成的 `Feeding`（吃飼料）、`Startled`（被敲玻璃嚇到）、`Curious`（被游標吸引）。舊檔專用：`Surface feeding`（hatchet）。
+綠光鰓雀鯛（green_chromis）：`Schooling`、`Resting`，以及互動造成的 `Feeding`、`Startled`、`Curious`（只有領頭魚）。
+草食鳚（lawnmower_blenny）：`Grazing`、`Perching`、`Hopping`、`Sleeping`（夜裡），以及 `Feeding`（去啄沉底飼料）、`Startled`（沿沙床逃開）。
+火焰鰕虎（firefish）：`Hovering`、`Hiding`、`Sleeping`。
+舊檔專用（threadfin，只可能出現在 `archive`）：`Swimming`、`Displaying`；（hatchet）`Surface feeding`。
 舊檔專用（蝦，只可能出現在 `archive`）：`Grazing`、`Settling`、`Exploring`、`Retreating`、`Molting`。
-花園鰻專用：`Swaying`（白天站出沙面）、`Retracted`（有魚經過，暫時縮回）、`Sleeping`（夜裡在洞裡）。
+花園鰻專用：`Swaying`（白天站出沙面）、`Retracted`（有 chromis 從上方經過，暫時縮回）、`Sleeping`（夜裡在洞裡）。
 `Sheltering` 在 stage 有列出，但目前 backend 不會設定（`exposure()` 已隨捕食移除）。
 
 ## 呈現唯讀
 
 `snapshot()`、`events_after()`、`counts()`、`natural_light()`、`sub_light()`、`biofilm_max()`、`animal_scale()` 及讀取 `state.animals/archive/recent`（選取資訊面板）不消耗 RNG、不改 `export_state()` 位元組（`test_presentation.gd` 驗證）。選取、zoom、viewing light 都在前端，backend 沒有對應狀態。
 （`main.gd` 的 `_update_biological_clock()` 會把系統時間寫入 `state.light_hour`，那是生物時鐘，不是 viewing light。）
+
+## 珊瑚礁陣容（2026-09-24，使用者決定）
+
+四個物種都吃自然食物就能活；欄位都在 `animals[]` 裡。畫面座標同樣是世界座標 1280×720，沙床 `StreamWorld.floor_y(x)`。
+
+### 草食鳚 `lawnmower_blenny`（*Salarias fasciatus*，吃 `biofilm`）
+- **永遠在沙床上**：`y == floor_y(x)`，x 在 130–1150。`vx/vy` 就是每 tick 的位移（沿著床面起伏）。
+- `Grazing`（原地低頭啃，6–20 秒）、`Perching`（撐著胸鰭停著，4–12 秒）、`Hopping`（沿床面跳 20–90 px，45 px/s；backend 的 y 仍貼床面，**跳的弧線請前端自己畫**）、`Sleeping`（夜裡原地不動）。跳的方向會避開 120 px 內的另一隻 blenny。
+- 餵食：飼料**沉到床面後**（`settled:true`），260 px 內、吃得下的 blenny 會 `Feeding` 跳過去啄（`food_id` 指向那粒）。
+- 敲玻璃：範圍內的 blenny `Startled`，沿床面往反方向竄開（90 px/s）3 秒。游標引魚：**不理會**。
+- 出生：母親旁 ±30 px 的床面上；移入：x=130 或 1150 的床面上。
+
+### 火焰鰕虎 `firefish`（*Nemateleotris magnifica*，吃 `microfauna`）
+- **自己的沙洞區**：`StreamWorld.FIRE_BURROWS`（x = 420、452、388、484），在花園鰻區（548–786）左邊，和每個鰻洞至少差 60 px，不重疊。最多 3 隻。和鰻一樣：`x/y` = 洞口、`vx=vy=0`、不會有 `relocated_at`。
+- `hover_y`：每隻固定 24–40 px。`Hovering`＋`extend:1`＝白天懸停在洞口上方 `hover_y` 處（前端可加一點左右飄動）；`Hiding`＋`extend:0`＝鑽回洞裡；`Sleeping`＋`extend:0`＝夜裡在洞裡。
+- 什麼時候躲：chromis 從洞口左右 48 px、上方 200 px 內經過（和鰻同一條規則 `EEL_WARY`），或 blenny 在 48 px 內 `Hopping`/`Startled`/`Feeding` 經過 → `Hiding` 6 秒（`FIRE.seconds`）；敲玻璃打到 → `Hiding` 5 秒（`STARTLE.eel_seconds`，兩種洞居魚共用）。
+- 餵食：懸停中、吃得下時，叼走洞口左右 22 px、上方 80 px 內漂過的飼料（同鰻）。游標引魚：**不理會**。
+- 出生：自己那一區、離親代的洞最近的空洞；滿 3 隻時 `dispersal`。
+
+### 綠光鰓雀鯛 `green_chromis`（*Chromis viridis*，吃 `microfauna`）
+- 水層 `DEPTH.green_chromis` = 180–430（永遠在裡面）。**成群**：id 最小的 chromis 是領頭魚（前端要的話可以自己算 `min(id)`，backend 沒有另外的欄位），牠決定去哪、何時停；其他成員各自有固定的位置（依 id 的黃金角方向、半徑 34–80 px、垂直壓扁一半、跟著領頭魚的朝向 `direction` 左右鏡像），離位超過 120 px 會加速 1.8 倍趕回來。成員彼此保持 36 px。
+- 實測（seed 42/812/240921，白天 10 分鐘）：成員到群中心平均 37–40 px；群中心 10 分鐘橫越 907–936 px；領頭魚在游時 88–93% 的 tick 有 ≥4/5 成員同向。
+- `Schooling`（在游）、`Resting`（領頭魚停下、成員也就位後一起停；夜裡多半在停）。
+- 餵食：各自去追 260 px 內、還在下沉的飼料（`Feeding`，`food_id`），吃完回到隊伍。
+- 敲玻璃：範圍內的成員各自 `Startled` 往反方向衝 3 秒（散開），之後回隊伍（重新聚集）。
+- 游標引魚：只有領頭魚會 `Curious` 過去看（lure 剛出現時牠會在 1 秒內重新決定，之後每 5 秒再看一次，直到過了 45 秒），成員跟著領頭魚，所以整群會靠過來。
+- 死亡：領頭魚死了，下一個最小 id 接手，群繼續。
+
+### 花園鰻 `garden_eel`
+不變（見上方「花園鰻」）；只是「有魚經過」現在指 chromis（`DEPTH` 裡的物種），blenny 和火焰鰕虎不會讓鰻縮回。
+
+### Codex 要畫的東西（backend 已提供）
+1. 四個物種的 rig：blenny（貼床面、跳的弧線、啃/停/睡姿勢）、firefish（依 `extend`＋`hover_y` 在洞口上下、洞口本身）、chromis（成群游、停）、garden eel（已有設計待審）。
+2. stage 的 `PRESENTED_SPECIES` 要加入新物種；目前新陣容不會被畫出來，但也不會當掉。
+3. 火焰鰕虎的沙洞區（x 388–484）要在背景上看得出來，和鰻洞區分開。
