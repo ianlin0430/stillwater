@@ -364,3 +364,14 @@ Cast sizes live only in `StreamWorld.SPECIES[*].initial` and `StreamWorld.CAP`; 
 `StreamWorld.habitat_cap()` and the long-run band is `POPULATION_BAND` in `tests/long_run.gd` (the run
 fails if its top differs from `habitat_cap()`). `tests/test_world.gd` pins the cast in one check.
 
+
+## Threadfin + garden eel cast — unfed pool fails, root cause found (2026-09-24)
+
+Cloud runs on `6c2910d` (live, 180 days): **fed daily** (run 35896803318) passes every gate on seeds 42/812/240921; **unfed** (run 35896796999) fails — starvation 7/0/7, births 5/5/6, `reproduction`, `local_replacement` and `old_age` fail on all seeds, `population` (8–12 share 0.678) on seed 42. Feeding code is not the cause: with no food the world is byte-identical to the pre-feeding commit.
+
+Root cause, by evidence (no parameters changed):
+1. **Starvation — the provisional threadfin cap of 8 exceeds what microfauna can feed.** A threadfin breaks even at microfauna ≈ 11.5 (cost 0.3/day = 0.8 × bite 0.7 × m/(m+10)). Offline probe, 3 seeds × 180 days: cap 8/start 6 + eels → 14 starvation deaths, microfauna min 3.5; cap 8/start 6 without eels → 11, min 4.0; **cap 5/start 5 + eels → 0**, min 10.1. The eels are not the driver. Threadfin breed up to the cap while microfauna is high, then draw it below break-even.
+2. **Reproduction-type gates were carried by shrimp.** Offline on the shrimp-era commit `3ffccee`, shrimp produced 10–11 of the 15–17 retained births per seed; threadfin and hatchetfish together produced 5–6. The current unfed births (5–6) are the normal fish rate, so "≥20 offspring", local replacement and the old-age gates are cast-dependent and need redesign for a fish-only cast rather than a lower number.
+3. **The biofilm food channel is orphaned.** With shrimp, biofilm averaged 18–24; now it sits at its cap (~47–48) because nothing grazes it, while every animal competes for microfauna. A biofilm grazer (e.g. a snail) would reopen that channel and raise carrying capacity.
+
+Status: 失敗（未修）. Parameters and gates are deliberately left unchanged until the final cast is chosen (user decision 2026-09-24).
