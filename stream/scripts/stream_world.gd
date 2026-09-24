@@ -66,11 +66,14 @@ const ARRIVAL_RATE: float = 1.0/504.0
 # play, so since the shrimp (whose surface snap crossed it) left, only a fish found
 # outside its band, e.g. from an edited save, is snapped back and marked.
 const RELOCATION: float = 3.0
-# Firefish burrows on the open sand, filled nearest-first; a firefish never leaves its burrow.
+# Firefish burrows on the open sand of the approved background, filled nearest-first from the
+# first site; a firefish never leaves its burrow. Sites are at least 110 px apart (adult art is
+# 91 px long, so same-facing neighbours never overlap), more than `dx` from every tang rock spot,
+# and clear of a grazing tang's body (2026-09-25, Codex review; was 420/452/388/484, 32 px apart).
 # It hovers `hover_y` px (per individual, in `hover`) above it and hides for `seconds` when a
 # swimming fish within `dx` sideways and `dy` above the mouth (the bottom of the chromis layer)
 # or a moving blenny within `dx` passes. (The garden eels' colony and rule left with them, 2026-09-25.)
-const FIRE_BURROWS: Array[float] = [420.0,452.0,388.0,484.0]
+const FIRE_BURROWS: Array[float] = [650.0,540.0,760.0,410.0]
 const FIRE: Dictionary = {"seconds":6.0,"hover":[24.0,40.0],"dx":48.0,"dy":200.0}
 # Species that live in a burrow of their own patch (spawn digs one, validate() requires it).
 const HOMES: Dictionary = {"purple_firefish":FIRE_BURROWS}
@@ -96,7 +99,9 @@ const BLENNY: Dictionary = {"graze":[6.0,20.0],"perch":[4.0,12.0],"sleep":[60.0,
 # The spot is where the mouth touches the rock; the body centre holds `reach` px out on the open
 # `side` (+1 right of the rock, -1 left), facing the rock. Graze/rest dwell times (s), cruise speed
 # (px/s), trip length (px), members keep `spacing` px apart. `graze` share of day choices, `night_rest` at night.
-const TANG: Dictionary = {"spots":[[170.0,318.0,1.0],[310.0,400.0,1.0],[240.0,472.0,1.0],[962.0,532.0,-1.0],[1080.0,486.0,-1.0]],"reach":22.0,"cruise":[150.0,360.0],"graze":0.4,"graze_time":[8.0,20.0],"rest":[30.0,90.0],"night_rest":0.7,"speed":20.0,"trip":[80.0,360.0],"spacing":70.0}
+# `clear` [w, h]: a spot is skipped while another tang holds or heads to a point closer than this on
+# both axes, so two grazing adults (122 x 87 px art) never overlap (spots 2/3 and 4/5 are exclusive).
+const TANG: Dictionary = {"spots":[[170.0,318.0,1.0],[310.0,400.0,1.0],[240.0,472.0,1.0],[962.0,532.0,-1.0],[1080.0,486.0,-1.0]],"reach":22.0,"cruise":[150.0,360.0],"graze":0.4,"graze_time":[8.0,20.0],"rest":[30.0,90.0],"night_rest":0.7,"speed":20.0,"trip":[80.0,360.0],"spacing":70.0,"clear":[130.0,92.0]}
 const NAMES: Dictionary = {"green_chromis":["Jade","Mint","Lagoon","Kelp","Glass","Pearl"],"lawnmower_blenny":["Moss","Pebble"],"purple_firefish":["Ember","Flicker"],"yellow_tang":["Saffron","Lemon"]}
 var rng := RandomNumberGenerator.new()
 var motion_rng := RandomNumberGenerator.new()
@@ -411,8 +416,9 @@ func _move(delta: float) -> void:
 		if a.activity in ["Schooling","Cruising"] and not follower and offset.length()>35:
 			var bend: float=sin(state.elapsed*(0.28+float(int(a.id)%5)*0.025)+a.id*1.73)
 			desired+=offset.normalized().orthogonal()*bend*speed*0.22*minf(1,offset.length()/100)
+		# A tang grazing holds on to its rock; a passing tang gives way instead.
 		for other: Dictionary in state.animals:
-			if other.id==a.id or other.species!=species:
+			if other.id==a.id or other.species!=species or a.activity=="Grazing":
 				continue
 			var apart: Vector2=p-Vector2(other.x,other.y)
 			var spacing: float=TANG.spacing if tang else CHROMIS.spacing
@@ -478,7 +484,7 @@ func _choose_tang(a: Dictionary) -> void:
 	if not night and r>=0.08 and r<0.08+TANG.graze:
 		for s: Array in TANG.spots:
 			var hold: Vector2=_tang_hold(s)
-			if not state.animals.any(func(o): return o.species==a.species and o.id!=a.id and Vector2(o.tx,o.ty).distance_to(hold)<1.0):
+			if not state.animals.any(func(o): return o.species==a.species and o.id!=a.id and absf(o.tx-hold.x)<TANG.clear[0] and absf(o.ty-hold.y)<TANG.clear[1]):
 				free.append(hold)
 	if r<(TANG.night_rest if night else 0.08):
 		a.activity="Resting"

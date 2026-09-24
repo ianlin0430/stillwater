@@ -990,6 +990,25 @@ func blenny_checks() -> void:
 func firefish(w: StreamWorld) -> Array:
 	return w.state.animals.filter(func(x): return x.species=="purple_firefish")
 
+# Open sand of the approved background (assets/reef/background-v1.png scaled to 1280x720),
+# read off along floor_y: left of the small rocks in front of the left reef, and between those
+# rocks and the right outcrop (docs/BACKEND_SNAPSHOT_EVENTS.md "Placement").
+const SAND: Array=[[210.0,440.0],[505.0,940.0]]
+# Adult art boxes around the backend position (ReefRig.LOOK: width, height from the atlas
+# region, anchor `line`), so spacing follows the real artwork.
+func art_box(species: String, at: Vector2) -> Rect2:
+	var look: Dictionary=ReefRig.LOOK[species]
+	var size:=Vector2(look.width,look.width*look.region.size.y/look.region.size.x)
+	return Rect2(at-Vector2(size.x*0.5,size.y*look.line),size)
+
+func tang_grazing_box(s: Array) -> Rect2:
+	return art_box("yellow_tang",StreamWorld._tang_hold(s))
+
+# Every hover height a firefish can have, at its burrow.
+func firefish_boxes(x: float) -> Array:
+	var y: float=StreamWorld.floor_y(x)
+	return [art_box("purple_firefish",Vector2(x,y-StreamWorld.FIRE.hover[0])),art_box("purple_firefish",Vector2(x,y-StreamWorld.FIRE.hover[1]))]
+
 # 2026-09-24 user decision: firefish hover a little above their own sand burrows (a patch
 # of their own) and dart inside when startled, when a fish passes close, and at night.
 func firefish_checks() -> void:
@@ -1001,6 +1020,21 @@ func firefish_checks() -> void:
 	var pair: Array=firefish(w)
 	check(pair.size()==2 and pair.all(at_burrow) and apart(pair) and pair.any(func(x): return x.sex=="female") and pair.any(func(x): return x.sex=="male"),"A new world opens with a firefish pair, each in its own burrow")
 	check(StreamWorld.FIRE_BURROWS.size()>=StreamWorld.CAP.purple_firefish and pair.all(func(x): return x.burrow_x in StreamWorld.FIRE_BURROWS),"The firefish patch has a burrow for every firefish place")
+	# Codex review 2026-09-25: burrows 32 px apart made same-facing adults (91 px art) overlap.
+	var length: float=ReefRig.LOOK.purple_firefish.width
+	var sites: Array=StreamWorld.FIRE_BURROWS
+	var spaced: bool=true
+	for i in sites.size():
+		for j in range(i+1,sites.size()):
+			spaced=spaced and absf(sites[i]-sites[j])>=length+16.0 and not firefish_boxes(sites[i]).any(func(r): return firefish_boxes(sites[j]).any(func(q): return r.intersects(q)))
+	check(spaced,"Firefish burrows are at least an adult body length (%d px) plus a margin apart; hovering adults never overlap" % length)
+	check(sites.all(func(x): return SAND.any(func(r): return x>=r[0] and x<=r[1])),"Every firefish burrow is on the open sand of the approved background")
+	var clear: bool=true
+	for x: float in sites:
+		for sp: Array in StreamWorld.TANG.spots:
+			clear=clear and absf(x-sp[0])>StreamWorld.FIRE.dx and absf(x-StreamWorld._tang_hold(sp).x)>StreamWorld.FIRE.dx and not firefish_boxes(x).any(func(r): return r.intersects(tang_grazing_box(sp)))
+	check(clear,"No firefish burrow or hovering firefish overlaps a tang rock spot or a grazing tang")
+	check(pair.map(func(x): return x.burrow_x)==[sites[0],sites[1]] and absf(sites[0]-sites[1])==sites.slice(1).map(func(x): return absf(x-sites[0])).min(),"The opening pair takes the first site and its nearest neighbour")
 	check(pair.all(func(x): return x.hover_y>=StreamWorld.FIRE.hover[0] and x.hover_y<=StreamWorld.FIRE.hover[1]),"Each firefish has its own hover height above the burrow")
 	only(w,func(x): return x.species=="purple_firefish" or x==chromis(w)[0])
 	var fish: Dictionary=chromis(w)[0]
@@ -1203,10 +1237,15 @@ func tang_checks() -> void:
 	var band_ok: bool=true
 	var contact_ok: bool=true
 	var grazes: int=0
+	var both: int=0
+	var both_ok: bool=true
 	var low: float=INF
 	var high: float=-INF
 	for i in 9000:
 		w.advance_live(0.2)
+		if group.all(func(t): return t.activity=="Grazing"):
+			both+=1
+			both_ok=both_ok and not art_box("yellow_tang",Vector2(group[0].x,group[0].y)).intersects(art_box("yellow_tang",Vector2(group[1].x,group[1].y)))
 		for t: Dictionary in group:
 			seen[t.activity]=true
 			band_ok=band_ok and in_tang_band(t)
@@ -1225,8 +1264,27 @@ func tang_checks() -> void:
 	check(band_ok,"Tangs stay in their band")
 	check(seen.has("Cruising") and seen.has("Grazing") and seen.keys().all(func(k): return k in ["Cruising","Grazing","Resting"]),"By day tangs cruise and graze (%s)" % str(seen.keys()))
 	check(grazes>0 and contact_ok,"A grazing tang holds its mouth to a rock spot (contact_x/contact_y), only while grazing")
+	check(both_ok,"Two tangs never graze spots whose adult bodies (122 px art) overlap (%d ticks both grazing)" % both)
 	check(high-low>400,"A tang cruises across the pool (%.0f px)" % (high-low))
 	check(absf(w.residual())<0.00001 and StreamWorld.validate(w.export_state()),"Tang world conserves material and validates")
+	# The choice itself: with one tang holding a spot, the other never picks a spot whose body would overlap.
+	var pick:=StreamWorld.new(42,1000)
+	pick.state.light_hour=12.0
+	var pt: Array=tangs(pick)
+	var picked_ok: bool=true
+	var picked: int=0
+	for s: Array in StreamWorld.TANG.spots:
+		var hold: Vector2=StreamWorld._tang_hold(s)
+		pt[0].tx=hold.x
+		pt[0].ty=hold.y
+		for i in 400:
+			pt[1].x=640.0
+			pt[1].y=250.0
+			pick._choose_tang(pt[1])
+			if pt[1].activity=="Cruising" and StreamWorld.TANG.spots.any(func(o): return StreamWorld._tang_hold(o)==Vector2(pt[1].tx,pt[1].ty)):
+				picked+=1
+				picked_ok=picked_ok and not art_box("yellow_tang",hold).intersects(art_box("yellow_tang",Vector2(pt[1].tx,pt[1].ty)))
+	check(picked>50 and picked_ok,"A tang skips rock spots where its body would overlap the other tang's (%d picks)" % picked)
 	# Night: mostly resting.
 	var n:=StreamWorld.new(42,1000)
 	n.state.light_hour=1.0
