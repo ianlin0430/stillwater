@@ -5,7 +5,7 @@ const VERSION: int = 2
 const MAX_ANIMALS: int = 24
 const MAX_AWAY: float = 259200.0
 const DAY: float = 86400.0
-const ACTIVE_SPECIES: Array[String] = ["lawnmower_blenny","firefish","green_chromis","garden_eel"]
+const ACTIVE_SPECIES: Array[String] = ["lawnmower_blenny","purple_firefish","green_chromis","garden_eel"]
 const SPECIES: Dictionary = {
 	# Legacy entries: threadfin (2026-09-24), hatchetfish and shrimp (2026-09-23) and crayfish (2026-09-22) were removed
 	# from the cast; kept only so older saves validate, upgrade and still show their history.
@@ -17,16 +17,18 @@ const SPECIES: Dictionary = {
 	"garden_eel": {"label":"Spotted garden eel","latin":"Heteroconger hassi","initial":2,"mature":90.0,"lifespan":365.0,"body":0.9,"reserve":5.0,"cost":0.22,"bite":0.55,"brood":2,"breed":0.04,"cooldown":20.0,"pool":"microfauna","k_food":10.0},
 	# Stillwater Reef cast (user decision 2026-09-24). Authored rates; sizing in docs/ecology.md.
 	"lawnmower_blenny": {"label":"Lawnmower blenny","latin":"Salarias fasciatus","initial":2,"mature":45.0,"lifespan":240.0,"body":0.8,"reserve":4.5,"cost":0.24,"bite":0.6,"brood":2,"breed":0.07,"cooldown":12.0,"pool":"biofilm","k_food":10.0},
-	"firefish": {"label":"Firefish","latin":"Nemateleotris magnifica","initial":2,"mature":35.0,"lifespan":200.0,"body":0.5,"reserve":3.5,"cost":0.18,"bite":0.45,"brood":2,"breed":0.08,"cooldown":10.0,"pool":"microfauna","k_food":10.0},
+	# Purple firefish replaced the red firefish (N. magnifica, key "firefish") on 2026-09-24, before any
+	# user save held one, so the red key was dropped rather than kept as a legacy entry.
+	"purple_firefish": {"label":"Purple firefish","latin":"Nemateleotris decora","initial":2,"mature":35.0,"lifespan":200.0,"body":0.5,"reserve":3.5,"cost":0.18,"bite":0.45,"brood":2,"breed":0.08,"cooldown":10.0,"pool":"microfauna","k_food":10.0},
 	"green_chromis": {"label":"Green chromis","latin":"Chromis viridis","initial":5,"mature":30.0,"lifespan":180.0,"body":0.5,"reserve":3.5,"cost":0.2,"bite":0.5,"brood":2,"breed":0.1,"cooldown":8.0,"pool":"microfauna","k_food":10.0}}
 # Ecology v2 (docs/plans/2026-09-22-self-sustaining-ecosystem.md). Rates are per day, applied per one-minute tick.
 # Reef cast since 2026-09-24: caps 3+3+6+4 = 16, opening cast 2+2+5+2 = 11 (SPECIES.initial),
 # sized against the food pools by offline probe (tools/cast_probe.gd, docs/ecology.md). These
 # two are the only places the cast sizes live; the arrival limit (habitat_cap) and the
 # long-run band follow from them.
-const CAP: Dictionary = {"lawnmower_blenny":3,"firefish":3,"green_chromis":6,"garden_eel":4}
+const CAP: Dictionary = {"lawnmower_blenny":3,"purple_firefish":3,"green_chromis":6,"garden_eel":4}
 # Species that arrive once, not live, in a save from before the reef (see restore()).
-const REEF_CAST: Array[String] = ["lawnmower_blenny","firefish","green_chromis"]
+const REEF_CAST: Array[String] = ["lawnmower_blenny","purple_firefish","green_chromis"]
 const POOLS: Array[String] = ["nutrients","stem","floating","biofilm","microfauna","detritus"]
 # Opening pools (R11, set with the earlier shrimp cast); also the v1 upgrade fill (R12).
 const OPENING: Dictionary = {"nutrients":0.4,"stem":45.0,"floating":24.0,"biofilm":32.0,"microfauna":24.0,"detritus":8.0}
@@ -69,7 +71,7 @@ const EEL_WARY: Dictionary = {"dx":48.0,"dy":200.0,"seconds":4.0}
 # hides for `seconds` when a swimming fish or a moving blenny comes within EEL_WARY.
 const FIRE_BURROWS: Array[float] = [420.0,452.0,388.0,484.0]
 const FIRE: Dictionary = {"seconds":6.0,"hover":[24.0,40.0]}
-const HOMES: Dictionary = {"garden_eel":BURROWS,"firefish":FIRE_BURROWS}
+const HOMES: Dictionary = {"garden_eel":BURROWS,"purple_firefish":FIRE_BURROWS}
 # Feeding (user decision 2026-09-23: real food, never required). A pinch is `particles` of
 # `mass` dropped just below the surface (y `surface`); at most `daily` mass per simulated day.
 # Particles sink `sink` px/s; fish with room notice food within `notice` px and eat it within
@@ -87,7 +89,7 @@ const LURE: Dictionary = {"range":320.0,"chance":0.5,"interest":45.0,"look":[6.0
 # Lawnmower blenny on the bed: `y` is always floor_y(x). Grazing/perching dwell ranges (s), hop
 # length (px) and speeds (px/s); a hop turns away from another blenny within `space` px.
 const BLENNY: Dictionary = {"graze":[6.0,20.0],"perch":[4.0,12.0],"sleep":[60.0,120.0],"hop":[20.0,90.0],"hop_speed":45.0,"dart_speed":90.0,"space":120.0}
-const NAMES: Dictionary = {"green_chromis":["Jade","Mint","Lagoon","Kelp","Glass"],"garden_eel":["Dune","Sprig"],"lawnmower_blenny":["Moss","Pebble"],"firefish":["Ember","Flicker"]}
+const NAMES: Dictionary = {"green_chromis":["Jade","Mint","Lagoon","Kelp","Glass"],"garden_eel":["Dune","Sprig"],"lawnmower_blenny":["Moss","Pebble"],"purple_firefish":["Ember","Flicker"]}
 var rng := RandomNumberGenerator.new()
 var motion_rng := RandomNumberGenerator.new()
 var state: Dictionary
@@ -155,7 +157,7 @@ func spawn(species: String, age: float = 0, parent: int = 0) -> Dictionary:
 	if species in HOMES:
 		a.burrow_x=p.x
 		a.burrow_y=p.y
-		if species=="firefish":
+		if species=="purple_firefish":
 			a.hover_y=FIRE.hover[0]+float((int(a.id)*7)%int(FIRE.hover[1]-FIRE.hover[0]+1))
 		_burrower(a)
 	state.next_id += 1
@@ -925,7 +927,7 @@ static func validate(saved: Dictionary) -> bool:
 			return false
 		if a.species in HOMES and (not _number(a.get("burrow_x")) or not _number(a.get("burrow_y"))):
 			return false
-		if a.species=="firefish" and (not _number(a.get("hover_y")) or a.hover_y<0):
+		if a.species=="purple_firefish" and (not _number(a.get("hover_y")) or a.hover_y<0):
 			return false
 		if version>1 and a in saved.animals and (not _number(a.get("lifespan")) or a.lifespan<=0):
 			return false
