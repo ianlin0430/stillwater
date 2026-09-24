@@ -46,6 +46,12 @@ const DEPTH: Dictionary = {"green_chromis":[180.0,430.0]}
 # leader's heading) and hurries (`catch_up` x speed) when more than `regroup` px from it.
 # Members keep `spacing` px apart.
 const CHROMIS: Dictionary = {"spread":[34.0,80.0],"regroup":120.0,"catch_up":1.8,"spacing":36.0}
+# A species is rescued from upstream only when it can no longer breed here: one or none left
+# (2026-09-24; was two, when each species had six places and two was a third of them).
+const RESCUE_AT: int = 1
+# Opening ages in days (R11): one opener per stratum of [lo, hi]. The long-run gates derive
+# the old-age deaths the opening cast must produce from these (tests/ecology_acceptance.gd).
+const OPENING_AGE: Dictionary = {"fish":[40.0,150.0],"garden_eel":[100.0,220.0]}
 const RESCUE_RATE: float = 1.0/96.0
 const ARRIVAL_RATE: float = 1.0/504.0
 # An unexplained position jump larger than this in one motion tick is a relocation
@@ -96,8 +102,8 @@ func _init(world_seed: int = 240921, wall_time: float = 0) -> void:
 	state = {"version":VERSION,"seed":world_seed,"elapsed":0.0,"ecology_remainder":0.0,"motion_remainder":0.0,"motion_ticks":0,"ecology_ticks":0,"next_id":1,"next_event":1,"wall_checkpoint":wall_time,"animals":[],"archive":[],"events":[],"history":[],"resources":OPENING.duplicate(),"ledger":{"initial":0.0,"in":0.0,"out":0.0},"totals":{"birth":0,"death":0,"arrival":0,"departure":0,"dispersal":0,"molt":0,"predation":0},"causes":{},"light_hour":12.0,"eel_colony":true,"reef_cast":true}
 	for species: String in ACTIVE_SPECIES:
 		var n: int = int(SPECIES[species].initial)
-		var lo: float = 100.0 if species=="garden_eel" else 40.0
-		var hi: float = 220.0 if species=="garden_eel" else 150.0
+		var lo: float = OPENING_AGE.get(species,OPENING_AGE.fish)[0]
+		var hi: float = OPENING_AGE.get(species,OPENING_AGE.fish)[1]
 		# Staggered opening ages (R11): one per age stratum, in seeded random order.
 		var ages: Array[float] = []
 		for i in n:
@@ -741,7 +747,7 @@ func _remove(a: Dictionary, cause: String) -> void:
 func _migration() -> void:
 	var c: Dictionary = counts()
 	for species: String in ACTIVE_SPECIES:
-		if c[species]<=2 and rng.randf()<RESCUE_RATE:
+		if c[species]<=RESCUE_AT and rng.randf()<RESCUE_RATE:
 			_arrive(species)
 			c[species]+=1
 	if rng.randf()<ARRIVAL_RATE:

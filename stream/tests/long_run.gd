@@ -9,11 +9,9 @@ func plant_max(world: StreamWorld, plant: String) -> float:
 # Live mode steps the same hours through advance_live, so movement takes part
 # instead of the offline approximation.
 const BANDS: Dictionary = StreamWorld.DEPTH
-# Population target band, changed with the cast (2026-09-23, shrimp then hatchetfish removed):
-# the top is the combined habitat caps (8+4=12; was 16, 22 with shrimp), the bottom is the
-# opening cast of 8 (the user's band 8-12). Same >= 80% share as before, so this follows the
-# species change and is not a looser gate.
-const POPULATION_BAND: Array[int] = [8,12]
+# Population target band, derived from the cast (2026-09-24, reef): the bottom is the opening
+# cast (11), the top the combined habitat caps (16). Same >= 80% share as before.
+var POPULATION_BAND: Array=ACCEPTANCE.population_band()
 
 func audit_depth(world: StreamWorld, depth: Dictionary) -> void:
 	for a: Dictionary in world.state.animals:
@@ -122,7 +120,7 @@ func judge(run: Dictionary) -> Dictionary:
 	var ok: Dictionary={}
 	ok.reproduction=ACCEPTANCE.reproduction_passes(run)
 	ok.local_replacement=ACCEPTANCE.local_replacement_passes(run)
-	ok.old_age=run.old_age>=5 and run.first_old_age_day>0 and run.first_old_age_day<=60
+	ok.old_age=ACCEPTANCE.old_age_passes(run)
 	ok.starvation=run.starvation<run.old_age
 	# Predation was removed on 2026-09-23: no animal eats another.
 	ok.predation=run.predation==0 and not run.causes.has("predation")

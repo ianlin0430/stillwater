@@ -62,7 +62,7 @@ func _initialize() -> void:
 	var a:=StreamWorld.new(42,1000)
 	var b:=StreamWorld.new(42,1000)
 	# The one place these tests pin the cast (user decision 2026-09-23); others read the constants.
-	check(StreamWorld.ACTIVE_SPECIES==["lawnmower_blenny","firefish","green_chromis","garden_eel"] and StreamWorld.CAP=={"lawnmower_blenny":3,"firefish":3,"green_chromis":6,"garden_eel":4} and StreamWorld.habitat_cap()==16 and StreamWorld.ACTIVE_SPECIES.map(func(k): return StreamWorld.SPECIES[k].initial)==[2,2,5,2],"Reef cast: blenny/firefish/chromis/garden eel, caps 3/3/6/4 (16), opening 2/2/5/2")
+	check(StreamWorld.ACTIVE_SPECIES==["lawnmower_blenny","firefish","green_chromis","garden_eel"] and StreamWorld.CAP=={"lawnmower_blenny":3,"firefish":3,"green_chromis":6,"garden_eel":4} and StreamWorld.habitat_cap()==16 and StreamWorld.ACTIVE_SPECIES.map(func(k): return StreamWorld.SPECIES[k].initial)==[2,2,5,2] and StreamWorld.RESCUE_AT==1,"Reef cast: blenny/firefish/chromis/garden eel, caps 3/3/6/4 (16), opening 2/2/5/2, rescue at one")
 	var opening: Dictionary={}
 	for k: String in StreamWorld.ACTIVE_SPECIES:
 		opening[k]=StreamWorld.SPECIES[k].initial
@@ -251,9 +251,13 @@ func _initialize() -> void:
 	chromis_checks()
 	reef_cast_checks()
 	var acceptance=preload("res://tests/ecology_acceptance.gd")
-	check(acceptance.reproduction_passes({"births":17,"dispersal":14,"arrivals":7}),"Dispersed offspring count toward reproduction")
-	check(not acceptance.reproduction_passes({"births":17,"dispersal":2,"arrivals":7}),"Nineteen offspring do not meet the twenty-offspring threshold")
-	check(acceptance.reproduction_passes({"births":17,"dispersal":3,"arrivals":7}),"Twenty offspring meet the threshold exactly")
+	# Gates derived from the configured cast (docs/ecology.md "Acceptance gates"), 180 days:
+	# 6 openers must reach old age (5 chromis, the older firefish), the earliest by day 79,
+	# and 6 + 5 open places = 11 offspring; band 11..16.
+	check(acceptance.certain_old_age(180)==6 and acceptance.first_old_age_bound()==79 and acceptance.offspring_needed(180)==11 and acceptance.population_band()==[11,16],"Derived gates: 6 old-age deaths by day 79, 11 offspring, band 11-16")
+	check(acceptance.reproduction_passes({"births":6,"dispersal":5,"arrivals":2,"days":180}),"Dispersed offspring count toward reproduction")
+	check(not acceptance.reproduction_passes({"births":6,"dispersal":4,"arrivals":2,"days":180}),"Ten offspring do not meet the eleven-offspring threshold")
+	check(acceptance.old_age_passes({"old_age":6,"first_old_age_day":79,"days":180}) and not acceptance.old_age_passes({"old_age":5,"first_old_age_day":40,"days":180}) and not acceptance.old_age_passes({"old_age":9,"first_old_age_day":80,"days":180}),"Old-age gate: at least 6, the first by day 79")
 	check(not acceptance.local_replacement_passes({"births":2,"dispersal":30,"arrivals":7}),"Dispersal cannot disguise immigration-dominated replacement")
 	check(acceptance.local_replacement_passes({"births":17,"dispersal":14,"arrivals":7}),"Retained births still exceed arrivals")
 	var result: Dictionary={"checks":checks,"failures":failures,"seconds":(Time.get_ticks_msec()-start)/1000.0,"catch_up_72h_ms":catch_ms}
