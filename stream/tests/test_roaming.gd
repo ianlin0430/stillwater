@@ -1,5 +1,5 @@
 extends SceneTree
-# Live-path movement checks for the 0.4.1 roaming rules (fish only since 2026-09-23).
+# Live-path movement checks for the 0.4.1 roaming rules (the chromis school since 2026-09-24).
 var failures: Array[String]=[]
 # Roaming destinations are clamped to x 130..1150 (StreamWorld._roaming_x).
 const SPAN: float=1020.0
@@ -109,8 +109,14 @@ func check_spans(species: String, s: Dictionary) -> void:
 #   0.09 of SPAN apart on average; independent fish anywhere in the width average about 1/3;
 # - fish bouncing wall to wall would turn only at the two ends (turn IQR near 1.0 of SPAN with no
 #   turns in between, or near 0 if all turn at one place); varied routes turn all over the width.
+# Green chromis (2026-09-24) school on purpose: for them the pair test is inverted, every pair
+# must stay together (mean separation under 0.15 of the width), while the school's turns
+# still spread over the width.
 func check_routes(species: String, s: Dictionary) -> void:
-	if s.pair_separation[0]<0.15:
+	if species=="green_chromis":
+		if s.pair_separation[-1]>=0.15:
+			failures.append("The school falls apart (mean separation %.3f of the width)" % s.pair_separation[-1])
+	elif s.pair_separation[0]<0.15:
 		failures.append("Two individuals follow one route (mean separation %.3f of the width): %s" % [s.pair_separation[0],species])
 	if s.turn_iqr<0.3 or s.turn_iqr>0.9:
 		failures.append("Individuals turn around at the same places (turn IQR %.3f of the width): %s" % [s.turn_iqr,species])
@@ -142,7 +148,7 @@ func _initialize() -> void:
 			if night[species].resting_share<=s.resting_share:
 				failures.append("Night no longer settles "+species)
 		runs.append({"seed":seed_value,"day":day,"night":night})
-	if runs.any(func(r): return r.day.keys()!=["threadfin"]):
-		failures.append("Roaming tracks species other than the threadfin")
+	if runs.any(func(r): return r.day.keys()!=["green_chromis"]):
+		failures.append("Roaming tracks species other than the green chromis")
 	print(JSON.stringify({"runs":runs,"failures":failures}))
 	quit(0 if failures.is_empty() else 1)

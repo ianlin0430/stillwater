@@ -5,24 +5,28 @@ const VERSION: int = 2
 const MAX_ANIMALS: int = 24
 const MAX_AWAY: float = 259200.0
 const DAY: float = 86400.0
-const ACTIVE_SPECIES: Array[String] = ["threadfin","garden_eel","lawnmower_blenny","firefish"]
+const ACTIVE_SPECIES: Array[String] = ["lawnmower_blenny","firefish","green_chromis","garden_eel"]
 const SPECIES: Dictionary = {
-	# Legacy entries: hatchetfish and shrimp (2026-09-23) and crayfish (2026-09-22) were removed
+	# Legacy entries: threadfin (2026-09-24), hatchetfish and shrimp (2026-09-23) and crayfish (2026-09-22) were removed
 	# from the cast; kept only so older saves validate, upgrade and still show their history.
 	"shrimp": {"label":"Cherry shrimp","latin":"Neocaridina davidi","initial":0,"mature":21.0,"lifespan":120.0,"body":0.3,"reserve":3.0,"cost":0.22,"bite":0.5,"brood":2,"breed":0.12,"cooldown":7.0,"pool":"biofilm"},
 	"crayfish": {"label":"Blue crayfish","latin":"Procambarus alleni","initial":0,"mature":35.0,"lifespan":540.0,"body":3.0,"reserve":12.0,"cost":0.65,"bite":1.2,"brood":2,"breed":0.035,"cooldown":21.0,"pool":"detritus"},
-	"threadfin": {"label":"Threadfin rainbowfish","latin":"Iriatherina werneri","initial":6,"mature":28.0,"lifespan":180.0,"body":0.7,"reserve":4.0,"cost":0.3,"bite":0.7,"brood":2,"breed":0.06,"cooldown":10.0,"pool":"microfauna","k_food":10.0},
+	"threadfin": {"label":"Threadfin rainbowfish","latin":"Iriatherina werneri","initial":0,"mature":28.0,"lifespan":180.0,"body":0.7,"reserve":4.0,"cost":0.3,"bite":0.7,"brood":2,"breed":0.06,"cooldown":10.0,"pool":"microfauna","k_food":10.0},
 	"hatchet": {"label":"Marbled hatchetfish","latin":"Carnegiella strigata","initial":0,"mature":28.0,"lifespan":180.0,"body":0.8,"reserve":4.0,"cost":0.32,"bite":0.75,"brood":2,"breed":0.04,"cooldown":14.0,"pool":"microfauna","k_food":10.0},
 	# Added 2026-09-23 by user decision; a marine fish, kept in this freshwater stream on purpose.
 	"garden_eel": {"label":"Spotted garden eel","latin":"Heteroconger hassi","initial":2,"mature":90.0,"lifespan":365.0,"body":0.9,"reserve":5.0,"cost":0.22,"bite":0.55,"brood":2,"breed":0.04,"cooldown":20.0,"pool":"microfauna","k_food":10.0},
 	# Stillwater Reef cast (user decision 2026-09-24). Authored rates; sizing in docs/ecology.md.
 	"lawnmower_blenny": {"label":"Lawnmower blenny","latin":"Salarias fasciatus","initial":2,"mature":45.0,"lifespan":240.0,"body":0.8,"reserve":4.5,"cost":0.24,"bite":0.6,"brood":2,"breed":0.07,"cooldown":12.0,"pool":"biofilm","k_food":10.0},
-	"firefish": {"label":"Firefish","latin":"Nemateleotris magnifica","initial":2,"mature":35.0,"lifespan":200.0,"body":0.5,"reserve":3.5,"cost":0.18,"bite":0.45,"brood":2,"breed":0.08,"cooldown":10.0,"pool":"microfauna","k_food":10.0}}
+	"firefish": {"label":"Firefish","latin":"Nemateleotris magnifica","initial":2,"mature":35.0,"lifespan":200.0,"body":0.5,"reserve":3.5,"cost":0.18,"bite":0.45,"brood":2,"breed":0.08,"cooldown":10.0,"pool":"microfauna","k_food":10.0},
+	"green_chromis": {"label":"Green chromis","latin":"Chromis viridis","initial":5,"mature":30.0,"lifespan":180.0,"body":0.5,"reserve":3.5,"cost":0.2,"bite":0.5,"brood":2,"breed":0.1,"cooldown":8.0,"pool":"microfauna","k_food":10.0}}
 # Ecology v2 (docs/plans/2026-09-22-self-sustaining-ecosystem.md). Rates are per day, applied per one-minute tick.
-# Provisional cast since 2026-09-23 (user decision, hatchetfish removed): caps 8+4 = 12,
-# opening cast 6+2 = 8 (SPECIES.initial). These two are the only places the cast sizes
-# live; the arrival limit (habitat_cap) and the long-run band follow from them.
-const CAP: Dictionary = {"threadfin":8,"garden_eel":4,"lawnmower_blenny":3,"firefish":3}
+# Reef cast since 2026-09-24: caps 3+3+6+4 = 16, opening cast 2+2+5+2 = 11 (SPECIES.initial),
+# sized against the food pools by offline probe (tools/cast_probe.gd, docs/ecology.md). These
+# two are the only places the cast sizes live; the arrival limit (habitat_cap) and the
+# long-run band follow from them.
+const CAP: Dictionary = {"lawnmower_blenny":3,"firefish":3,"green_chromis":6,"garden_eel":4}
+# Species that arrive once, not live, in a save from before the reef (see restore()).
+const REEF_CAST: Array[String] = ["lawnmower_blenny","firefish","green_chromis"]
 const POOLS: Array[String] = ["nutrients","stem","floating","biofilm","microfauna","detritus"]
 # Opening pools (R11, set with the earlier shrimp cast); also the v1 upgrade fill (R12).
 const OPENING: Dictionary = {"nutrients":0.4,"stem":45.0,"floating":24.0,"biofilm":32.0,"microfauna":24.0,"detritus":8.0}
@@ -36,7 +40,12 @@ const DECAY: float = 0.08
 const STREAM_IN: Dictionary = {"nutrients":0.7,"microfauna":0.35}
 const STREAM_OUT: Dictionary = {"nutrients":0.05,"microfauna":0.015,"detritus":0.04,"floating":0.005}
 # Swimming depth bands, a little wider than the authored targets in _choose_activity.
-const DEPTH: Dictionary = {"threadfin":[200.0,420.0]}
+const DEPTH: Dictionary = {"green_chromis":[180.0,430.0]}
+# Chromis school: the lowest-id chromis leads; each other member holds its own slot
+# (golden-angle direction, radius in `spread` px, flattened vertically, mirrored with the
+# leader's heading) and hurries (`catch_up` x speed) when more than `regroup` px from it.
+# Members keep `spacing` px apart.
+const CHROMIS: Dictionary = {"spread":[34.0,80.0],"regroup":120.0,"catch_up":1.8,"spacing":36.0}
 const RESCUE_RATE: float = 1.0/96.0
 const ARRIVAL_RATE: float = 1.0/504.0
 # An unexplained position jump larger than this in one motion tick is a relocation
@@ -46,7 +55,7 @@ const ARRIVAL_RATE: float = 1.0/504.0
 const RELOCATION: float = 3.0
 # Garden eel burrow sites on the open sand between the stones and the plants, filled
 # nearest-first; an eel never leaves its burrow. A fish within `dx` sideways and `dy`
-# above the burrow mouth (the bottom of the threadfin layer) sends it down for `seconds`.
+# above the burrow mouth (the bottom of the chromis layer) sends it down for `seconds`.
 const BURROWS: Array[float] = [650.0,684.0,616.0,718.0,582.0,752.0,548.0,786.0]
 const EEL_WARY: Dictionary = {"dx":48.0,"dy":200.0,"seconds":4.0}
 # Firefish burrows: their own patch left of the eel colony (at least 60 px from every eel
@@ -72,7 +81,7 @@ const LURE: Dictionary = {"range":320.0,"chance":0.5,"interest":45.0,"look":[6.0
 # Lawnmower blenny on the bed: `y` is always floor_y(x). Grazing/perching dwell ranges (s), hop
 # length (px) and speeds (px/s); a hop turns away from another blenny within `space` px.
 const BLENNY: Dictionary = {"graze":[6.0,20.0],"perch":[4.0,12.0],"sleep":[60.0,120.0],"hop":[20.0,90.0],"hop_speed":45.0,"dart_speed":90.0,"space":120.0}
-const NAMES: Dictionary = {"threadfin":["Silk","Reed","Willow","Glimmer","Wisp","Fern"],"garden_eel":["Dune","Sprig"],"lawnmower_blenny":["Moss","Pebble"],"firefish":["Ember","Flicker"]}
+const NAMES: Dictionary = {"green_chromis":["Jade","Mint","Lagoon","Kelp","Glass"],"garden_eel":["Dune","Sprig"],"lawnmower_blenny":["Moss","Pebble"],"firefish":["Ember","Flicker"]}
 var rng := RandomNumberGenerator.new()
 var motion_rng := RandomNumberGenerator.new()
 var state: Dictionary
@@ -84,7 +93,7 @@ var _live: bool = false
 func _init(world_seed: int = 240921, wall_time: float = 0) -> void:
 	rng.seed = world_seed
 	motion_rng.seed = world_seed + 7919
-	state = {"version":VERSION,"seed":world_seed,"elapsed":0.0,"ecology_remainder":0.0,"motion_remainder":0.0,"motion_ticks":0,"ecology_ticks":0,"next_id":1,"next_event":1,"wall_checkpoint":wall_time,"animals":[],"archive":[],"events":[],"history":[],"resources":OPENING.duplicate(),"ledger":{"initial":0.0,"in":0.0,"out":0.0},"totals":{"birth":0,"death":0,"arrival":0,"departure":0,"dispersal":0,"molt":0,"predation":0},"causes":{},"light_hour":12.0,"eel_colony":true}
+	state = {"version":VERSION,"seed":world_seed,"elapsed":0.0,"ecology_remainder":0.0,"motion_remainder":0.0,"motion_ticks":0,"ecology_ticks":0,"next_id":1,"next_event":1,"wall_checkpoint":wall_time,"animals":[],"archive":[],"events":[],"history":[],"resources":OPENING.duplicate(),"ledger":{"initial":0.0,"in":0.0,"out":0.0},"totals":{"birth":0,"death":0,"arrival":0,"departure":0,"dispersal":0,"molt":0,"predation":0},"causes":{},"light_hour":12.0,"eel_colony":true,"reef_cast":true}
 	for species: String in ACTIVE_SPECIES:
 		var n: int = int(SPECIES[species].initial)
 		var lo: float = 100.0 if species=="garden_eel" else 40.0
@@ -104,9 +113,10 @@ func _init(world_seed: int = 240921, wall_time: float = 0) -> void:
 			if i<NAMES[species].size():
 				animal.name = NAMES[species][i]
 			animal.sex = "female" if i%2==0 else "male"
-			if species=="threadfin":
-				animal.x=200.0+i*880.0/maxf(1,n-1)
-				animal.y=275.0+(i%2)*55
+			if species=="green_chromis":
+				# The opening school, together in midwater.
+				animal.x=560.0+i*40.0
+				animal.y=280.0+(i%2)*30
 			animal.tx=animal.x
 			animal.ty=animal.y
 	state.ledger.initial = material()
@@ -123,8 +133,8 @@ func animal_scale(a: Dictionary) -> float:
 func _place(species: String) -> Vector2:
 	var x: float = motion_rng.randf_range(150,1130)
 	var y: float = floor_y(x)
-	if species=="threadfin":
-		y = motion_rng.randf_range(220,400)
+	if species=="green_chromis":
+		y = motion_rng.randf_range(220,390)
 	return Vector2(x,y)
 
 func spawn(species: String, age: float = 0, parent: int = 0) -> Dictionary:
@@ -288,6 +298,10 @@ func set_lure(point: Vector2) -> void:
 	if not lure.is_empty() and Vector2(lure.x,lure.y).distance_to(point)<LURE.still:
 		return
 	lure={"x":point.x,"y":point.y,"since":state.elapsed}
+	# The school leader looks up at once (followers follow it; see _choose_activity).
+	for a: Dictionary in state.animals:
+		if a.species in DEPTH and a.activity in ["Schooling","Resting"]:
+			a.decision_at=minf(a.decision_at,state.elapsed+1.0)
 
 func clear_lure() -> void:
 	lure={}
@@ -337,6 +351,7 @@ func _eat(a: Dictionary, f: Dictionary) -> void:
 func _move(delta: float) -> void:
 	if not state.get("food",[]).is_empty():
 		_sink_food(delta)
+	var lead: Dictionary=_lead()
 	for a: Dictionary in state.animals:
 		if a.species in HOMES:
 			_burrower(a)
@@ -347,8 +362,12 @@ func _move(delta: float) -> void:
 		var p:=Vector2(a.x,a.y)
 		var species: String=a.species
 		var startled: bool=a.activity=="Startled" and state.elapsed<a.decision_at
-		if not startled and not _seek_food(a) and state.elapsed>=a.decision_at:
-			_choose_activity(a)
+		var follower: bool=not lead.is_empty() and a.id!=lead.id
+		if not startled and not _seek_food(a):
+			if follower:
+				_follow(a,lead)
+			elif state.elapsed>=a.decision_at:
+				_choose_activity(a)
 		var target:=Vector2(a.tx,a.ty)
 		var offset: Vector2=target-p
 		var speed: float=17.0
@@ -359,17 +378,19 @@ func _move(delta: float) -> void:
 		elif a.activity=="Startled":
 			speed*=2.4
 			acceleration=45.0
+		elif follower:
+			speed*=CHROMIS.catch_up if offset.length()>CHROMIS.regroup else 1.15
 		var desired: Vector2=offset.normalized()*minf(speed,sqrt(2.0*acceleration*offset.length()))
-		# Gentle changing headings, fading out on approach; no per-frame randomness.
-		if a.activity=="Swimming" and offset.length()>35:
+		# Gentle changing headings for the leader, fading out on approach; no per-frame randomness.
+		if a.activity=="Schooling" and not follower and offset.length()>35:
 			var bend: float=sin(state.elapsed*(0.28+float(int(a.id)%5)*0.025)+a.id*1.73)
 			desired+=offset.normalized().orthogonal()*bend*speed*0.22*minf(1,offset.length()/100)
 		for other: Dictionary in state.animals:
 			if other.id==a.id or other.species!=species:
 				continue
 			var apart: Vector2=p-Vector2(other.x,other.y)
-			if apart.length()<90 and apart.length()>0.01:
-				desired+=apart.normalized()*(90-apart.length())*0.16
+			if apart.length()<CHROMIS.spacing and apart.length()>0.01:
+				desired+=apart.normalized()*(CHROMIS.spacing-apart.length())*0.16
 		var velocity:=Vector2(a.get("vx",0.0),a.get("vy",0.0))
 		velocity=velocity.move_toward(desired,acceleration*delta)
 		var free: Vector2=p+velocity*delta
@@ -389,7 +410,7 @@ func _move(delta: float) -> void:
 				if f.id==a.food_id and next.distance_to(Vector2(f.x,f.y))<FOOD.eat:
 					_eat(a,f)
 					break
-		if next.distance_to(target)<5 and velocity.length()<7 and a.activity=="Swimming":
+		if next.distance_to(target)<5 and velocity.length()<7 and a.activity=="Schooling" and not follower:
 			a.activity="Resting"
 			a.decision_at=state.elapsed+motion_rng.randf_range(4,18)
 
@@ -506,33 +527,55 @@ func _peck(a: Dictionary) -> bool:
 	a.ty=floor_y(a.tx)
 	return true
 
+# The lowest-id chromis leads the school (it decides; the others follow). Empty if none.
+func _lead() -> Dictionary:
+	var lead: Dictionary={}
+	for a: Dictionary in state.animals:
+		if a.species=="green_chromis" and (lead.is_empty() or a.id<lead.id):
+			lead=a
+	return lead
+
+# A school member holds its own slot beside the leader, mirrored with the leader's heading.
+func _follow(a: Dictionary, lead: Dictionary) -> void:
+	var k: float=float(a.id)*2.39996
+	var r: float=CHROMIS.spread[0]+float((int(a.id)*17)%int(CHROMIS.spread[1]-CHROMIS.spread[0]))
+	var band: Array=DEPTH[a.species]
+	a.tx=clampf(lead.x+cos(k)*r*lead.direction,130,1150)
+	a.ty=clampf(lead.y+sin(k)*r*0.5,band[0],band[1])
+	var settled: bool=Vector2(a.x,a.y).distance_to(Vector2(a.tx,a.ty))<20
+	a.activity="Resting" if lead.activity=="Resting" and settled else "Schooling"
+	a.decision_at=state.elapsed
+
+# The school leader's next move: a trip across the pool or a pause (mostly pauses at night).
 func _choose_activity(a: Dictionary) -> void:
 	var r: float=motion_rng.randf()
 	var night: bool=state.light_hour<7 or state.light_hour>19
+	var band: Array=DEPTH[a.species]
 	a.decision_at=state.elapsed+motion_rng.randf_range(18,45)
-	a.activity="Swimming"
+	a.activity="Schooling"
 	a.tx=_roaming_x(a,290,0.42)
-	a.ty=motion_rng.randf_range(205,415)
-	if r<0.16:
-		a.activity="Displaying"
-	elif night and r<0.6:
+	# Inset by the members' vertical reach so the whole school fits in the band.
+	a.ty=motion_rng.randf_range(band[0]+CHROMIS.spread[1]*0.5,band[1]-CHROMIS.spread[1]*0.5)
+	if r<0.16 or night and r<0.6:
 		a.activity="Resting"
 	# Give trips enough time to reach a destination instead of repeatedly
 	# abandoning distant targets. Rest/feed choices keep their independent dwell time.
-	if a.activity=="Swimming":
+	if a.activity=="Schooling":
 		var cruise: float=17.0
 		cruise*=0.82+0.36*float((int(a.id)*37)%101)/100.0
 		var distance: float=Vector2(a.tx-a.x,a.ty-a.y).length()
 		a.decision_at=state.elapsed+distance/cruise+motion_rng.randf_range(5,14)
 	# Only while a lure is set (live, never saved) does curiosity draw from motion_rng.
 	if not lure.is_empty() and state.elapsed-lure.since<LURE.interest:
-		var band: Array=DEPTH[a.species]
 		var spot:=Vector2(lure.x,clampf(lure.y,band[0],band[1]))
 		if Vector2(a.x,a.y).distance_to(spot)<LURE.range and motion_rng.randf()<LURE.chance:
 			a.activity="Curious"
 			a.tx=clampf(lure.x+(-1.0 if a.x<lure.x else 1.0)*LURE.stand_off,130,1150)
 			a.ty=spot.y
 			a.decision_at=state.elapsed+motion_rng.randf_range(LURE.look[0],LURE.look[1])
+		# While the lure is fresh the leader keeps glancing at it.
+		if a.activity!="Curious":
+			a.decision_at=minf(a.decision_at,state.elapsed+5.0)
 
 func _roaming_x(a: Dictionary, local_range: float, crossing_chance: float) -> float:
 	if motion_rng.randf()<crossing_chance:
@@ -780,7 +823,7 @@ func restore(saved: Dictionary) -> bool:
 		state.next_event=1
 	if state.version==1:
 		_upgrade_v1()
-	# The user explicitly removed crayfish (2026-09-22), shrimp and hatchetfish (2026-09-23)
+	# The user explicitly removed crayfish (2026-09-22), shrimp and hatchetfish (2026-09-23), threadfin (2026-09-24)
 	# from this pool. Preserve every other identity, archive each departure and account
 	# for its exported material. An unhatched shrimp brood leaves with its mother:
 	# its cost was never taken, so no young and no extra material.
@@ -796,6 +839,15 @@ func restore(saved: Dictionary) -> bool:
 			if not eel.is_empty():
 				eel.sex=sex
 		state.eel_colony=true
+	# Saves from before the reef (2026-09-24): its opening cast arrives once, not live,
+	# alternating female/male, after the threadfin (and older species) departed above.
+	if not state.get("reef_cast",false):
+		for species: String in REEF_CAST:
+			for i in int(SPECIES[species].initial):
+				var a: Dictionary = _arrive(species)
+				if not a.is_empty():
+					a.sex="female" if i%2==0 else "male"
+		state.reef_cast=true
 	return true
 
 # R12: add the new pools from the stream (ledger.in) and give every animal a lifespan.
@@ -825,8 +877,9 @@ static func validate(saved: Dictionary) -> bool:
 		return false
 	if saved.has("next_event") and (not saved.next_event is int or saved.next_event<1):
 		return false
-	if saved.has("eel_colony") and not saved.eel_colony is bool:
-		return false
+	for key: String in ["eel_colony","reef_cast"]:
+		if saved.has(key) and not saved[key] is bool:
+			return false
 	if not _valid_food(saved):
 		return false
 	var next_event: int = saved.get("next_event",0)
