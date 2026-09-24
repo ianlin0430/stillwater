@@ -6,6 +6,7 @@
 
 > **2026-09-23 最新：使用者決定整個拿掉紅櫻花蝦。** 之後斧頭魚也拿掉了：目前池子裡只有絲鰭彩虹魚（上限 8、開局 6）和花園鰻（上限 4、開局 2），族群目標 8–12 隻，硬上限 24 不變。這是暫定名單，使用者要等你畫好新物種再選（候選：斑馬螺、火焰燈魚、熊貓鼠魚、點點缸玉魚等，Claude 建議斑馬螺＋火焰燈魚）。舊存檔的斧頭魚也在讀檔時記成離開。舊存檔裡的蝦在讀檔時記成「離開池子」，歷史和日誌保留。**所有蝦相關工作都取消**：§3 整節、§2 的抱卵卵團與脫殼空殼、蝦的素材與比較圖。做到一半的蝦素材不要整合，可以刪掉或留在 artifacts。backend 由 Claude 同步修改，完成後以 `BACKEND_SNAPSHOT_EVENTS.md` 為準。
 
+> **2026-09-24 使用者核可（經 Claude 確認）**：`artifacts/reef-review/cast-v2.png` 的五個物種**全部核可**，`reef-background-v1.png`／`background-normal.png` 的海底背景**核可**。**黃金吊**（*Zebrasoma flavescens*）加入名單。最終名單：花園鰻 `garden_eel`、割草機鳚 `lawnmower_blenny`、黃金吊 `yellow_tang`、藍綠光鰓魚 `green_chromis`、紫雷達 `purple_firefish`（*Nemateleotris decora*，取代紅雷達）。Claude 正在把 backend 從紅雷達改成紫雷達並加入黃金吊；完成後欄位以 `BACKEND_SNAPSHOT_EVENTS.md` 為準。你可以開始做正式素材與 rig：比例照真實體型（黃金吊最大的一種魚，光鰓魚最小），做完照 §3.7 再給使用者看動態比較。
 > **2026-09-24 最新：改成海水礁岩池，app 改名 Stillwater Reef。** 名單定案：**花園鰻**（保留）、**割草機鳚** *Salarias fasciatus*（在石頭和沙底刮藻）、**紅雷達** *Nemateleotris magnifica*（懸停在自己的沙洞上方，受驚鑽洞）、**藍綠光鰓魚** *Chromis viridis*（中層成群游）。絲鰭彩虹魚也拿掉了（現有素材不再使用）。使用者開一個全新的世界，舊的溪流存檔保留。詳細的新工作見 §3.7；各物種的欄位與活動名稱以 `BACKEND_SNAPSHOT_EVENTS.md` 為準（Claude 正在做 backend）。
 
 ## 先讀與工作邊界
