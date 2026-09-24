@@ -108,12 +108,13 @@ func _setup_fish() -> void:
 	add_child(fish)
 
 func animate(delta: float) -> void:
+	if delta<=0: return
 	phase+=delta
 	var velocity: Vector2=(position-previous)/maxf(delta,0.001)
 	var old_motion: float=motion
 	motion=lerpf(motion,velocity.length(),minf(1,delta*6))
 	previous=position
-	if activity=="Retreating" and last_activity!="Retreating":
+	if activity in ["Retreating","Startled"] and activity!=last_activity:
 		escape_age=0
 	escape_age+=delta
 	last_activity=activity
@@ -124,11 +125,11 @@ func animate(delta: float) -> void:
 	feeding=move_toward(feeding,1.0 if activity in ["Grazing","Feeding","Surface feeding"] else 0.0,delta*3)
 	if fish!=null:
 		var braking: float=clampf((old_motion-motion)*4,0,1)
-		var drive: float=clampf(motion/18.0,0,1)
+		var drive: float=1.0 if activity=="Startled" else clampf(motion/18.0,0,1)
 		effort=lerpf(effort,drive,minf(1,delta*4))
 		var frequency: float=(0.55+effort*1.9) if species=="threadfin" else (0.4+effort*1.5)
 		water_phase+=delta*TAU*frequency
-		var spread_target: float=1.18 if activity=="Displaying" else 1.0+braking*0.12-effort*0.08
+		var spread_target: float=1.18 if activity in ["Displaying","Curious"] else 1.0+braking*0.12-effort*0.08
 		fin_spread=lerpf(fin_spread,spread_target,minf(1,delta*3))
 		fish_material.set_shader_parameter("swim_phase",water_phase)
 		fish_material.set_shader_parameter("feeding",feeding)

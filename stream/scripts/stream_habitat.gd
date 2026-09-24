@@ -2,7 +2,7 @@ class_name StreamHabitat
 extends Node2D
 # Read-only frontend. All coordinates are 1280x720 world coordinates.
 # No StreamWorld methods, ecological RNG, save writes, or biological side effects.
-const ROOTS: Array[Vector2]=[Vector2(105,615),Vector2(195,605),Vector2(325,615),Vector2(465,605),Vector2(780,610),Vector2(940,603),Vector2(1085,611),Vector2(1170,620)]
+const ROOTS: Array[Vector2]=[Vector2(70,620),Vector2(115,612),Vector2(175,614),Vector2(1090,615),Vector2(1150,610),Vector2(1200,620)]
 var clock: float=0
 var redraw_clock: float=0
 var touch_clock: float=-10
@@ -56,11 +56,11 @@ func _add_impulse(point: Vector2, velocity: Vector2, kind: String, strength: flo
 	impulses.append({"point":point,"velocity":velocity,"kind":kind,"age":0.0,"strength":strength})
 
 func describe(point: Vector2) -> String:
-	if point.y<110: return "Floating leaves · drag to ripple the surface"
+	if point.y<110: return "Drifting algae · drag to ripple the surface"
 	for i in ROOTS.size():
 		if point.distance_to(ROOTS[i]-Vector2(0,_height(i)*0.5))<65:
-			return "Water plants · brush past to bend the fronds"
-	if point.y>555: return "Moss and leaf litter · stream floor"
+			return "Seagrass · brush past to bend the blades"
+	if point.y>555: return "Sand and algae · reef floor"
 	return "Drag through the water · click a creature to inspect"
 
 func _height(i: int) -> float:
@@ -104,8 +104,8 @@ func _draw() -> void:
 	# Independent patches expose resource changes without replacing the painted distance.
 	var moss_count: int=int(clampf(resources.biofilm/2.0,0,28))
 	for i in moss_count:
-		var x: float=435+float((i*59)%475)
-		var y: float=606+float((i*17)%19)
+		var x: float=(105 if i%2==0 else 1000)+float((i*59)%160)
+		var y: float=(400 if i%2==0 else 550)+float((i*17)%65)
 		draw_rect(Rect2(x,y,7+i%4*2,3+i%3*2),Color("7e8e45") if i%3 else Color("a0a45a"))
 	for i in int(clampf(resources.detritus,0,18)):
 		var p:=Vector2(165+float((i*137)%960),645+float((i*13)%29))
@@ -113,34 +113,31 @@ func _draw() -> void:
 			var distance: float=p.distance_to(impulse.point)
 			if impulse.kind=="water" and distance<100:
 				p+=Vector2(sin(impulse.age*4+i)*10,-sin(minf(impulse.age/2.1,1)*PI)*8)*(1-distance/100)*(1-impulse.age/2.1)
-		draw_colored_polygon(PackedVector2Array([p,p+Vector2(10,-3),p+Vector2(18,1),p+Vector2(8,5)]),Color("817445"))
+		draw_rect(Rect2(p,Vector2(3+i%3,2)),Color("96876b"))
 	for i in int(clampf(resources.floating/2.0,0,18)):
 		var p:=Vector2(100+float((i*151)%1070),49+sin(clock*0.6+i)*2)
 		for impulse: Dictionary in impulses:
 			if impulse.kind=="surface":
 				p.y+=sin(impulse.age*9-absf(p.x-impulse.point.x)*0.025)*exp(-impulse.age*2)*maxf(0,1-absf(p.x-impulse.point.x)/260)*7
-		draw_line(p+Vector2(0,4),p+Vector2(sin(clock+i)*3,25+i%3*7),Color(0.47,0.55,0.32,0.4),1.5)
-		draw_colored_polygon(PackedVector2Array([p+Vector2(-10,0),p+Vector2(-5,-4),p+Vector2(7,-4),p+Vector2(12,1),p+Vector2(4,5),p+Vector2(-5,4)]),Color("879654"))
-		draw_line(p+Vector2(-4,-2),p+Vector2(5,-2),Color("b2b777"),2)
+		var strand:=PackedVector2Array()
+		for j in 7:
+			strand.append(p+Vector2(j*3-9,sin(j*0.8+clock*0.6+i)*2+j*0.35))
+		draw_polyline(strand,Color(0.50,0.57,0.35,0.55),2,false)
 	for impulse: Dictionary in impulses: _ripple(impulse)
 
 func _plant(i: int) -> void:
 	var root: Vector2=ROOTS[i]
-	var height: float=_height(i)
-	var points:=PackedVector2Array()
-	for j in 9:
-		var t: float=float(j)/8
-		points.append((root+Vector2(bends[i]*t*t,-height*t)).snapped(Vector2(2,2)))
-	draw_polyline(points,Color("657c43"),3,false)
-	for j in range(2,9):
-		var t: float=float(j)/8
-		var at: Vector2=points[j]
-		var length: float=(18.0+float((i*7+j*3)%12))*(1-t*0.55)
-		for side in [-1,1]:
-			var tip: Vector2=at+Vector2(side*length+bends[i]*t*0.17,-10)
-			var leaf:=PackedVector2Array([at,at+Vector2(side*6,-7),tip+Vector2(-side*3,-3),tip,at+Vector2(side*7,1)])
-			for k in leaf.size(): leaf[k]=leaf[k].snapped(Vector2(2,2))
-			draw_colored_polygon(leaf,Color("82964e") if (i+j)%3 else Color("a0a75a"))
+	var height: float=_height(i)*0.75
+	for blade in 4:
+		var points:=PackedVector2Array()
+		var lean: float=(blade-1.5)*10+bends[i]
+		for j in 9:
+			var t: float=j/8.0
+			points.append((root+Vector2(lean*t*t-2*(1-t),-height*t*(0.65+blade*0.10))))
+		for j in range(7,-1,-1):
+			var t: float=j/8.0
+			points.append((root+Vector2(lean*t*t+2*(1-t),-height*t*(0.65+blade*0.10))))
+		draw_colored_polygon(points,Color("668665") if blade%2 else Color("849a70"))
 
 func _ripple(v: Dictionary) -> void:
 	var t: float=v.age

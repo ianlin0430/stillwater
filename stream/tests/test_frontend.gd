@@ -45,6 +45,7 @@ func run() -> void:
 	check(h.brush.distance_to(at)<0.001,"Disabled interaction does not produce input effects")
 	for i in 120: stage.animate(1.0/30)
 	check(h.impulses.is_empty(),"Interaction effects expire")
+	_reef_interactions()
 	_fish_only()
 	_life_effects()
 	_events()
@@ -131,7 +132,7 @@ func _events() -> void:
 	var initial: Dictionary=world.snapshot()
 	stage.apply_snapshot(initial)
 	check(stage.event_cursor==initial.next_event-1 and stage.deaths.is_empty(),"Initial snapshot establishes cursor without replay")
-	var a: Dictionary=initial.animals.filter(func(v: Dictionary)->bool: return v.species=="threadfin")[0].duplicate(true)
+	var a: Dictionary=initial.animals.filter(func(v: Dictionary)->bool: return v.species=="green_chromis")[0].duplicate(true)
 	var next: Dictionary=initial.duplicate(true)
 	next.animals=next.animals.filter(func(v: Dictionary)->bool: return v.id!=a.id)
 	next.archive.append(a)
@@ -202,7 +203,7 @@ func _life_effects() -> void:
 	root.add_child(stage)
 	var snap:=world.snapshot()
 	stage.apply_snapshot(snap)
-	var actor: Dictionary=snap.animals.filter(func(v: Dictionary)->bool: return v.species=="threadfin")[0]
+	var actor: Dictionary=snap.animals.filter(func(v: Dictionary)->bool: return v.species=="green_chromis")[0]
 	var fx=stage.events_layer
 	for kind: String in ["birth","arrival"]:
 		fx.accept({"kind":kind,"id":actor.id},snap)
@@ -259,4 +260,78 @@ func _fish_only() -> void:
 	check(not stage.rigs.has(999) and stage.deaths.is_empty(),"Archived shrimp cannot reappear during a death event")
 	stage.animate(1)
 	check(var_to_bytes(world.export_state())==unchanged,"Fish-only presentation preserves saves and ecology for backend migration")
+	stage.queue_free()
+
+func _reef_interactions() -> void:
+	var world:=StreamWorld.new(42,1000)
+	check(world.feed(640),"Real backend accepts the first pinch")
+	var stage:=StreamStage.new()
+	root.add_child(stage)
+	var snapshot: Dictionary=world.snapshot()
+	var before: PackedByteArray=var_to_bytes(world.export_state())
+	stage.apply_snapshot(snapshot)
+	var layer=stage.interaction_layer
+	check(layer.food.size()==snapshot.food.size(),"Every backend pellet is presented")
+	check(layer.food[0].x==snapshot.food[0].x and layer.food[0].y==snapshot.food[0].y,"Food uses backend coordinates")
+	layer.food[0].x+=1
+	check(layer.food[0].x!=snapshot.food[0].x,"Food presentation is deep copied")
+	stage.apply_snapshot(snapshot)
+	check(layer.rings.is_empty(),"Loading food never replays historical splash")
+	layer.accept({"kind":"fed","live":false,"x":640,"y":56})
+	check(layer.rings.is_empty(),"Offline feeding has no splash")
+	layer.accept({"kind":"fed","live":true,"x":640,"y":56})
+	check(layer.rings.size()==1,"Live feeding produces a splash")
+	stage.animate(0)
+	check(layer.rings[0].age==0,"Pause freezes feeding feedback")
+	for i in 20: layer.pulse(Vector2(640,360),"tap")
+	check(layer.rings.size()==layer.MAX_RINGS,"Repeated glass taps have bounded feedback")
+	stage.animate(1)
+	check(layer.rings.is_empty(),"Input feedback expires")
+	check(stage.control_at(Vector2(60,35))=="feed" and stage.control_at(Vector2(180,35))=="tap","Both controls reachable without letterboxing or keyboard")
+	check(stage.control_at(Vector2(500,350)).is_empty(),"Controls leave swimming and selection space free")
+	stage.zoom=1.65
+	stage.center=Vector2(700,360)
+	stage.animate(0.1)
+	check(((stage.transform*layer.hud.transform)*Vector2(60,35)).distance_to(Vector2(60,35))<0.001,"Control positions stay fixed through zoom")
+	layer.show_full()
+	var full: float=layer.full_until-layer.hud_clock
+	stage.animate(0)
+	check(layer.full_until-layer.hud_clock==full,"Pause freezes full-today cue")
+	var chromis: Dictionary=snapshot.animals.filter(func(a: Dictionary)->bool: return a.species=="green_chromis")[0]
+	var rig: SwimmerRig=stage.rigs[chromis.id]
+	rig.activity="Startled"
+	rig.animate(0.2)
+	check(rig.effort>0.5,"Startled uses fast swimming effort")
+	rig.activity="Curious"
+	rig.animate(0.2)
+	check(rig.fin_spread>1,"Curious opens fins for hovering")
+	rig.activity="Feeding"
+	rig.animate(0.2)
+	check(rig.feeding>0.5,"Feeding drives the mouth animation")
+	var phase: float=rig.phase
+	rig.animate(0)
+	check(rig.phase==phase,"Paused rig does not advance its animation")
+	check(var_to_bytes(world.export_state())==before,"Feedback, controls and behavior visuals never mutate ecology or RNG")
+	# Exercise the actual mouse handler without running main's save/load lifecycle.
+	var app=load("res://scripts/main.gd").new()
+	app.world=StreamWorld.new(42,1000)
+	app.stage=stage
+	app.display=TextureRect.new()
+	app.display.size=Vector2(1280,720)
+	var click:=InputEventMouseButton.new()
+	click.button_index=MOUSE_BUTTON_LEFT
+	click.pressed=true
+	click.position=Vector2(60,35)
+	app._scene_input(click)
+	check(app.world.state.get("food",[]).size()==5,"Clicking Feed invokes real backend feeding")
+	click.position=Vector2(180,35)
+	app._scene_input(click)
+	check(not layer.rings.is_empty(),"Clicking Tap invokes feedback through real input handler")
+	app.paused=true
+	var count: int=app.world.state.food.size()
+	click.position=Vector2(60,35)
+	app._scene_input(click)
+	check(app.world.state.food.size()==count,"Paused mouse control cannot feed")
+	app.display.free()
+	app.free()
 	stage.queue_free()

@@ -21,8 +21,9 @@ func accept(event: Dictionary, snapshot: Dictionary) -> void:
 			fades[event.id]={"age":0.0,"duration":1.5 if event.kind=="birth" else 2.0,"kind":event.kind,"side":-1.0 if actor.x<640 else 1.0}
 	elif event.kind=="dispersal":
 		if ghosts.size()>=LIMIT: return
-		var rig:=SwimmerRig.new()
+		var rig:=ReefRig.new()
 		rig.species=actor.species
+		rig.detached=true
 		rig.sex=actor.sex
 		rig.individual_id=actor.id
 		rig.body_scale=0.32
@@ -43,10 +44,15 @@ func advance(delta: float, _simulation_time: float, rigs: Dictionary) -> void:
 			fades.erase(id)
 			continue
 		var fade: Dictionary=fades[id]
+		if not fade.get("started",false):
+			fade.started=true
+			if rigs[id].species in ["garden_eel","purple_firefish"]:
+				if fade.kind=="arrival": rigs[id].begin_arrival()
+				else: rigs[id].extension=0
 		fade.age+=maxf(0,delta)
 		var t: float=clampf(fade.age/fade.duration,0,1)
 		rigs[id].modulate.a*=smoothstep(0,1,t)
-		if fade.kind=="arrival":
+		if fade.kind=="arrival" and not rigs[id].species in ["garden_eel","purple_firefish"]:
 			rigs[id].position.x+=fade.side*130*pow(1-t,2)
 		if t>=1: fades.erase(id)
 	for effect: Dictionary in ghosts.duplicate():

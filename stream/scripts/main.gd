@@ -175,11 +175,11 @@ func _setup_ui() -> void:
 	header.add_child(_button("+",func() -> void: _zoom(0.15),"Zoom in · plus"))
 	header.add_child(_button("?",func() -> void: help_panel.visible=not help_panel.visible,"Controls and this world"))
 	viewport=SubViewport.new()
-	viewport.size=Vector2i(640,360)
+	viewport.size=Vector2i(960,540)
 	viewport.disable_3d=true
 	viewport.render_target_update_mode=SubViewport.UPDATE_ALWAYS
 	add_child(viewport)
-	viewport.canvas_transform=Transform2D(Vector2(0.5,0),Vector2(0,0.5),Vector2.ZERO)
+	viewport.canvas_transform=Transform2D(Vector2(0.75,0),Vector2(0,0.75),Vector2.ZERO)
 	stage=StreamStage.new()
 	viewport.add_child(stage)
 	display=TextureRect.new()
@@ -215,7 +215,7 @@ func _setup_ui() -> void:
 	var help_box := VBoxContainer.new()
 	help_panel.add_child(help_box)
 	var help_text := Label.new()
-	help_text.text="A small reef beneath the surface\n\nClick an animal to read its story.\nDrag through water or plants to feel the current.\nR makes a ripple without the mouse.\nF drops a pinch of food at the pointer (a few pinches a day).\nClick the frame around the water, or press T, to tap the glass.\nRest the pointer in the water and curious fish may come to look.\nScroll or use + / − to look closer. Tab selects the next animal.\nSpace pauses; Escape returns to the whole pool.\nL switches the viewing light.\n\nNatural food, arrivals, births and departures need no care;\nfeeding is a treat, never required.\nThe world advances while you’re away, up to three days.\nNothing runs on your Mac after you quit.\n\nReal species, a fictional shared habitat.\nQuiet mode: 30 FPS. Saves are automatic."
+	help_text.text="A small reef beneath the surface\n\nClick an animal to read its story.\nDrag through water or plants to feel the current.\nR makes a ripple without the mouse.\nClick Feed, or press F, for a pinch of food (a few pinches a day).\nClick Tap, or press T, to tap the glass.\nRest the pointer in the water and curious fish may come to look.\nScroll or use + / − to look closer. Tab selects the next animal.\nSpace pauses; Escape returns to the whole pool.\nL switches the viewing light.\n\nNatural food, arrivals, births and departures need no care;\nfeeding is a treat, never required.\nThe world advances while you’re away, up to three days.\nNothing runs on your Mac after you quit.\n\nReal species, a fictional shared habitat.\nQuiet mode: 30 FPS. Saves are automatic."
 	help_text.add_theme_font_size_override("font_size",13)
 	help_box.add_child(help_text)
 	help_box.add_child(_button("Back to the reef",func() -> void: help_panel.hide()))
@@ -263,7 +263,8 @@ func _scene_input(event: InputEvent) -> void:
 		if not Rect2(0,0,1280,720).has_point(point): return
 		if event is InputEventMouseMotion:
 			display.tooltip_text=stage.describe_environment(point)
-			if not paused and event.button_mask&MOUSE_BUTTON_MASK_LEFT:
+			if not stage.control_at(point).is_empty(): pointer=Vector2(-1,-1)
+			if not paused and stage.control_at(point).is_empty() and event.button_mask&MOUSE_BUTTON_MASK_LEFT:
 				stage.interact(point,clampf(event.relative.length()/12.0,0.2,1.0))
 		elif event is InputEventMouseButton and event.pressed:
 			if event.button_index==MOUSE_BUTTON_WHEEL_UP:
@@ -271,6 +272,18 @@ func _scene_input(event: InputEvent) -> void:
 			elif event.button_index==MOUSE_BUTTON_WHEEL_DOWN:
 				_zoom(-0.10)
 			elif event.button_index==MOUSE_BUTTON_LEFT:
+				var action: String=stage.control_at(point)
+				if not action.is_empty():
+					if paused: return
+					if action=="feed":
+						var previous_food: int=world.state.get("food",[]).size()
+						_feed()
+						if world.state.get("food",[]).size()==previous_food:
+							stage.interaction_layer.show_full()
+					else:
+						world.startle(stage.center.x,stage.center.y,1.0)
+						stage.tap_feedback(Vector2(640,360))
+					return
 				var hit: int=stage.pick(point)
 				_select(hit)
 				if hit<0 and not paused: stage.interact(point)
