@@ -18,8 +18,8 @@ const POPULATION_BAND: Array[int] = [8,12]
 func audit_depth(world: StreamWorld, depth: Dictionary) -> void:
 	for a: Dictionary in world.state.animals:
 		depth.checked+=1
-		if a.species=="garden_eel":
-			# On the bed, never swimming: exactly at its own burrow mouth.
+		if a.species in StreamWorld.HOMES:
+			# Garden eels and firefish never swim: exactly at their own burrow mouth.
 			if a.x!=a.burrow_x or a.y!=a.burrow_y or absf(a.y-StreamWorld.floor_y(a.x))>0.0001:
 				depth.violations+=1
 		elif a.species=="lawnmower_blenny":

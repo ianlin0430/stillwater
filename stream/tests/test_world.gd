@@ -62,7 +62,7 @@ func _initialize() -> void:
 	var a:=StreamWorld.new(42,1000)
 	var b:=StreamWorld.new(42,1000)
 	# The one place these tests pin the cast (user decision 2026-09-23); others read the constants.
-	check(StreamWorld.ACTIVE_SPECIES==["threadfin","garden_eel","lawnmower_blenny"] and StreamWorld.CAP=={"threadfin":8,"garden_eel":4,"lawnmower_blenny":3} and StreamWorld.habitat_cap()==15 and StreamWorld.ACTIVE_SPECIES.map(func(k): return StreamWorld.SPECIES[k].initial)==[6,2,2],"Cast: threadfin/garden eel/blenny, caps 8/4/3 (15), opening 6/2/2")
+	check(StreamWorld.ACTIVE_SPECIES==["threadfin","garden_eel","lawnmower_blenny","firefish"] and StreamWorld.CAP=={"threadfin":8,"garden_eel":4,"lawnmower_blenny":3,"firefish":3} and StreamWorld.habitat_cap()==18 and StreamWorld.ACTIVE_SPECIES.map(func(k): return StreamWorld.SPECIES[k].initial)==[6,2,2,2],"Cast: threadfin/garden eel/blenny/firefish, caps 8/4/3/3 (18), opening 6/2/2/2")
 	var opening: Dictionary={}
 	for k: String in StreamWorld.ACTIVE_SPECIES:
 		opening[k]=StreamWorld.SPECIES[k].initial
@@ -247,6 +247,7 @@ func _initialize() -> void:
 	startle_checks()
 	lure_checks()
 	blenny_checks()
+	firefish_checks()
 	var acceptance=preload("res://tests/ecology_acceptance.gd")
 	check(acceptance.reproduction_passes({"births":17,"dispersal":14,"arrivals":7}),"Dispersed offspring count toward reproduction")
 	check(not acceptance.reproduction_passes({"births":17,"dispersal":2,"arrivals":7}),"Nineteen offspring do not meet the twenty-offspring threshold")
@@ -377,9 +378,10 @@ func ecosystem_checks() -> void:
 		if animal.species=="threadfin":
 			w.state.animals.erase(animal)
 	reset_material(w)
-	w.advance_offline(StreamWorld.MAX_AWAY)
-	w.advance_offline(StreamWorld.MAX_AWAY)
-	w.advance_offline(StreamWorld.MAX_AWAY)
+	# Rescue is a 1/96-per-hour draw: 24 days leave a 0.2% chance of none.
+	for i in 8:
+		if w.counts().threadfin==0:
+			w.advance_offline(StreamWorld.MAX_AWAY)
 	check(w.counts().threadfin>0,"Rescue arrival restores a missing species")
 	check(w.state.totals.departure==0,"No random adult departures")
 	# R12: a genuine v1 save upgrades with identities, names and lineage intact.
@@ -1050,3 +1052,111 @@ func blenny_checks() -> void:
 		t.advance_live(0.2)
 		curious=curious or blennies(t).any(func(x): return x.activity=="Curious")
 	check(not curious,"Blennies ignore the cursor lure")
+
+func firefish(w: StreamWorld) -> Array:
+	return w.state.animals.filter(func(x): return x.species=="firefish")
+
+# 2026-09-24 user decision: firefish hover a little above their own sand burrows (a patch
+# separate from the eels) and dart inside when startled, when a fish passes close, and at night.
+func firefish_checks() -> void:
+	var cfg: Dictionary=StreamWorld.SPECIES.get("firefish",{})
+	check(cfg.get("label")=="Firefish" and cfg.get("latin")=="Nemateleotris magnifica" and cfg.get("pool")=="microfauna" and StreamWorld.CAP.get("firefish")==3 and cfg.get("initial")==2,"Firefish: microfauna, habitat for three, opening pair")
+	var w:=StreamWorld.new(42,1000)
+	var pair: Array=firefish(w)
+	var eel_x: Array=eels(w).map(func(x): return x.burrow_x)
+	check(pair.size()==2 and pair.all(at_burrow) and apart(pair) and pair.any(func(x): return x.sex=="female") and pair.any(func(x): return x.sex=="male"),"A new world opens with a firefish pair, each in its own burrow")
+	check(StreamWorld.FIRE_BURROWS.all(func(x): return StreamWorld.BURROWS.all(func(e): return absf(x-e)>=60)) and pair.all(func(x): return x.burrow_x in StreamWorld.FIRE_BURROWS),"The firefish patch does not overlap the eel colony")
+	check(pair.all(func(x): return x.hover_y>=StreamWorld.FIRE.hover[0] and x.hover_y<=StreamWorld.FIRE.hover[1]),"Each firefish has its own hover height above the burrow")
+	only(w,func(x): return x.species=="firefish" or x==threadfin(w)[0])
+	var fish: Dictionary=threadfin(w)[0]
+	var ff: Dictionary=pair[0]
+	w.state.light_hour=12.0
+	fish.x=1100.0
+	fish.tx=1100.0
+	w.advance_live(1)
+	check(pair.all(func(x): return x.activity=="Hovering" and x.extend==1.0),"By day firefish hover above their burrows")
+	fish.x=ff.burrow_x
+	fish.y=StreamWorld.DEPTH[fish.species][1]
+	fish.tx=fish.x
+	fish.ty=fish.y
+	fish.activity="Resting"
+	fish.decision_at=w.state.elapsed+60
+	w.advance_live(0.4)
+	check(ff.activity=="Hiding" and ff.extend==0.0,"A fish passing close sends a firefish into its burrow")
+	fish.x=1100.0
+	fish.tx=1100.0
+	w.advance_live(StreamWorld.FIRE.seconds+1)
+	check(ff.activity=="Hovering" and ff.extend==1.0,"It comes back out a few seconds later")
+	var b:=StreamWorld.new(42,1000)
+	only(b,func(x): return x.species in ["firefish","lawnmower_blenny"])
+	b.state.light_hour=12.0
+	var hop: Dictionary=blennies(b)[0]
+	var bf: Dictionary=firefish(b)[0]
+	for o: Dictionary in blennies(b):
+		o.x=1100.0
+		o.tx=1100.0
+		o.y=StreamWorld.floor_y(1100.0)
+		o.activity="Perching"
+		o.decision_at=b.state.elapsed+600
+	hop.x=bf.burrow_x-60
+	hop.y=StreamWorld.floor_y(hop.x)
+	hop.tx=bf.burrow_x+60
+	hop.activity="Hopping"
+	hop.decision_at=b.state.elapsed+600
+	var hid: bool=false
+	for i in 20:
+		b.advance_live(0.2)
+		hid=hid or bf.activity=="Hiding"
+	check(hid,"A blenny hopping past makes a firefish duck")
+	w.state.light_hour=23.0
+	w.advance_live(1)
+	check(pair.all(func(x): return x.activity=="Sleeping" and x.extend==0.0),"At night firefish sleep in their burrows")
+	w.state.light_hour=6.0
+	w.advance_live(3600*4)
+	check(pair.all(at_burrow) and StreamWorld.validate(w.export_state()) and absf(w.residual())<0.00001,"Firefish never leave their burrows; the world validates and balances")
+	# A tap darts them home; food drifting past a hovering firefish is snatched.
+	var t:=StreamWorld.new(42,1000)
+	only(t,func(x): return x.species=="firefish")
+	t.state.light_hour=12.0
+	t.advance_live(1)
+	var tf: Dictionary=firefish(t)[0]
+	check(t.startle(tf.burrow_x,tf.burrow_y-30,1.0)>=1 and tf.activity=="Hiding" and tf.extend==0.0,"A tap near the burrow sends the firefish inside")
+	t.advance_live(StreamWorld.STARTLE.eel_seconds+1)
+	check(tf.activity=="Hovering","Then it hovers again")
+	tf.energy=1.0
+	reset_material(t)
+	var before: float=tf.energy
+	t.feed(tf.burrow_x)
+	t.advance_live(80)
+	check(tf.energy>before+StreamWorld.FOOD.mass*0.8-0.000001 and absf(t.residual())<0.00001,"A hovering firefish snatches food drifting past its burrow")
+	t.set_lure(Vector2(tf.burrow_x,tf.burrow_y-60))
+	var curious: bool=false
+	for i in 300:
+		t.advance_live(0.2)
+		curious=curious or firefish(t).any(func(x): return x.activity=="Curious")
+	check(not curious,"Firefish ignore the cursor lure")
+	# Young dig beside the parent in the firefish patch; a full patch sends them downstream.
+	var y:=StreamWorld.new(3,1000)
+	var mom: Dictionary=firefish(y).filter(func(x): return x.sex=="female")[0]
+	mom.energy=cfg.reserve
+	reset_material(y)
+	y._breed(mom)
+	check(firefish(y).size()==3 and firefish(y).all(at_burrow) and apart(firefish(y)) and firefish(y).all(func(x): return x.burrow_x in StreamWorld.FIRE_BURROWS and x.hover_y>=StreamWorld.FIRE.hover[0]),"A young firefish digs its own burrow in the patch")
+	mom.energy=cfg.reserve
+	reset_material(y)
+	var dispersed: int=y.state.totals.dispersal
+	y._breed(mom)
+	check(y.state.totals.dispersal==dispersed+1 and firefish(y).size()==3 and absf(y.residual())<0.00001,"A full patch sends young downstream")
+	var r:=StreamWorld.new(11,1000)
+	for x: Dictionary in firefish(r):
+		r.state.animals.erase(x)
+	reset_material(r)
+	for i in 3:
+		r.advance_offline(StreamWorld.MAX_AWAY)
+	check(firefish(r).size()>0 and firefish(r).all(func(x): return at_burrow(x) and x.burrow_x in StreamWorld.FIRE_BURROWS),"Rescue arrival settles a firefish into a free burrow")
+	var bad: Dictionary=StreamWorld.new(5).export_state()
+	bad.animals.filter(func(x): return x.species=="firefish")[0].erase("burrow_y")
+	check(not StreamWorld.validate(bad),"Firefish without a burrow rejected")
+	bad=StreamWorld.new(5).export_state()
+	bad.animals.filter(func(x): return x.species=="firefish")[0].hover_y=-3.0
+	check(not StreamWorld.validate(bad),"Negative hover_y rejected")

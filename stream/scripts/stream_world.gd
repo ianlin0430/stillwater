@@ -5,7 +5,7 @@ const VERSION: int = 2
 const MAX_ANIMALS: int = 24
 const MAX_AWAY: float = 259200.0
 const DAY: float = 86400.0
-const ACTIVE_SPECIES: Array[String] = ["threadfin","garden_eel","lawnmower_blenny"]
+const ACTIVE_SPECIES: Array[String] = ["threadfin","garden_eel","lawnmower_blenny","firefish"]
 const SPECIES: Dictionary = {
 	# Legacy entries: hatchetfish and shrimp (2026-09-23) and crayfish (2026-09-22) were removed
 	# from the cast; kept only so older saves validate, upgrade and still show their history.
@@ -16,12 +16,13 @@ const SPECIES: Dictionary = {
 	# Added 2026-09-23 by user decision; a marine fish, kept in this freshwater stream on purpose.
 	"garden_eel": {"label":"Spotted garden eel","latin":"Heteroconger hassi","initial":2,"mature":90.0,"lifespan":365.0,"body":0.9,"reserve":5.0,"cost":0.22,"bite":0.55,"brood":2,"breed":0.04,"cooldown":20.0,"pool":"microfauna","k_food":10.0},
 	# Stillwater Reef cast (user decision 2026-09-24). Authored rates; sizing in docs/ecology.md.
-	"lawnmower_blenny": {"label":"Lawnmower blenny","latin":"Salarias fasciatus","initial":2,"mature":45.0,"lifespan":240.0,"body":0.8,"reserve":4.5,"cost":0.24,"bite":0.6,"brood":2,"breed":0.07,"cooldown":12.0,"pool":"biofilm","k_food":10.0}}
+	"lawnmower_blenny": {"label":"Lawnmower blenny","latin":"Salarias fasciatus","initial":2,"mature":45.0,"lifespan":240.0,"body":0.8,"reserve":4.5,"cost":0.24,"bite":0.6,"brood":2,"breed":0.07,"cooldown":12.0,"pool":"biofilm","k_food":10.0},
+	"firefish": {"label":"Firefish","latin":"Nemateleotris magnifica","initial":2,"mature":35.0,"lifespan":200.0,"body":0.5,"reserve":3.5,"cost":0.18,"bite":0.45,"brood":2,"breed":0.08,"cooldown":10.0,"pool":"microfauna","k_food":10.0}}
 # Ecology v2 (docs/plans/2026-09-22-self-sustaining-ecosystem.md). Rates are per day, applied per one-minute tick.
 # Provisional cast since 2026-09-23 (user decision, hatchetfish removed): caps 8+4 = 12,
 # opening cast 6+2 = 8 (SPECIES.initial). These two are the only places the cast sizes
 # live; the arrival limit (habitat_cap) and the long-run band follow from them.
-const CAP: Dictionary = {"threadfin":8,"garden_eel":4,"lawnmower_blenny":3}
+const CAP: Dictionary = {"threadfin":8,"garden_eel":4,"lawnmower_blenny":3,"firefish":3}
 const POOLS: Array[String] = ["nutrients","stem","floating","biofilm","microfauna","detritus"]
 # Opening pools (R11, set with the earlier shrimp cast); also the v1 upgrade fill (R12).
 const OPENING: Dictionary = {"nutrients":0.4,"stem":45.0,"floating":24.0,"biofilm":32.0,"microfauna":24.0,"detritus":8.0}
@@ -48,6 +49,12 @@ const RELOCATION: float = 3.0
 # above the burrow mouth (the bottom of the threadfin layer) sends it down for `seconds`.
 const BURROWS: Array[float] = [650.0,684.0,616.0,718.0,582.0,752.0,548.0,786.0]
 const EEL_WARY: Dictionary = {"dx":48.0,"dy":200.0,"seconds":4.0}
+# Firefish burrows: their own patch left of the eel colony (at least 60 px from every eel
+# site). A firefish hovers `hover_y` px (per individual, in `hover`) above its burrow and
+# hides for `seconds` when a swimming fish or a moving blenny comes within EEL_WARY.
+const FIRE_BURROWS: Array[float] = [420.0,452.0,388.0,484.0]
+const FIRE: Dictionary = {"seconds":6.0,"hover":[24.0,40.0]}
+const HOMES: Dictionary = {"garden_eel":BURROWS,"firefish":FIRE_BURROWS}
 # Feeding (user decision 2026-09-23: real food, never required). A pinch is `particles` of
 # `mass` dropped just below the surface (y `surface`); at most `daily` mass per simulated day.
 # Particles sink `sink` px/s; fish with room notice food within `notice` px and eat it within
@@ -65,7 +72,7 @@ const LURE: Dictionary = {"range":320.0,"chance":0.5,"interest":45.0,"look":[6.0
 # Lawnmower blenny on the bed: `y` is always floor_y(x). Grazing/perching dwell ranges (s), hop
 # length (px) and speeds (px/s); a hop turns away from another blenny within `space` px.
 const BLENNY: Dictionary = {"graze":[6.0,20.0],"perch":[4.0,12.0],"sleep":[60.0,120.0],"hop":[20.0,90.0],"hop_speed":45.0,"dart_speed":90.0,"space":120.0}
-const NAMES: Dictionary = {"threadfin":["Silk","Reed","Willow","Glimmer","Wisp","Fern"],"garden_eel":["Dune","Sprig"],"lawnmower_blenny":["Moss","Pebble"]}
+const NAMES: Dictionary = {"threadfin":["Silk","Reed","Willow","Glimmer","Wisp","Fern"],"garden_eel":["Dune","Sprig"],"lawnmower_blenny":["Moss","Pebble"],"firefish":["Ember","Flicker"]}
 var rng := RandomNumberGenerator.new()
 var motion_rng := RandomNumberGenerator.new()
 var state: Dictionary
@@ -124,22 +131,24 @@ func spawn(species: String, age: float = 0, parent: int = 0) -> Dictionary:
 	if species not in ACTIVE_SPECIES or state.animals.size()>=MAX_ANIMALS:
 		return {}
 	var cfg: Dictionary = SPECIES[species]
-	var p: Vector2 = _burrow(parent) if species=="garden_eel" else _place(species)
+	var p: Vector2 = _burrow(parent,species) if species in HOMES else _place(species)
 	# next_molt, molting_until and shelter are legacy fields validate() still requires;
 	# nothing molts or shelters since the shrimp left (2026-09-23).
 	var a: Dictionary = {"id":state.next_id,"species":species,"name":cfg.label+" "+str(state.next_id),"sex":"female" if rng.randf()<0.5 else "male","age":age,"parent":parent,"born":state.elapsed,"body":cfg.body*(0.45 if age<cfg.mature else 1.0),"energy":cfg.reserve*(0.35 if age<cfg.mature else 0.67),"x":p.x,"y":p.y,"tx":p.x,"ty":p.y,"direction":1.0 if p.x<640 else -1.0,"activity":"Resting","decision_at":0.0,"last_breed":-cfg.cooldown,"next_molt":age+99999.0,"molting_until":-1.0,"shelter":240.0 if state.next_id%2==1 else 1030.0,"recent":[],"hunger":0.0}
 	a.lifespan=cfg.lifespan*rng.randf_range(0.85,1.15)
-	if species=="garden_eel":
+	if species in HOMES:
 		a.burrow_x=p.x
 		a.burrow_y=p.y
-		_eel(a)
+		if species=="firefish":
+			a.hover_y=FIRE.hover[0]+float((int(a.id)*7)%int(FIRE.hover[1]-FIRE.hover[0]+1))
+		_burrower(a)
 	state.next_id += 1
 	state.animals.append(a)
 	return a
 
 # Moving a newly placed animal sideways; an eel stays at its burrow.
 func _bed_align(a: Dictionary, x: float) -> void:
-	if a.species=="garden_eel":
+	if a.species in HOMES:
 		return
 	a.x=x
 	if a.species=="lawnmower_blenny":
@@ -251,9 +260,9 @@ func startle(x: float, y: float, strength: float = 1.0) -> int:
 		if gap>=reach:
 			continue
 		noticed+=1
-		if a.species=="garden_eel":
+		if a.species in HOMES:
 			a.decision_at=maxf(a.decision_at,state.elapsed+STARTLE.eel_seconds)
-			_eel(a)
+			_burrower(a)
 			continue
 		if a.species=="lawnmower_blenny":
 			var side: float=signf(a.x-x) if absf(a.x-x)>0.01 else a.direction
@@ -329,8 +338,8 @@ func _move(delta: float) -> void:
 	if not state.get("food",[]).is_empty():
 		_sink_food(delta)
 	for a: Dictionary in state.animals:
-		if a.species=="garden_eel":
-			_eel(a)
+		if a.species in HOMES:
+			_burrower(a)
 			continue
 		if a.species=="lawnmower_blenny":
 			_blenny(a,delta)
@@ -384,37 +393,45 @@ func _move(delta: float) -> void:
 			a.activity="Resting"
 			a.decision_at=state.elapsed+motion_rng.randf_range(4,18)
 
-# Nearest free burrow site to the parent's burrow (or the colony centre). No randomness.
-func _burrow(parent: int) -> Vector2:
+# Nearest free burrow site of the species' patch to the parent's burrow (or the patch
+# centre). No randomness.
+func _burrow(parent: int, species: String) -> Vector2:
+	var sites: Array = HOMES[species]
 	var taken: Array = []
-	var home: float = BURROWS[0]
+	var home: float = sites[0]
 	for e: Dictionary in state.animals:
-		if e.species=="garden_eel":
+		if e.species==species:
 			taken.append(e.burrow_x)
 			if e.id==parent:
 				home=e.burrow_x
-	var best: float = BURROWS[-1]
+	var best: float = sites[-1]
 	var gap: float = INF
-	for x: float in BURROWS:
+	for x: float in sites:
 		if x not in taken and absf(x-home)<gap:
 			best=x
 			gap=absf(x-home)
 	return Vector2(best,floor_y(best))
 
-# Out and swaying by day, asleep in the burrow at night, down for a moment when a
-# fish passes just above. `extend` is the pose the stage eases toward (0 in, 1 out).
-func _eel(a: Dictionary) -> void:
+# Garden eels and firefish: out by day (eels swaying, firefish hovering), asleep in the
+# burrow at night, down for a moment when a fish passes just above (firefish also duck
+# for a moving blenny). `extend` is the pose the stage eases toward (0 in, 1 out).
+func _burrower(a: Dictionary) -> void:
 	a.vx=0.0
 	a.vy=0.0
+	var eel: bool=a.species=="garden_eel"
 	if state.light_hour<7 or state.light_hour>19:
 		a.activity="Sleeping"
 	else:
 		for o: Dictionary in state.animals:
-			if o.species in DEPTH and absf(o.x-a.burrow_x)<EEL_WARY.dx and a.burrow_y-o.y<EEL_WARY.dy:
-				a.decision_at=state.elapsed+EEL_WARY.seconds
-		a.activity="Retracted" if state.elapsed<a.decision_at else "Swaying"
-	a.extend=1.0 if a.activity=="Swaying" else 0.0
-	if a.activity=="Swaying" and not state.get("food",[]).is_empty() and SPECIES.garden_eel.reserve-a.energy>=FOOD.mass*0.8:
+			var passing: bool=o.species in DEPTH or (not eel and o.species=="lawnmower_blenny" and o.activity in ["Hopping","Startled","Feeding"])
+			if passing and absf(o.x-a.burrow_x)<EEL_WARY.dx and a.burrow_y-o.y<EEL_WARY.dy:
+				a.decision_at=state.elapsed+(EEL_WARY.seconds if eel else FIRE.seconds)
+		if state.elapsed<a.decision_at:
+			a.activity="Retracted" if eel else "Hiding"
+		else:
+			a.activity="Swaying" if eel else "Hovering"
+	a.extend=1.0 if a.activity in ["Swaying","Hovering"] else 0.0
+	if a.extend==1.0 and not state.get("food",[]).is_empty() and SPECIES[a.species].reserve-a.energy>=FOOD.mass*0.8:
 		for f: Dictionary in state.food:
 			if not f.settled and absf(f.x-a.burrow_x)<FOOD.eel_dx and f.y>a.burrow_y-FOOD.eel_reach and f.y<a.burrow_y:
 				_eat(a,f)
@@ -847,7 +864,9 @@ static func validate(saved: Dictionary) -> bool:
 				return false
 		if a.get("brood_until",0)<0 or a.get("tint",0)<0 or a.get("tint",0)>1 or a.get("extend",0)<0 or a.get("extend",0)>1:
 			return false
-		if a.species=="garden_eel" and (not _number(a.get("burrow_x")) or not _number(a.get("burrow_y"))):
+		if a.species in HOMES and (not _number(a.get("burrow_x")) or not _number(a.get("burrow_y"))):
+			return false
+		if a.species=="firefish" and (not _number(a.get("hover_y")) or a.hover_y<0):
 			return false
 		if version>1 and a in saved.animals and (not _number(a.get("lifespan")) or a.lifespan<=0):
 			return false

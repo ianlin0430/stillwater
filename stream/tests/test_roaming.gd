@@ -13,10 +13,10 @@ func track(seed_value: int, hour: float, ticks: int) -> Dictionary:
 	for tick in ticks:
 		world.advance_live(0.2)
 		for a: Dictionary in world.state.animals:
-			if a.species=="garden_eel":
-				# Eels never roam: they stay in their burrow (tests/test_world.gd eel_checks).
+			if a.species in StreamWorld.HOMES:
+				# Eels and firefish never roam: they stay at their burrow (tests/test_world.gd).
 				if a.x!=a.burrow_x or a.y!=a.burrow_y:
-					failures.append("Garden eel left its burrow")
+					failures.append("Burrow dweller left its burrow: "+a.species)
 				continue
 			if a.species=="lawnmower_blenny":
 				# Blennies hop along the bed (tests/test_world.gd blenny_checks).
