@@ -416,3 +416,49 @@ Red firefish removal: no user save and no fixture held `firefish` (checked: `tes
 
 未驗證 — triggered on `801a727`: unfed run [35963646036](https://github.com/ianlin0430/stillwater/actions/runs/35963646036), fed daily run [35963649344](https://github.com/ianlin0430/stillwater/actions/runs/35963649344). Both ended within seconds with no job started; GitHub's annotation: "The job was not started because recent account payments have failed or your spending limit needs to be increased." That is an account billing setting for the user; the runs must be re-triggered after it is resolved (same commands). No live result of this cast exists yet.
 
+
+## Four-species reef: garden eels removed, resize, firefish spacing, `ate` event (2026-09-25)
+
+User decision 2026-09-25 (final): no garden eels. Commits: `f423e9f` (eel removal, sizing, gates — the gate derivation in [ecology](ecology.md) was written and pinned in `tests/test_world.gd` in the same commit, before the acceptance below was run), `54c4fec` (firefish burrow spacing, tang spot exclusion), `a75442c` (`ate` event), this docs commit.
+
+Chosen: caps blenny/firefish/chromis/tang **3/4/8/2 = 17**, opening **2/2/6/2 = 12**, rescue at one, hard cap 24. Probe table (offline, unfed, 180 and 365 days × seeds 42/812/240921, nine configurations) in [ecology](ecology.md) "Sizing". Gates re-derived from the configured cast: band **[12, 17]** (was [13, 18]); old age **≥ 7 by day 76** (was ≥ 6 by 79: the sixth opening chromis adds one certain death and moves the bound); offspring **≥ 12** (= 7 + (17 − 12)); every other gate unchanged; the eels' burrow depth check left with them.
+
+Old saves: the threadfin-era and hatchet-era fixtures hold live garden eels — each departs once (`live:false`, at its burrow, archived with `burrow_x`/`burrow_y`), nothing arrives in their place, a second load changes nothing; the pre-eel and v1 fixtures get the reef cast and no eels. The user's `app_userdata/Stillwater Reef` has no world save (`test_lifecycle` reports `stream.world`, `.bak` and `preferences.cfg` as missing); neither it nor `Stillwater Stream` was opened or changed.
+
+### Local quick suites (macOS, Godot 4.6.3 headless, on `a75442c`)
+
+| Check | Result | Evidence |
+|---|---|---|
+| Core regression suite | 已通過 — 333 checks, 0 failures; 72-hour catch-up 133 ms | `tests/test_world.gd` |
+| Cast pin: 4 species, caps 3/4/8/2 = 17, opening 2/2/6/2, `spawn("garden_eel")` refused, `garden_eel` legacy only (not in `ACTIVE_SPECIES`/`CAP`/`HOMES`/`REEF_CAST`) | 已通過 | `_initialize`, `eel_checks` |
+| Save with 2 live eels + past eel events: validates; 2 non-live departures at the burrows, archive keeps id/name/sex/burrow, `ledger.out` grows by exactly their mass, residual < 1e-5, second load no change, 3 offline days + 10 live minutes no eel returns; eel fields (`burrow_x`, `extend`, `eel_colony`) still validated | 已通過 | `eel_checks` |
+| Derived gates pinned (7 old age by day 76, 12 offspring, band 12–17) | 已通過 | `_initialize` |
+| Firefish burrows 650/540/760/410: pairwise ≥ 91 + 16 px and no overlap of hovering adult art boxes (`ReefRig.LOOK`) at hover 24 or 40; all on the open sand (x 210–440, 505–940 of the approved background, read off `background-v1.png` scaled to 1280×720); > 48 px from every tang spot and hold point; no overlap with any grazing tang body; opening pair at 650 and 540; patch fills to 4, then disperses | 已通過 | `firefish_checks` |
+| Tang grazing: 30 min by day, whenever both tangs graze their 122×87 art boxes never intersect (327 overlapping ticks before the fix); with one tang holding each spot, 400 choices of the other never pick an overlapping spot; grazing tang holds within 6 px of its hold point (also checked on seeds 812/240921/7, 0 misses) | 已通過 | `tang_checks` |
+| `ate` events: one per pellet eaten live, actor id/x/y, `food_id`, `food_x/food_y` within reach; each pellet once; empty text, not in `recent`, not in `totals`; none for full fish, settled decay or offline; firefish bites at the burrow with the pellet above it; blenny pecks beside the pellet; three fed days keep ≤ 10 `ate` events while older events stay | 已通過 | `feeding_checks`, `firefish_checks`, `blenny_checks` |
+| Swimmer rig suite | 已通過 — 103 checks | `tests/test_swimmers.gd` |
+| Roaming suite (3 seeds, day/night, chromis school now 6) | 已通過 | `tests/test_roaming.gd` |
+| Lifecycle / time-boundary | 已通過 — 63 checks | `tests/test_lifecycle.gd` |
+| Persist-QA helper | 已通過 — 27 checks | `tests/test_persist_qa.gd` |
+| Presentation read-only | 已通過 — 29 checks | `tests/test_presentation.gd` |
+| Frontend suite (Codex's, run read-only; Codex had uncommitted edits in the tree) | 已通過 — 79 checks | `tests/test_frontend.gd` |
+| Reef animation suite (Codex's) | 已通過 — 25 checks, with Codex's uncommitted edit that counts `world.state.animals.size()`; on the committed version (`63472e0`'s file) it **failed** 1 check, "shows eleven fish", because the opening is now 12 — not edited by Claude | `tests/test_reef_animation.gd` |
+
+### Offline 180-day acceptance (`tests/long_run.gd --mode=offline --days=180 --seeds=42,812,240921 --year=false`)
+
+已通過 — both modes, `ACCEPTANCE PASS`, every gate on every seed. Run on `f423e9f` and again on `a75442c` with identical results (spacing and `ate` do not touch offline ecology). Offline is not the live acceptance.
+
+| Feed | Seed | Births | Dispersed | Offspring (≥ 12) | Arrivals | Old age (≥ 7) | First old age (≤ 76) | Starvation | Band share [12,17] | Max | Min presence | Max residual | Pinches | Detritus max |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| none | 42 | 13 | 20 | 33 | 1 | 10 | 32 | 0 | 1.000 | 17 | 1.00 | 1.8e-09 | 0 | 12.45 |
+| none | 812 | 11 | 30 | 41 | 2 | 10 | 34 | 0 | 1.000 | 17 | 1.00 | 1.4e-09 | 0 | 13.27 |
+| none | 240921 | 13 | 16 | 29 | 1 | 10 | 41 | 0 | 1.000 | 17 | 1.00 | 2.4e-09 | 0 | 12.36 |
+| daily | 42 | 15 | 51 | 66 | 1 | 11 | 32 | 0 | 1.000 | 17 | 1.00 | 3.2e-09 | 720 | 14.04 |
+| daily | 812 | 13 | 42 | 55 | 0 | 9 | 34 | 0 | 1.000 | 17 | 1.00 | 3.1e-09 | 720 | 14.25 |
+| daily | 240921 | 11 | 34 | 45 | 2 | 11 | 41 | 0 | 1.000 | 17 | 1.00 | 3.7e-09 | 720 | 15.93 |
+
+Depth audit is live-only (0 checked offline). Plants > 5 % on every day of every run.
+
+### Live 180-day ecology (GitHub Actions)
+
+未驗證 — not triggered (GitHub Actions billing is blocked; the main session will run it). No live result of the four-species cast exists yet.
