@@ -62,7 +62,7 @@ func _initialize() -> void:
 	var a:=StreamWorld.new(42,1000)
 	var b:=StreamWorld.new(42,1000)
 	# The one place these tests pin the cast (user decision 2026-09-23); others read the constants.
-	check(StreamWorld.ACTIVE_SPECIES==["lawnmower_blenny","purple_firefish","green_chromis","garden_eel","yellow_tang"] and StreamWorld.CAP=={"lawnmower_blenny":3,"purple_firefish":3,"green_chromis":6,"garden_eel":4,"yellow_tang":3} and StreamWorld.habitat_cap()==19 and StreamWorld.ACTIVE_SPECIES.map(func(k): return StreamWorld.SPECIES[k].initial)==[2,2,5,2,2] and StreamWorld.RESCUE_AT==1,"Reef cast: blenny/purple firefish/chromis/garden eel/yellow tang, caps 3/3/6/4/3 (19), opening 2/2/5/2/2, rescue at one")
+	check(StreamWorld.ACTIVE_SPECIES==["lawnmower_blenny","purple_firefish","green_chromis","garden_eel","yellow_tang"] and StreamWorld.CAP=={"lawnmower_blenny":3,"purple_firefish":3,"green_chromis":6,"garden_eel":4,"yellow_tang":2} and StreamWorld.habitat_cap()==18 and StreamWorld.ACTIVE_SPECIES.map(func(k): return StreamWorld.SPECIES[k].initial)==[2,2,5,2,2] and StreamWorld.RESCUE_AT==1,"Reef cast: blenny/purple firefish/chromis/garden eel/yellow tang, caps 3/3/6/4/2 (18), opening 2/2/5/2/2, rescue at one")
 	var opening: Dictionary={}
 	for k: String in StreamWorld.ACTIVE_SPECIES:
 		opening[k]=StreamWorld.SPECIES[k].initial
@@ -254,8 +254,8 @@ func _initialize() -> void:
 	var acceptance=preload("res://tests/ecology_acceptance.gd")
 	# Gates derived from the configured cast (docs/ecology.md "Acceptance gates"), 180 days:
 	# 6 openers must reach old age (5 chromis, the older firefish), the earliest by day 79,
-	# and 6 + 6 open places = 12 offspring; band 13..19.
-	check(acceptance.certain_old_age(180)==6 and acceptance.first_old_age_bound()==79 and acceptance.offspring_needed(180)==12 and acceptance.population_band()==[13,19],"Derived gates: 6 old-age deaths by day 79, 12 offspring, band 13-19")
+	# and 6 + 5 open places = 11 offspring; band 13..18 (docs/ecology.md, yellow tang cast).
+	check(acceptance.certain_old_age(180)==6 and acceptance.first_old_age_bound()==79 and acceptance.offspring_needed(180)==11 and acceptance.population_band()==[13,18],"Derived gates: 6 old-age deaths by day 79, 11 offspring, band 13-18")
 	var need: int=acceptance.offspring_needed(180)
 	check(acceptance.reproduction_passes({"births":6,"dispersal":need-6,"arrivals":2,"days":180}),"Dispersed offspring count toward reproduction")
 	check(not acceptance.reproduction_passes({"births":6,"dispersal":need-7,"arrivals":2,"days":180}),"One offspring short of the threshold fails")
@@ -1268,7 +1268,7 @@ func tang_checks() -> void:
 	var ch: Dictionary=StreamWorld.SPECIES.green_chromis
 	check(cfg.get("lifespan",0.0)>ch.lifespan and cfg.get("mature",0.0)>ch.mature and cfg.get("breed",1.0)<ch.breed and cfg.get("cooldown",0.0)>ch.cooldown,"Tangs live longer and breed more slowly than chromis")
 	check(absf(cfg.get("cost",0.0)-0.8*cfg.get("bite",0.0)*0.5)<0.000001 and cfg.get("k_food")==10.0,"Tangs break even at food 10 like the rest of the cast")
-	check(StreamWorld.CAP.get("yellow_tang",99)<=3 and cfg.get("initial",0)>=2,"Tangs stay a small group (at most three)")
+	check(StreamWorld.CAP.get("yellow_tang",99)==2 and cfg.get("initial",0)==2,"Tangs stay a small group: an opening pair, habitat for two")
 	var w:=StreamWorld.new(42,1000)
 	var group: Array=tangs(w)
 	check(group.size()==cfg.initial and group.all(in_tang_band) and group.any(func(x): return x.sex=="female") and group.any(func(x): return x.sex=="male"),"A new world opens with a tang pair in its band")
@@ -1360,6 +1360,13 @@ func tang_checks() -> void:
 	# Young are born in the band beside the mother; arrivals come in at the edge in the band.
 	var b:=StreamWorld.new(3,1000)
 	var mom: Dictionary=tangs(b).filter(func(x): return x.sex=="female")[0]
+	mom.energy=cfg.reserve
+	reset_material(b)
+	var dispersed: int=b.state.totals.dispersal
+	b._breed(mom)
+	check(b.state.totals.dispersal==dispersed+1 and tangs(b).size()==StreamWorld.CAP.yellow_tang and absf(b.residual())<0.00001,"With the pair filling the habitat, a young tang disperses")
+	# Room for one: the male is gone.
+	only(b,func(x): return x.species!="yellow_tang" or x==mom)
 	mom.energy=cfg.reserve
 	reset_material(b)
 	var cursor: int=b.state.next_event-1

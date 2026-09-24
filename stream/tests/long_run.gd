@@ -9,15 +9,15 @@ func plant_max(world: StreamWorld, plant: String) -> float:
 # Live mode steps the same hours through advance_live, so movement takes part
 # instead of the offline approximation.
 const BANDS: Dictionary = StreamWorld.DEPTH
-# Population target band, derived from the cast (2026-09-24, reef): the bottom is the opening
-# cast (11), the top the combined habitat caps (16). Same >= 80% share as before.
+# Population target band, derived from the cast (2026-09-24, five-species reef): the bottom is the
+# opening cast (13), the top the combined habitat caps (18). Same >= 80% share as before.
 var POPULATION_BAND: Array=ACCEPTANCE.population_band()
 
 func audit_depth(world: StreamWorld, depth: Dictionary) -> void:
 	for a: Dictionary in world.state.animals:
 		depth.checked+=1
 		if a.species in StreamWorld.HOMES:
-			# Garden eels and firefish never swim: exactly at their own burrow mouth.
+			# Garden eels and purple firefish never swim: exactly at their own burrow mouth.
 			if a.x!=a.burrow_x or a.y!=a.burrow_y or absf(a.y-StreamWorld.floor_y(a.x))>0.0001:
 				depth.violations+=1
 		elif a.species=="lawnmower_blenny":

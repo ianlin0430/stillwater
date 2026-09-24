@@ -25,11 +25,12 @@ const SPECIES: Dictionary = {
 	# blenny; longer lived and slower breeding than the chromis. Break-even at food 10 like the rest.
 	"yellow_tang": {"label":"Yellow tang","latin":"Zebrasoma flavescens","initial":2,"mature":120.0,"lifespan":540.0,"body":1.4,"reserve":7.0,"cost":0.32,"bite":0.8,"brood":2,"breed":0.03,"cooldown":30.0,"pool":"biofilm","k_food":10.0}}
 # Ecology v2 (docs/plans/2026-09-22-self-sustaining-ecosystem.md). Rates are per day, applied per one-minute tick.
-# Reef cast since 2026-09-24: caps 3+3+6+4 = 16, opening cast 2+2+5+2 = 11 (SPECIES.initial),
+# Reef cast since 2026-09-24 (with the yellow tang): caps 3+3+6+4+2 = 18, opening cast
+# 2+2+5+2+2 = 13 (SPECIES.initial),
 # sized against the food pools by offline probe (tools/cast_probe.gd, docs/ecology.md). These
 # two are the only places the cast sizes live; the arrival limit (habitat_cap) and the
 # long-run band follow from them.
-const CAP: Dictionary = {"lawnmower_blenny":3,"purple_firefish":3,"green_chromis":6,"garden_eel":4,"yellow_tang":3}
+const CAP: Dictionary = {"lawnmower_blenny":3,"purple_firefish":3,"green_chromis":6,"garden_eel":4,"yellow_tang":2}
 # Species that arrive once, not live, in a save from before the reef (see restore()).
 const REEF_CAST: Array[String] = ["lawnmower_blenny","purple_firefish","green_chromis","yellow_tang"]
 const POOLS: Array[String] = ["nutrients","stem","floating","biofilm","microfauna","detritus"]
