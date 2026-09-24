@@ -5,7 +5,7 @@ const VERSION: int = 2
 const MAX_ANIMALS: int = 24
 const MAX_AWAY: float = 259200.0
 const DAY: float = 86400.0
-const ACTIVE_SPECIES: Array[String] = ["threadfin","garden_eel"]
+const ACTIVE_SPECIES: Array[String] = ["threadfin","garden_eel","lawnmower_blenny"]
 const SPECIES: Dictionary = {
 	# Legacy entries: hatchetfish and shrimp (2026-09-23) and crayfish (2026-09-22) were removed
 	# from the cast; kept only so older saves validate, upgrade and still show their history.
@@ -14,12 +14,14 @@ const SPECIES: Dictionary = {
 	"threadfin": {"label":"Threadfin rainbowfish","latin":"Iriatherina werneri","initial":6,"mature":28.0,"lifespan":180.0,"body":0.7,"reserve":4.0,"cost":0.3,"bite":0.7,"brood":2,"breed":0.06,"cooldown":10.0,"pool":"microfauna","k_food":10.0},
 	"hatchet": {"label":"Marbled hatchetfish","latin":"Carnegiella strigata","initial":0,"mature":28.0,"lifespan":180.0,"body":0.8,"reserve":4.0,"cost":0.32,"bite":0.75,"brood":2,"breed":0.04,"cooldown":14.0,"pool":"microfauna","k_food":10.0},
 	# Added 2026-09-23 by user decision; a marine fish, kept in this freshwater stream on purpose.
-	"garden_eel": {"label":"Spotted garden eel","latin":"Heteroconger hassi","initial":2,"mature":90.0,"lifespan":365.0,"body":0.9,"reserve":5.0,"cost":0.22,"bite":0.55,"brood":2,"breed":0.04,"cooldown":20.0,"pool":"microfauna","k_food":10.0}}
+	"garden_eel": {"label":"Spotted garden eel","latin":"Heteroconger hassi","initial":2,"mature":90.0,"lifespan":365.0,"body":0.9,"reserve":5.0,"cost":0.22,"bite":0.55,"brood":2,"breed":0.04,"cooldown":20.0,"pool":"microfauna","k_food":10.0},
+	# Stillwater Reef cast (user decision 2026-09-24). Authored rates; sizing in docs/ecology.md.
+	"lawnmower_blenny": {"label":"Lawnmower blenny","latin":"Salarias fasciatus","initial":2,"mature":45.0,"lifespan":240.0,"body":0.8,"reserve":4.5,"cost":0.24,"bite":0.6,"brood":2,"breed":0.07,"cooldown":12.0,"pool":"biofilm","k_food":10.0}}
 # Ecology v2 (docs/plans/2026-09-22-self-sustaining-ecosystem.md). Rates are per day, applied per one-minute tick.
 # Provisional cast since 2026-09-23 (user decision, hatchetfish removed): caps 8+4 = 12,
 # opening cast 6+2 = 8 (SPECIES.initial). These two are the only places the cast sizes
 # live; the arrival limit (habitat_cap) and the long-run band follow from them.
-const CAP: Dictionary = {"threadfin":8,"garden_eel":4}
+const CAP: Dictionary = {"threadfin":8,"garden_eel":4,"lawnmower_blenny":3}
 const POOLS: Array[String] = ["nutrients","stem","floating","biofilm","microfauna","detritus"]
 # Opening pools (R11, set with the earlier shrimp cast); also the v1 upgrade fill (R12).
 const OPENING: Dictionary = {"nutrients":0.4,"stem":45.0,"floating":24.0,"biofilm":32.0,"microfauna":24.0,"detritus":8.0}
@@ -60,7 +62,10 @@ const STARTLE: Dictionary = {"radius":260.0,"dart":150.0,"seconds":3.0,"eel_seco
 # move within `range` of it looks with probability `chance`, hovering `stand_off` px to the side
 # for `look` seconds. Jitter under `still` px keeps the same lure. Never saved.
 const LURE: Dictionary = {"range":320.0,"chance":0.5,"interest":45.0,"look":[6.0,12.0],"stand_off":36.0,"still":8.0}
-const NAMES: Dictionary = {"threadfin":["Silk","Reed","Willow","Glimmer","Wisp","Fern"],"garden_eel":["Dune","Sprig"]}
+# Lawnmower blenny on the bed: `y` is always floor_y(x). Grazing/perching dwell ranges (s), hop
+# length (px) and speeds (px/s); a hop turns away from another blenny within `space` px.
+const BLENNY: Dictionary = {"graze":[6.0,20.0],"perch":[4.0,12.0],"sleep":[60.0,120.0],"hop":[20.0,90.0],"hop_speed":45.0,"dart_speed":90.0,"space":120.0}
+const NAMES: Dictionary = {"threadfin":["Silk","Reed","Willow","Glimmer","Wisp","Fern"],"garden_eel":["Dune","Sprig"],"lawnmower_blenny":["Moss","Pebble"]}
 var rng := RandomNumberGenerator.new()
 var motion_rng := RandomNumberGenerator.new()
 var state: Dictionary
@@ -137,6 +142,10 @@ func _bed_align(a: Dictionary, x: float) -> void:
 	if a.species=="garden_eel":
 		return
 	a.x=x
+	if a.species=="lawnmower_blenny":
+		a.y=floor_y(x)
+		a.tx=a.x
+		a.ty=a.y
 
 # `id` is the actor; `seq` is the event's own id (see docs/BACKEND_SNAPSHOT_EVENTS.md).
 func _event(kind: String, a: Dictionary, text: String, extra: Dictionary = {}) -> void:
@@ -246,6 +255,13 @@ func startle(x: float, y: float, strength: float = 1.0) -> int:
 			a.decision_at=maxf(a.decision_at,state.elapsed+STARTLE.eel_seconds)
 			_eel(a)
 			continue
+		if a.species=="lawnmower_blenny":
+			var side: float=signf(a.x-x) if absf(a.x-x)>0.01 else a.direction
+			a.activity="Startled"
+			a.tx=clampf(a.x+side*STARTLE.dart*(1.0-0.5*gap/reach),130,1150)
+			a.decision_at=state.elapsed+STARTLE.seconds
+			a.erase("food_id")
+			continue
 		var away: Vector2=(p-hit)/gap if gap>0.01 else Vector2(a.direction,0)
 		var band: Array=DEPTH[a.species]
 		var to: Vector2=p+away*STARTLE.dart*(1.0-0.5*gap/reach)
@@ -315,6 +331,9 @@ func _move(delta: float) -> void:
 	for a: Dictionary in state.animals:
 		if a.species=="garden_eel":
 			_eel(a)
+			continue
+		if a.species=="lawnmower_blenny":
+			_blenny(a,delta)
 			continue
 		var p:=Vector2(a.x,a.y)
 		var species: String=a.species
@@ -400,6 +419,75 @@ func _eel(a: Dictionary) -> void:
 			if not f.settled and absf(f.x-a.burrow_x)<FOOD.eel_dx and f.y>a.burrow_y-FOOD.eel_reach and f.y<a.burrow_y:
 				_eat(a,f)
 				break
+
+# Perches, grazes and hops along the bed; pecks up settled food; sleeps where it is at night.
+func _blenny(a: Dictionary, delta: float) -> void:
+	var startled: bool=a.activity=="Startled" and state.elapsed<a.decision_at
+	if not startled and not _peck(a) and (state.elapsed>=a.decision_at or a.activity=="Startled"):
+		_choose_blenny(a)
+	var speed: float={"Hopping":BLENNY.hop_speed,"Feeding":BLENNY.hop_speed,"Startled":BLENNY.dart_speed}.get(a.activity,0.0)
+	var step: float=clampf(a.tx-a.x,-speed*delta,speed*delta)
+	var y: float=floor_y(a.x+step)
+	a.vx=step/delta
+	a.vy=(y-a.y)/delta
+	if step!=0.0:
+		a.direction=signf(step)
+	a.x+=step
+	a.y=y
+	if a.has("food_id"):
+		for f: Dictionary in state.food:
+			if f.id==a.food_id and absf(a.x-f.x)<FOOD.eat:
+				_eat(a,f)
+				break
+	if a.activity=="Hopping" and a.x==a.tx:
+		a.activity="Perching"
+		a.decision_at=state.elapsed+motion_rng.randf_range(BLENNY.perch[0],BLENNY.perch[1])
+
+func _choose_blenny(a: Dictionary) -> void:
+	a.tx=a.x
+	a.ty=a.y
+	var r: float=motion_rng.randf()
+	if state.light_hour<7 or state.light_hour>19:
+		a.activity="Sleeping"
+		a.decision_at=state.elapsed+motion_rng.randf_range(BLENNY.sleep[0],BLENNY.sleep[1])
+	elif r<0.45:
+		a.activity="Grazing"
+		a.decision_at=state.elapsed+motion_rng.randf_range(BLENNY.graze[0],BLENNY.graze[1])
+	elif r<0.75:
+		a.activity="Perching"
+		a.decision_at=state.elapsed+motion_rng.randf_range(BLENNY.perch[0],BLENNY.perch[1])
+	else:
+		var side: float=-1.0 if motion_rng.randf()<0.5 else 1.0
+		for o: Dictionary in state.animals:
+			if o.species=="lawnmower_blenny" and o.id!=a.id and absf(o.x-a.x)<BLENNY.space:
+				side=signf(a.x-o.x) if o.x!=a.x else side
+		var to: float=a.x+side*motion_rng.randf_range(BLENNY.hop[0],BLENNY.hop[1])
+		if to<130 or to>1150:
+			to=a.x-(to-a.x)
+		a.activity="Hopping"
+		a.tx=clampf(to,130,1150)
+		a.decision_at=state.elapsed+BLENNY.hop[1]/BLENNY.hop_speed+1.0
+
+# A hungry blenny hops to the nearest settled food within notice range and pecks it up.
+func _peck(a: Dictionary) -> bool:
+	var best: Dictionary={}
+	if SPECIES[a.species].reserve-a.energy>=FOOD.mass*0.8:
+		var gap: float=FOOD.notice
+		for f: Dictionary in state.get("food",[]):
+			if f.settled and absf(f.x-a.x)<gap:
+				best=f
+				gap=absf(f.x-a.x)
+	if best.is_empty():
+		a.erase("food_id")
+		if a.activity=="Feeding":
+			a.decision_at=state.elapsed
+			a.activity="Perching"
+		return false
+	a.activity="Feeding"
+	a.food_id=best.id
+	a.tx=clampf(best.x,130,1150)
+	a.ty=floor_y(a.tx)
+	return true
 
 func _choose_activity(a: Dictionary) -> void:
 	var r: float=motion_rng.randf()

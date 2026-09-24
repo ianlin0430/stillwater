@@ -8,7 +8,7 @@ func track(seed_value: int, hour: float, ticks: int) -> Dictionary:
 	var world:=StreamWorld.new(seed_value,1000)
 	world.state.light_hour=hour
 	var tracks: Dictionary={}
-	for a: Dictionary in world.state.animals.filter(func(x): return x.species!="garden_eel"):
+	for a: Dictionary in world.state.animals.filter(func(x): return x.species in StreamWorld.DEPTH):
 		tracks[a.id]={"species":a.species,"low":a.x,"high":a.x,"previous":Vector2(a.x,a.y),"max_step":0.0,"edge":0,"rim":0,"flip":0,"vy":0.0,"distance":0.0,"still":0,"xs":[],"turns":[],"heading":0.0}
 	for tick in ticks:
 		world.advance_live(0.2)
@@ -17,6 +17,11 @@ func track(seed_value: int, hour: float, ticks: int) -> Dictionary:
 				# Eels never roam: they stay in their burrow (tests/test_world.gd eel_checks).
 				if a.x!=a.burrow_x or a.y!=a.burrow_y:
 					failures.append("Garden eel left its burrow")
+				continue
+			if a.species=="lawnmower_blenny":
+				# Blennies hop along the bed (tests/test_world.gd blenny_checks).
+				if absf(a.y-StreamWorld.floor_y(a.x))>0.0001:
+					failures.append("Blenny left the bed")
 				continue
 			if not tracks.has(a.id): continue
 			var t: Dictionary=tracks[a.id]

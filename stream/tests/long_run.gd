@@ -22,6 +22,10 @@ func audit_depth(world: StreamWorld, depth: Dictionary) -> void:
 			# On the bed, never swimming: exactly at its own burrow mouth.
 			if a.x!=a.burrow_x or a.y!=a.burrow_y or absf(a.y-StreamWorld.floor_y(a.x))>0.0001:
 				depth.violations+=1
+		elif a.species=="lawnmower_blenny":
+			# Perched, grazing or hopping, always on the bed.
+			if absf(a.y-StreamWorld.floor_y(a.x))>0.0001:
+				depth.violations+=1
 		else:
 			var band: Array=BANDS[a.species]
 			if a.y<band[0] or a.y>band[1]:

@@ -62,7 +62,7 @@ func _initialize() -> void:
 	var a:=StreamWorld.new(42,1000)
 	var b:=StreamWorld.new(42,1000)
 	# The one place these tests pin the cast (user decision 2026-09-23); others read the constants.
-	check(StreamWorld.ACTIVE_SPECIES==["threadfin","garden_eel"] and StreamWorld.CAP=={"threadfin":8,"garden_eel":4} and StreamWorld.habitat_cap()==12 and StreamWorld.ACTIVE_SPECIES.map(func(k): return StreamWorld.SPECIES[k].initial)==[6,2],"Cast: threadfin/garden eel, caps 8/4 (12), opening 6/2")
+	check(StreamWorld.ACTIVE_SPECIES==["threadfin","garden_eel","lawnmower_blenny"] and StreamWorld.CAP=={"threadfin":8,"garden_eel":4,"lawnmower_blenny":3} and StreamWorld.habitat_cap()==15 and StreamWorld.ACTIVE_SPECIES.map(func(k): return StreamWorld.SPECIES[k].initial)==[6,2,2],"Cast: threadfin/garden eel/blenny, caps 8/4/3 (15), opening 6/2/2")
 	var opening: Dictionary={}
 	for k: String in StreamWorld.ACTIVE_SPECIES:
 		opening[k]=StreamWorld.SPECIES[k].initial
@@ -246,6 +246,7 @@ func _initialize() -> void:
 	feeding_checks()
 	startle_checks()
 	lure_checks()
+	blenny_checks()
 	var acceptance=preload("res://tests/ecology_acceptance.gd")
 	check(acceptance.reproduction_passes({"births":17,"dispersal":14,"arrivals":7}),"Dispersed offspring count toward reproduction")
 	check(not acceptance.reproduction_passes({"births":17,"dispersal":2,"arrivals":7}),"Nineteen offspring do not meet the twenty-offspring threshold")
@@ -946,3 +947,106 @@ func lure_checks() -> void:
 	var r:=StreamWorld.new()
 	w.set_lure(spot)
 	check(r.restore(w.export_state()) and r.lure.is_empty(),"A restored world has no lure")
+
+func blennies(w: StreamWorld) -> Array:
+	return w.state.animals.filter(func(x): return x.species=="lawnmower_blenny")
+
+func on_bed(a: Dictionary) -> bool:
+	return absf(a.y-StreamWorld.floor_y(a.x))<0.0001 and a.x>=130 and a.x<=1150
+
+# Keeps only the animals `keep` accepts, then rebalances the ledger.
+func only(w: StreamWorld, keep: Callable) -> void:
+	for x: Dictionary in w.state.animals.duplicate():
+		if not keep.call(x):
+			w.state.animals.erase(x)
+	reset_material(w)
+
+# 2026-09-24 user decision: a lawnmower blenny grazes biofilm on the bed and rocks,
+# perching, grazing and hopping short distances; it never leaves the bottom.
+func blenny_checks() -> void:
+	var cfg: Dictionary=StreamWorld.SPECIES.get("lawnmower_blenny",{})
+	check(cfg.get("label")=="Lawnmower blenny" and cfg.get("latin")=="Salarias fasciatus" and cfg.get("pool")=="biofilm" and StreamWorld.CAP.get("lawnmower_blenny")==3 and cfg.get("initial")==2,"Lawnmower blenny: biofilm grazer, habitat for three, opening pair")
+	var w:=StreamWorld.new(42,1000)
+	var pair: Array=blennies(w)
+	check(pair.size()==2 and pair.all(on_bed) and pair.any(func(x): return x.sex=="female") and pair.any(func(x): return x.sex=="male"),"A new world opens with a blenny pair on the bed")
+	w.state.light_hour=12.0
+	var seen: Dictionary={}
+	var bed: bool=true
+	var step_ok: bool=true
+	var low: float=INF
+	var high: float=-INF
+	var x0: float=pair[0].x
+	for i in 9000:
+		var before: Array=pair.map(func(x): return Vector2(x.x,x.y))
+		w.advance_live(0.2)
+		for k in pair.size():
+			var b: Dictionary=pair[k]
+			seen[b.activity]=true
+			bed=bed and on_bed(b)
+			step_ok=step_ok and absf(b.x-before[k].x)<=StreamWorld.BLENNY.hop_speed*0.2+0.001 and Vector2(b.x,b.y).distance_to(before[k]+Vector2(b.vx,b.vy)*0.2)<0.001
+		low=minf(low,pair[0].x)
+		high=maxf(high,pair[0].x)
+	check(bed,"Blennies stay on the bed")
+	check(["Perching","Grazing","Hopping"].all(func(k): return seen.has(k)) and seen.keys().all(func(k): return k in ["Perching","Grazing","Hopping"]),"By day blennies perch, graze and hop (%s)" % str(seen.keys()))
+	check(step_ok,"Hops are short, smooth steps along the bed (vx/vy match the motion)")
+	check(high-low>60 and high-low<1020,"A blenny works its way along the bottom (%.0f px)" % (high-low))
+	w.state.light_hour=23.0
+	w.advance_live(130)
+	var night: Array=pair.map(func(x): return x.x)
+	w.advance_live(60)
+	check(pair.all(func(x): return x.activity=="Sleeping") and pair.map(func(x): return x.x)==night,"At night blennies sleep in place")
+	check(absf(w.residual())<0.00001 and StreamWorld.validate(w.export_state()),"Blenny world conserves material and validates")
+	# They graze biofilm, not microfauna.
+	var grazed:=StreamWorld.new(8,1000)
+	var bare:=StreamWorld.new(8,1000)
+	only(grazed,func(x): return x.species=="lawnmower_blenny")
+	only(bare,func(x): return false)
+	for b: Dictionary in blennies(grazed):
+		b.energy=1.0
+	offline(grazed,StreamWorld.DAY*2)
+	offline(bare,StreamWorld.DAY*2)
+	check(blennies(grazed).all(func(x): return x.energy>1.0) and grazed.state.resources.biofilm<bare.state.resources.biofilm,"Hungry blennies feed on biofilm")
+	# Young are born on the bed beside the mother; arrivals settle on the bed at the edge.
+	var b:=StreamWorld.new(3,1000)
+	var mom: Dictionary=blennies(b).filter(func(x): return x.sex=="female")[0]
+	mom.energy=cfg.reserve
+	var cursor: int=b.state.next_event-1
+	b._breed(mom)
+	var born: Array=StreamWorld.events_after(b.state.events,cursor).filter(func(e): return e.kind=="birth")
+	check(born.size()==1 and on_bed(by_id(b,born[0].id)) and absf(by_id(b,born[0].id).x-mom.x)<=30.001,"A young blenny is born on the bed beside its mother")
+	var came: Dictionary=b._arrive("lawnmower_blenny")
+	check(on_bed(came) and came.x in [130.0,1150.0] and came.tx==came.x and came.ty==came.y,"An arriving blenny settles on the bed at the edge")
+	# Settled food: a hungry blenny hops over and pecks it up.
+	var f:=StreamWorld.new(42,1000)
+	only(f,func(x): return x==blennies(f)[0])
+	var bl: Dictionary=blennies(f)[0]
+	bl.energy=1.0
+	bl.x=500.0
+	bl.y=StreamWorld.floor_y(500.0)
+	bl.tx=bl.x
+	bl.ty=bl.y
+	reset_material(f)
+	f.state.light_hour=12.0
+	f.feed(560.0)
+	var fed: bool=false
+	for i in 900:
+		f.advance_live(0.2)
+		fed=fed or bl.activity=="Feeding"
+	check(fed and food_mass(f)<StreamWorld.FOOD.particles*StreamWorld.FOOD.mass-0.000001 and bl.energy>1.0 and on_bed(bl) and absf(f.residual())<0.00001,"A blenny pecks up settled food")
+	# Tap: it hops away along the bed, then settles; a lure does not interest it.
+	var t:=StreamWorld.new(42,1000)
+	t.state.light_hour=12.0
+	var tb: Dictionary=blennies(t)[0]
+	var tap:=Vector2(tb.x+40,tb.y-30)
+	check(t.startle(tap.x,tap.y,1.0)>=1 and tb.activity=="Startled","A tap startles a nearby blenny")
+	var start: float=absf(tb.x-tap.x)
+	t.advance_live(2)
+	check(absf(tb.x-tap.x)>start+20 and on_bed(tb),"It scoots away along the bed")
+	t.advance_live(StreamWorld.STARTLE.seconds+1)
+	check(tb.activity!="Startled","Then it settles again")
+	t.set_lure(Vector2(tb.x,tb.y-40))
+	var curious: bool=false
+	for i in 600:
+		t.advance_live(0.2)
+		curious=curious or blennies(t).any(func(x): return x.activity=="Curious")
+	check(not curious,"Blennies ignore the cursor lure")
