@@ -5,32 +5,32 @@ const VERSION: int = 2
 const MAX_ANIMALS: int = 24
 const MAX_AWAY: float = 259200.0
 const DAY: float = 86400.0
-const ACTIVE_SPECIES: Array[String] = ["lawnmower_blenny","purple_firefish","green_chromis","garden_eel","yellow_tang"]
+const ACTIVE_SPECIES: Array[String] = ["lawnmower_blenny","purple_firefish","green_chromis","yellow_tang"]
 const SPECIES: Dictionary = {
-	# Legacy entries: threadfin (2026-09-24), hatchetfish and shrimp (2026-09-23) and crayfish (2026-09-22) were removed
-	# from the cast; kept only so older saves validate, upgrade and still show their history.
+	# Legacy entries: garden eel (2026-09-25), threadfin (2026-09-24), hatchetfish and shrimp (2026-09-23) and
+	# crayfish (2026-09-22) were removed from the cast; kept only so older saves validate, upgrade and still show their history.
 	"shrimp": {"label":"Cherry shrimp","latin":"Neocaridina davidi","initial":0,"mature":21.0,"lifespan":120.0,"body":0.3,"reserve":3.0,"cost":0.22,"bite":0.5,"brood":2,"breed":0.12,"cooldown":7.0,"pool":"biofilm"},
 	"crayfish": {"label":"Blue crayfish","latin":"Procambarus alleni","initial":0,"mature":35.0,"lifespan":540.0,"body":3.0,"reserve":12.0,"cost":0.65,"bite":1.2,"brood":2,"breed":0.035,"cooldown":21.0,"pool":"detritus"},
 	"threadfin": {"label":"Threadfin rainbowfish","latin":"Iriatherina werneri","initial":0,"mature":28.0,"lifespan":180.0,"body":0.7,"reserve":4.0,"cost":0.3,"bite":0.7,"brood":2,"breed":0.06,"cooldown":10.0,"pool":"microfauna","k_food":10.0},
 	"hatchet": {"label":"Marbled hatchetfish","latin":"Carnegiella strigata","initial":0,"mature":28.0,"lifespan":180.0,"body":0.8,"reserve":4.0,"cost":0.32,"bite":0.75,"brood":2,"breed":0.04,"cooldown":14.0,"pool":"microfauna","k_food":10.0},
-	# Added 2026-09-23 by user decision; a marine fish, kept in this freshwater stream on purpose.
-	"garden_eel": {"label":"Spotted garden eel","latin":"Heteroconger hassi","initial":2,"mature":90.0,"lifespan":365.0,"body":0.9,"reserve":5.0,"cost":0.22,"bite":0.55,"brood":2,"breed":0.04,"cooldown":20.0,"pool":"microfauna","k_food":10.0},
+	# Added 2026-09-23, removed 2026-09-25 (user decision: no garden eels). Legacy entry.
+	"garden_eel": {"label":"Spotted garden eel","latin":"Heteroconger hassi","initial":0,"mature":90.0,"lifespan":365.0,"body":0.9,"reserve":5.0,"cost":0.22,"bite":0.55,"brood":2,"breed":0.04,"cooldown":20.0,"pool":"microfauna","k_food":10.0},
 	# Stillwater Reef cast (user decision 2026-09-24). Authored rates; sizing in docs/ecology.md.
 	"lawnmower_blenny": {"label":"Lawnmower blenny","latin":"Salarias fasciatus","initial":2,"mature":45.0,"lifespan":240.0,"body":0.8,"reserve":4.5,"cost":0.24,"bite":0.6,"brood":2,"breed":0.07,"cooldown":12.0,"pool":"biofilm","k_food":10.0},
 	# Purple firefish replaced the red firefish (N. magnifica, key "firefish") on 2026-09-24, before any
 	# user save held one, so the red key was dropped rather than kept as a legacy entry.
 	"purple_firefish": {"label":"Purple firefish","latin":"Nemateleotris decora","initial":2,"mature":35.0,"lifespan":200.0,"body":0.5,"reserve":3.5,"cost":0.18,"bite":0.45,"brood":2,"breed":0.08,"cooldown":10.0,"pool":"microfauna","k_food":10.0},
-	"green_chromis": {"label":"Green chromis","latin":"Chromis viridis","initial":5,"mature":30.0,"lifespan":180.0,"body":0.5,"reserve":3.5,"cost":0.2,"bite":0.5,"brood":2,"breed":0.1,"cooldown":8.0,"pool":"microfauna","k_food":10.0},
+	"green_chromis": {"label":"Green chromis","latin":"Chromis viridis","initial":6,"mature":30.0,"lifespan":180.0,"body":0.5,"reserve":3.5,"cost":0.2,"bite":0.5,"brood":2,"breed":0.1,"cooldown":8.0,"pool":"microfauna","k_food":10.0},
 	# Added 2026-09-24 (user decision): the largest fish of the pool, a biofilm grazer beside the
 	# blenny; longer lived and slower breeding than the chromis. Break-even at food 10 like the rest.
 	"yellow_tang": {"label":"Yellow tang","latin":"Zebrasoma flavescens","initial":2,"mature":120.0,"lifespan":540.0,"body":1.4,"reserve":7.0,"cost":0.32,"bite":0.8,"brood":2,"breed":0.03,"cooldown":30.0,"pool":"biofilm","k_food":10.0}}
 # Ecology v2 (docs/plans/2026-09-22-self-sustaining-ecosystem.md). Rates are per day, applied per one-minute tick.
-# Reef cast since 2026-09-24 (with the yellow tang): caps 3+3+6+4+2 = 18, opening cast
-# 2+2+5+2+2 = 13 (SPECIES.initial),
+# Reef cast since 2026-09-25 (four species, no garden eels): caps 3+4+8+2 = 17, opening cast
+# 2+2+6+2 = 12 (SPECIES.initial),
 # sized against the food pools by offline probe (tools/cast_probe.gd, docs/ecology.md). These
 # two are the only places the cast sizes live; the arrival limit (habitat_cap) and the
 # long-run band follow from them.
-const CAP: Dictionary = {"lawnmower_blenny":3,"purple_firefish":3,"green_chromis":6,"garden_eel":4,"yellow_tang":2}
+const CAP: Dictionary = {"lawnmower_blenny":3,"purple_firefish":4,"green_chromis":8,"yellow_tang":2}
 # Species that arrive once, not live, in a save from before the reef (see restore()).
 const REEF_CAST: Array[String] = ["lawnmower_blenny","purple_firefish","green_chromis","yellow_tang"]
 const POOLS: Array[String] = ["nutrients","stem","floating","biofilm","microfauna","detritus"]
@@ -58,7 +58,7 @@ const RESCUE_AT: int = 1
 # Opening ages in days (R11): one opener per stratum of [lo, hi]. The long-run gates derive
 # the old-age deaths the opening cast must produce from these (tests/ecology_acceptance.gd).
 # Yellow tang openers are adults (mature at 120 days).
-const OPENING_AGE: Dictionary = {"fish":[40.0,150.0],"garden_eel":[100.0,220.0],"yellow_tang":[130.0,260.0]}
+const OPENING_AGE: Dictionary = {"fish":[40.0,150.0],"yellow_tang":[130.0,260.0]}
 const RESCUE_RATE: float = 1.0/96.0
 const ARRIVAL_RATE: float = 1.0/504.0
 # An unexplained position jump larger than this in one motion tick is a relocation
@@ -66,26 +66,23 @@ const ARRIVAL_RATE: float = 1.0/504.0
 # play, so since the shrimp (whose surface snap crossed it) left, only a fish found
 # outside its band, e.g. from an edited save, is snapped back and marked.
 const RELOCATION: float = 3.0
-# Garden eel burrow sites on the open sand between the stones and the plants, filled
-# nearest-first; an eel never leaves its burrow. A fish within `dx` sideways and `dy`
-# above the burrow mouth (the bottom of the chromis layer) sends it down for `seconds`.
-const BURROWS: Array[float] = [650.0,684.0,616.0,718.0,582.0,752.0,548.0,786.0]
-const EEL_WARY: Dictionary = {"dx":48.0,"dy":200.0,"seconds":4.0}
-# Firefish burrows: their own patch left of the eel colony (at least 60 px from every eel
-# site). A firefish hovers `hover_y` px (per individual, in `hover`) above its burrow and
-# hides for `seconds` when a swimming fish or a moving blenny comes within EEL_WARY.
+# Firefish burrows on the open sand, filled nearest-first; a firefish never leaves its burrow.
+# It hovers `hover_y` px (per individual, in `hover`) above it and hides for `seconds` when a
+# swimming fish within `dx` sideways and `dy` above the mouth (the bottom of the chromis layer)
+# or a moving blenny within `dx` passes. (The garden eels' colony and rule left with them, 2026-09-25.)
 const FIRE_BURROWS: Array[float] = [420.0,452.0,388.0,484.0]
-const FIRE: Dictionary = {"seconds":6.0,"hover":[24.0,40.0]}
-const HOMES: Dictionary = {"garden_eel":BURROWS,"purple_firefish":FIRE_BURROWS}
+const FIRE: Dictionary = {"seconds":6.0,"hover":[24.0,40.0],"dx":48.0,"dy":200.0}
+# Species that live in a burrow of their own patch (spawn digs one, validate() requires it).
+const HOMES: Dictionary = {"purple_firefish":FIRE_BURROWS}
 # Feeding (user decision 2026-09-23: real food, never required). A pinch is `particles` of
 # `mass` dropped just below the surface (y `surface`); at most `daily` mass per simulated day.
 # Particles sink `sink` px/s; fish with room notice food within `notice` px and eat it within
-# `eat` px; a swaying garden eel snatches food within `eel_dx` of its burrow and `eel_reach`
-# above it. Food on the bed becomes detritus `decay` seconds after it settles. See
+# `eat` px; a hovering firefish snatches food within `eel_dx` of its burrow and `eel_reach`
+# above it (names kept from the garden eels, which had the same rule). Food on the bed becomes detritus `decay` seconds after it settles. See
 # docs/BACKEND_SNAPSHOT_EVENTS.md.
 const FOOD: Dictionary = {"particles":5,"mass":0.05,"daily":1.0,"max":40,"surface":56.0,"sink":10.0,"notice":260.0,"eat":12.0,"eel_dx":22.0,"eel_reach":80.0,"decay":900.0}
-# Tap the glass: fish within `radius` dart up to `dart` px away for `seconds`; eels in reach
-# stay down `eel_seconds`. Presentation of the tap only; no ecology effect, nothing saved.
+# Tap the glass: fish within `radius` dart up to `dart` px away for `seconds`; firefish in reach
+# stay down `eel_seconds` (name kept from the garden eels). Presentation of the tap only; no ecology effect, nothing saved.
 const STARTLE: Dictionary = {"radius":260.0,"dart":150.0,"seconds":3.0,"eel_seconds":5.0}
 # Cursor lure: for `interest` seconds after the cursor comes to rest, a fish choosing its next
 # move within `range` of it looks with probability `chance`, hovering `stand_off` px to the side
@@ -100,7 +97,7 @@ const BLENNY: Dictionary = {"graze":[6.0,20.0],"perch":[4.0,12.0],"sleep":[60.0,
 # `side` (+1 right of the rock, -1 left), facing the rock. Graze/rest dwell times (s), cruise speed
 # (px/s), trip length (px), members keep `spacing` px apart. `graze` share of day choices, `night_rest` at night.
 const TANG: Dictionary = {"spots":[[170.0,318.0,1.0],[310.0,400.0,1.0],[240.0,472.0,1.0],[962.0,532.0,-1.0],[1080.0,486.0,-1.0]],"reach":22.0,"cruise":[150.0,360.0],"graze":0.4,"graze_time":[8.0,20.0],"rest":[30.0,90.0],"night_rest":0.7,"speed":20.0,"trip":[80.0,360.0],"spacing":70.0}
-const NAMES: Dictionary = {"green_chromis":["Jade","Mint","Lagoon","Kelp","Glass"],"garden_eel":["Dune","Sprig"],"lawnmower_blenny":["Moss","Pebble"],"purple_firefish":["Ember","Flicker"],"yellow_tang":["Saffron","Lemon"]}
+const NAMES: Dictionary = {"green_chromis":["Jade","Mint","Lagoon","Kelp","Glass","Pearl"],"lawnmower_blenny":["Moss","Pebble"],"purple_firefish":["Ember","Flicker"],"yellow_tang":["Saffron","Lemon"]}
 var rng := RandomNumberGenerator.new()
 var motion_rng := RandomNumberGenerator.new()
 var state: Dictionary
@@ -112,7 +109,7 @@ var _live: bool = false
 func _init(world_seed: int = 240921, wall_time: float = 0) -> void:
 	rng.seed = world_seed
 	motion_rng.seed = world_seed + 7919
-	state = {"version":VERSION,"seed":world_seed,"elapsed":0.0,"ecology_remainder":0.0,"motion_remainder":0.0,"motion_ticks":0,"ecology_ticks":0,"next_id":1,"next_event":1,"wall_checkpoint":wall_time,"animals":[],"archive":[],"events":[],"history":[],"resources":OPENING.duplicate(),"ledger":{"initial":0.0,"in":0.0,"out":0.0},"totals":{"birth":0,"death":0,"arrival":0,"departure":0,"dispersal":0,"molt":0,"predation":0},"causes":{},"light_hour":12.0,"eel_colony":true,"reef_cast":true}
+	state = {"version":VERSION,"seed":world_seed,"elapsed":0.0,"ecology_remainder":0.0,"motion_remainder":0.0,"motion_ticks":0,"ecology_ticks":0,"next_id":1,"next_event":1,"wall_checkpoint":wall_time,"animals":[],"archive":[],"events":[],"history":[],"resources":OPENING.duplicate(),"ledger":{"initial":0.0,"in":0.0,"out":0.0},"totals":{"birth":0,"death":0,"arrival":0,"departure":0,"dispersal":0,"molt":0,"predation":0},"causes":{},"light_hour":12.0,"reef_cast":true}
 	for species: String in ACTIVE_SPECIES:
 		var n: int = int(SPECIES[species].initial)
 		var lo: float = OPENING_AGE.get(species,OPENING_AGE.fish)[0]
@@ -181,7 +178,7 @@ func spawn(species: String, age: float = 0, parent: int = 0) -> Dictionary:
 	state.animals.append(a)
 	return a
 
-# Moving a newly placed animal sideways; an eel stays at its burrow.
+# Moving a newly placed animal sideways; a burrow fish stays at its burrow.
 func _bed_align(a: Dictionary, x: float) -> void:
 	if a.species in HOMES:
 		return
@@ -518,25 +515,21 @@ func _burrow(parent: int, species: String) -> Vector2:
 			gap=absf(x-home)
 	return Vector2(best,floor_y(best))
 
-# Garden eels and firefish: out by day (eels swaying, firefish hovering), asleep in the
-# burrow at night, down for a moment when a fish passes just above (firefish also duck
-# for a moving blenny). `extend` is the pose the stage eases toward (0 in, 1 out).
+# Firefish: hovering above the burrow by day, asleep in it at night, down for a moment when
+# a fish passes just above or a blenny moves past. `extend` is the pose the stage eases
+# toward (0 in, 1 out).
 func _burrower(a: Dictionary) -> void:
 	a.vx=0.0
 	a.vy=0.0
-	var eel: bool=a.species=="garden_eel"
 	if state.light_hour<7 or state.light_hour>19:
 		a.activity="Sleeping"
 	else:
 		for o: Dictionary in state.animals:
-			var passing: bool=o.species in DEPTH or (not eel and o.species=="lawnmower_blenny" and o.activity in ["Hopping","Startled","Feeding"])
-			if passing and absf(o.x-a.burrow_x)<EEL_WARY.dx and a.burrow_y-o.y<EEL_WARY.dy:
-				a.decision_at=state.elapsed+(EEL_WARY.seconds if eel else FIRE.seconds)
-		if state.elapsed<a.decision_at:
-			a.activity="Retracted" if eel else "Hiding"
-		else:
-			a.activity="Swaying" if eel else "Hovering"
-	a.extend=1.0 if a.activity in ["Swaying","Hovering"] else 0.0
+			var passing: bool=o.species in DEPTH or (o.species=="lawnmower_blenny" and o.activity in ["Hopping","Startled","Feeding"])
+			if passing and absf(o.x-a.burrow_x)<FIRE.dx and a.burrow_y-o.y<FIRE.dy:
+				a.decision_at=state.elapsed+FIRE.seconds
+		a.activity="Hiding" if state.elapsed<a.decision_at else "Hovering"
+	a.extend=1.0 if a.activity=="Hovering" else 0.0
 	if a.extend==1.0 and not state.get("food",[]).is_empty() and SPECIES[a.species].reserve-a.energy>=FOOD.mass*0.8:
 		for f: Dictionary in state.food:
 			if not f.settled and absf(f.x-a.burrow_x)<FOOD.eel_dx and f.y>a.burrow_y-FOOD.eel_reach and f.y<a.burrow_y:
@@ -854,7 +847,7 @@ func _sample() -> void:
 	if state.history.size()>400:
 		state.history.pop_front()
 
-# The combined habitat caps (12; 16 with the hatchetfish, 22 with the shrimp).
+# The combined habitat caps (17 for the four-species reef, 2026-09-25).
 static func habitat_cap() -> int:
 	var total: int = 0
 	for species: String in CAP:
@@ -912,21 +905,15 @@ func restore(saved: Dictionary) -> bool:
 	if state.version==1:
 		_upgrade_v1()
 	# The user explicitly removed crayfish (2026-09-22), shrimp and hatchetfish (2026-09-23), threadfin (2026-09-24)
-	# from this pool. Preserve every other identity, archive each departure and account
+	# and garden eels (2026-09-25) from this pool. Preserve every other identity, archive each departure and account
 	# for its exported material. An unhatched shrimp brood leaves with its mother:
 	# its cost was never taken, so no young and no extra material.
 	for a: Dictionary in state.animals.duplicate():
 		if a.species not in ACTIVE_SPECIES:
 			a.erase("brood_until")
 			_remove(a,"departure")
-	# Saves from before the garden eels (2026-09-23): a pair arrives once, like any
-	# arrival but not live. A colony that later dies out is not replaced on load.
-	if not state.get("eel_colony",false):
-		for sex: String in ["female","male"]:
-			var eel: Dictionary = _arrive("garden_eel")
-			if not eel.is_empty():
-				eel.sex=sex
-		state.eel_colony=true
+	# (Saves from before the garden eels once received a pair here, flagged `eel_colony`; since
+	# the eels left, 2026-09-25, nothing arrives and the flag is only validated.)
 	# Saves from before the reef (2026-09-24): its opening cast arrives once, not live,
 	# alternating female/male, after the threadfin (and older species) departed above.
 	if not state.get("reef_cast",false):
@@ -1005,7 +992,7 @@ static func validate(saved: Dictionary) -> bool:
 				return false
 		if a.get("brood_until",0)<0 or a.get("tint",0)<0 or a.get("tint",0)>1 or a.get("extend",0)<0 or a.get("extend",0)>1:
 			return false
-		if a.species in HOMES and (not _number(a.get("burrow_x")) or not _number(a.get("burrow_y"))):
+		if a.species in ["garden_eel","purple_firefish"] and (not _number(a.get("burrow_x")) or not _number(a.get("burrow_y"))):
 			return false
 		if a.species=="purple_firefish" and (not _number(a.get("hover_y")) or a.hover_y<0):
 			return false

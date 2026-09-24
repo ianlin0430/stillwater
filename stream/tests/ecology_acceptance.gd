@@ -1,7 +1,7 @@
 extends RefCounted
-# Long-run gates for the reef cast (2026-09-24; re-derived the same day for the five-species cast
-# with the yellow tang and purple firefish), computed from the configured species and written
-# down in docs/ecology.md "Acceptance gates" before any live run was judged.
+# Long-run gates for the reef cast (2026-09-24; re-derived for the five-species cast, and again on
+# 2026-09-25 for the four-species cast without garden eels), computed from the configured species
+# and written down in docs/ecology.md "Acceptance gates" before any acceptance run was judged.
 
 # Counts offspring individuals, not breeding attempts or broods. Keep retained
 # births separate so downstream dispersal cannot hide dependence on immigration.
