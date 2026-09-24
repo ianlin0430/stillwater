@@ -81,9 +81,10 @@ const HOMES: Dictionary = {"purple_firefish":FIRE_BURROWS}
 # `mass` dropped just below the surface (y `surface`); at most `daily` mass per simulated day.
 # Particles sink `sink` px/s; fish with room notice food within `notice` px and eat it within
 # `eat` px; a hovering firefish snatches food within `eel_dx` of its burrow and `eel_reach`
-# above it (names kept from the garden eels, which had the same rule). Food on the bed becomes detritus `decay` seconds after it settles. See
+# above it (names kept from the garden eels, which had the same rule). Food on the bed becomes detritus `decay` seconds after it settles.
+# Every pellet eaten is an `ate` event (no journal text); the journal keeps only the latest `max_bites`. See
 # docs/BACKEND_SNAPSHOT_EVENTS.md.
-const FOOD: Dictionary = {"particles":5,"mass":0.05,"daily":1.0,"max":40,"surface":56.0,"sink":10.0,"notice":260.0,"eat":12.0,"eel_dx":22.0,"eel_reach":80.0,"decay":900.0}
+const FOOD: Dictionary = {"particles":5,"mass":0.05,"daily":1.0,"max":40,"surface":56.0,"sink":10.0,"notice":260.0,"eat":12.0,"eel_dx":22.0,"eel_reach":80.0,"decay":900.0,"max_bites":10}
 # Tap the glass: fish within `radius` dart up to `dart` px away for `seconds`; firefish in reach
 # stay down `eel_seconds` (name kept from the garden eels). Presentation of the tap only; no ecology effect, nothing saved.
 const STARTLE: Dictionary = {"radius":260.0,"dart":150.0,"seconds":3.0,"eel_seconds":5.0}
@@ -206,7 +207,12 @@ func _event(kind: String, a: Dictionary, text: String, extra: Dictionary = {}) -
 		state.events.pop_front()
 	if state.totals.has(kind):
 		state.totals[kind]+=1
-	if not a.is_empty():
+	if kind=="ate":
+		# Bites are for the stage, not the story: out of `recent`, and only the latest few kept.
+		var bites: Array=state.events.filter(func(x): return x.kind=="ate")
+		for i in bites.size()-FOOD.max_bites:
+			state.events.erase(bites[i])
+	elif not a.is_empty():
 		a.recent.append(e.duplicate())
 		if a.recent.size()>6:
 			a.recent.pop_front()
@@ -369,11 +375,15 @@ func _seek_food(a: Dictionary) -> bool:
 	return true
 
 # Food mass becomes the eater's energy (80%) and detritus (20%), as with natural food (R6).
+# Only live motion eats food, so the bite is always a live `ate` event: actor x/y, pellet food_x/food_y.
 func _eat(a: Dictionary, f: Dictionary) -> void:
 	a.energy+=f.mass*0.8
 	state.resources.detritus+=f.mass*0.2
 	state.food.erase(f)
 	a.erase("food_id")
+	_live=true
+	_event("ate",a,"",{"food_id":f.id,"food_x":f.x,"food_y":f.y})
+	_live=false
 
 func _move(delta: float) -> void:
 	if not state.get("food",[]).is_empty():

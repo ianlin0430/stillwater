@@ -731,6 +731,14 @@ func feeding_checks() -> void:
 	twin.advance_live(60)
 	var eaten: float=pinch-food_mass(h)
 	check(eaten>=cfg.mass-0.000001,"The fish ate at least one particle")
+	# Each pellet eaten live is one `ate` event naming the eater and the pellet (for exact bites).
+	var fish_h: Dictionary=chromis(h)[0]
+	var bites: Array=h.state.events.filter(func(e): return e.kind=="ate")
+	var pinch_ids: Array=range(1,cfg.particles+1)
+	check(bites.size()==int(round(eaten/cfg.mass)) and bites.all(func(e): return e.live==true and e.id==fish_h.id and e.has("seq") and e.food_id in pinch_ids and e.has("x") and e.has("y") and absf(e.food_x-e.x)<=cfg.eat and absf(e.food_y-e.y)<=cfg.eat),"One live ate event per pellet eaten: actor id, food_id, actor x/y and pellet food_x/food_y")
+	check(bites.map(func(e): return e.food_id).size()==bites.map(func(e): return e.food_id).reduce(func(acc,x): return acc if x in acc else acc+[x],[]).size(),"Each pellet is eaten once")
+	check(bites.all(func(e): return e.text=="") and not fish_h.recent.any(func(e): return e.kind=="ate") and not h.state.totals.has("ate"),"Bites add no journal text, stay out of the animal's recent story and the totals")
+	check(StreamWorld.validate(h.export_state()),"A world with ate events validates")
 	check(absf(chromis(h)[0].energy-chromis(twin)[0].energy-eaten*0.8)<0.0001 and absf(h.residual())<0.00001,"Eaten food becomes that fish's energy (80%, 20% detritus)")
 	# A full fish ignores food.
 	var full:=StreamWorld.new(8,1000)
@@ -741,7 +749,7 @@ func feeding_checks() -> void:
 	reset_material(full)
 	full.feed(chromis(full)[0].x)
 	full.advance_live(60)
-	check(absf(food_mass(full)-pinch)<0.000001 and chromis(full)[0].activity!="Feeding","A full fish ignores food")
+	check(absf(food_mass(full)-pinch)<0.000001 and chromis(full)[0].activity!="Feeding" and not full.state.events.any(func(e): return e.kind=="ate"),"A full fish ignores food (no ate event)")
 	# Daily cap: a few pinches per simulated day, then "they're full".
 	var d:=StreamWorld.new(5,1000)
 	var n: int=0
@@ -765,14 +773,14 @@ func feeding_checks() -> void:
 		settled=settled or bare.state.food.any(func(f): return f.settled and absf(f.y-(StreamWorld.floor_y(f.x)-2))<0.001 and f.settled_at>0)
 	check(settled and bare.state.food.size()==cfg.particles,"Uneaten food settles on the bed")
 	bare.advance_live(cfg.decay+120)
-	check(bare.state.food.is_empty() and absf(bare.residual())<0.00001,"Settled food becomes detritus after a while")
+	check(bare.state.food.is_empty() and absf(bare.residual())<0.00001 and not bare.state.events.any(func(e): return e.kind=="ate"),"Settled food becomes detritus after a while (decay is not a bite)")
 	# Offline catch-up: drifting food just settles and decays, nobody chases it.
 	var off:=StreamWorld.new(9,1000)
 	off.feed(640.0)
 	off.advance_offline(120)
 	check(off.state.food.all(func(f): return f.settled) and off.state.animals.all(func(x): return x.activity!="Feeding"),"Offline, drifting food settles without a chase")
 	off.advance_offline(StreamWorld.DAY)
-	check(off.state.food.is_empty() and absf(off.residual())<0.00001 and StreamWorld.validate(off.export_state()),"Offline food decays and the ledger balances")
+	check(off.state.food.is_empty() and absf(off.residual())<0.00001 and StreamWorld.validate(off.export_state()) and not off.state.events.any(func(e): return e.kind=="ate"),"Offline food decays and the ledger balances; nobody bites offline")
 	# Overfeeding at the cap for 60 days only raises detritus within bounds.
 	var fat:=StreamWorld.new(812,1000)
 	var lean:=StreamWorld.new(812,1000)
@@ -784,6 +792,25 @@ func feeding_checks() -> void:
 		lean.advance_offline(StreamWorld.DAY)
 		peak=[maxf(peak[0],fat.state.resources.detritus),maxf(peak[1],lean.state.resources.detritus)]
 	check(peak[0]<=peak[1]+cfg.daily/0.12+1.0 and absf(fat.residual())<0.00001 and StreamWorld.validate(fat.export_state()),"Sixty days at the cap keep detritus bounded (%.2f vs %.2f unfed)" % peak)
+	# Bites never crowd the journal: only the latest few ate events are kept.
+	var busy:=StreamWorld.new(42,1000)
+	busy.state.light_hour=12.0
+	for x: Dictionary in busy.state.animals:
+		x.energy=1.0
+	var ate_seen: int=0
+	var cursor_b: int=busy.state.next_event-1
+	for day in 3:
+		for k in 4:
+			busy.feed(300.0+k*200.0)
+			for i in 900:
+				busy.advance_live(0.2)
+				ate_seen+=StreamWorld.events_after(busy.state.events,cursor_b).filter(func(e): return e.kind=="ate").size()
+				cursor_b=busy.state.next_event-1
+				for x: Dictionary in busy.state.animals:
+					x.energy=minf(x.energy,1.0)
+		busy.advance_offline(StreamWorld.DAY-4*900*0.2)
+	var kept_bites: int=busy.state.events.filter(func(e): return e.kind=="ate").size()
+	check(ate_seen>cfg.max_bites and kept_bites<=cfg.max_bites and busy.state.events.any(func(e): return e.kind=="begin"),"The journal keeps at most %d ate events (%d bites in three fed days) and older events stay" % [cfg.max_bites,ate_seen])
 	# Validation of the new optional fields.
 	var bad: Dictionary=d.export_state()
 	check(bad.food.size()==cfg.particles,"Fixture for food validation holds a pinch")
@@ -969,6 +996,7 @@ func blenny_checks() -> void:
 		f.advance_live(0.2)
 		fed=fed or bl.activity=="Feeding"
 	check(fed and food_mass(f)<StreamWorld.FOOD.particles*StreamWorld.FOOD.mass-0.000001 and bl.energy>1.0 and on_bed(bl) and absf(f.residual())<0.00001,"A blenny pecks up settled food")
+	check(f.state.events.any(func(e): return e.kind=="ate" and e.id==bl.id and e.live and absf(e.food_x-e.x)<StreamWorld.FOOD.eat),"A blenny's peck is an ate event beside the pellet")
 	# Tap: it hops away along the bed, then settles; a lure does not interest it.
 	var t:=StreamWorld.new(42,1000)
 	t.state.light_hour=12.0
@@ -1098,6 +1126,8 @@ func firefish_checks() -> void:
 	t.feed(tf.burrow_x)
 	t.advance_live(80)
 	check(tf.energy>before+StreamWorld.FOOD.mass*0.8-0.000001 and absf(t.residual())<0.00001,"A hovering firefish snatches food drifting past its burrow")
+	var snatch: Array=t.state.events.filter(func(e): return e.kind=="ate" and e.id==tf.id)
+	check(snatch.size()>=1 and snatch.all(func(e): return e.live and e.x==tf.burrow_x and absf(e.food_x-tf.burrow_x)<StreamWorld.FOOD.eel_dx and e.food_y<tf.burrow_y and e.food_y>tf.burrow_y-StreamWorld.FOOD.eel_reach),"The firefish's bites are ate events at its burrow, with the pellet above it")
 	t.set_lure(Vector2(tf.burrow_x,tf.burrow_y-60))
 	var curious: bool=false
 	for i in 300:
