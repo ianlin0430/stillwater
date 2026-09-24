@@ -1,8 +1,8 @@
-# Stillwater Stream
+# Stillwater Reef
 
 A native Godot 4.6.3 Mac app: one soft-pixel stream pool, 14 individual animals, and autonomous ecology. This is a separate project; the previous wetland app and saves are untouched.
 
-Open **builds/Stillwater Stream.app**. The bundle contains both Apple Silicon and Intel executables, with a local ad-hoc signature. It requires no server, account, installation service or network connection.
+Open **builds/Stillwater Reef.app**. The bundle contains both Apple Silicon and Intel executables, with a local ad-hoc signature. It requires no server, account, installation service or network connection.
 
 ## Controls
 
@@ -28,7 +28,7 @@ On reopening or waking, elapsed time advances in bounded minute steps, capped at
 
 ## Saves
 
-Separate location: `~/Library/Application Support/Godot/app_userdata/Stillwater Stream/`.
+Separate location: `~/Library/Application Support/Godot/app_userdata/Stillwater Reef/`. Renamed from Stillwater Stream in 0.6.0 (2026-09-24): Godot derives this folder from the project name (no custom user dir; checked with `OS.get_user_data_dir()`), so 0.6.0 starts a fresh world and the old `Stillwater Stream` folder is left untouched as a backup.
 
 `stream.world` is a versioned, SHA-256-verified binary save; `.bak` holds the previous verified state. A temporary file is verified before atomic replacement. Elapsed progress and its timestamp commit together. If both files are unreadable, they are preserved and a separate recovery world is created. Earlier v1 stream saves upgrade to the six-pool v2 model while preserving individual identities and lineage. The separate wetland app’s saves are not imported. `preferences.cfg` stores the viewing light and active recovery path.
 
@@ -41,7 +41,7 @@ godot --path .
 godot --headless --path . --script tests/test_world.gd
 godot --headless --path . --script tests/test_swimmers.gd
 godot --headless --path . --script tests/long_run.gd
-godot --headless --path . --export-release macOS "$PWD/builds/Stillwater Stream.app"
+godot --headless --path . --export-release macOS "$PWD/builds/Stillwater Reef.app"
 ```
 
 Simulation lives in `scripts/stream_world.gd` (`advance_live`, `advance_offline`, `catch_up`, `snapshot`, `export_state`, `restore`). `stream_store.gd` owns verified persistence. `stream_stage.gd` and `swimmer_rig.gd` consume snapshots; presentation does not feed animation randomness back into ecology. Main handles controls, lifecycle and local time.

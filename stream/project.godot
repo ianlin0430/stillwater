@@ -1,8 +1,8 @@
 config_version=5
 
 [application]
-config/name="Stillwater Stream"
-config/description="A small world beneath the surface"
+config/name="Stillwater Reef"
+config/description="A small reef beneath the surface"
 run/main_scene="res://scenes/main.tscn"
 config/features=PackedStringArray("4.6", "GL Compatibility")
 

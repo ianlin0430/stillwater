@@ -157,7 +157,7 @@ func _setup_ui() -> void:
 	serif.font_names=PackedStringArray(["Georgia","serif"])
 	title.add_theme_font_override("font",serif)
 	header.add_child(title)
-	var subtitle: Label = _label("STREAM",10,MUTED)
+	var subtitle: Label = _label("REEF",10,MUTED)
 	subtitle.size_flags_vertical=Control.SIZE_SHRINK_CENTER
 	header.add_child(subtitle)
 	var spacer := Control.new()
@@ -215,10 +215,10 @@ func _setup_ui() -> void:
 	var help_box := VBoxContainer.new()
 	help_panel.add_child(help_box)
 	var help_text := Label.new()
-	help_text.text="A small world beneath the surface\n\nClick an animal to read its story.\nDrag through water or plants to feel the current.\nR makes a ripple without the mouse.\nF drops a pinch of food at the pointer (a few pinches a day).\nClick the frame around the water, or press T, to tap the glass.\nRest the pointer in the water and curious fish may come to look.\nScroll or use + / − to look closer. Tab selects the next animal.\nSpace pauses; Escape returns to the whole pool.\nL switches the viewing light.\n\nNatural food, arrivals, births and departures need no care;\nfeeding is a treat, never required.\nThe world advances while you’re away, up to three days.\nNothing runs on your Mac after you quit.\n\nReal species, a fictional shared habitat.\nQuiet mode: 30 FPS. Saves are automatic."
+	help_text.text="A small reef beneath the surface\n\nClick an animal to read its story.\nDrag through water or plants to feel the current.\nR makes a ripple without the mouse.\nF drops a pinch of food at the pointer (a few pinches a day).\nClick the frame around the water, or press T, to tap the glass.\nRest the pointer in the water and curious fish may come to look.\nScroll or use + / − to look closer. Tab selects the next animal.\nSpace pauses; Escape returns to the whole pool.\nL switches the viewing light.\n\nNatural food, arrivals, births and departures need no care;\nfeeding is a treat, never required.\nThe world advances while you’re away, up to three days.\nNothing runs on your Mac after you quit.\n\nReal species, a fictional shared habitat.\nQuiet mode: 30 FPS. Saves are automatic."
 	help_text.add_theme_font_size_override("font_size",13)
 	help_box.add_child(help_text)
-	help_box.add_child(_button("Back to the stream",func() -> void: help_panel.hide()))
+	help_box.add_child(_button("Back to the reef",func() -> void: help_panel.hide()))
 	help_panel.hide()
 
 func _label(text: String, font_size: int, color: Color=CREAM) -> Label:
@@ -393,7 +393,7 @@ func _refresh() -> void:
 	stage.natural_light=clampf(sin((hour-6)/12*PI),0,1)
 	stage.viewing_light=viewing_light
 	climate.text=("Night" if hour<6 or hour>=20 else "Evening" if hour>=17 else "Morning" if hour<11 else "Daylight")+" · "+str(stage.visible_ids().size())+" fish in view"
-	status.text="Click a creature · Drag water or plants to explore · Scroll to look closer" if not paused else "Paused · the stream will continue when you resume"
+	status.text="Click a creature · Drag water or plants to explore · Scroll to look closer" if not paused else "Paused · the reef will continue when you resume"
 	if qa_clock<away_until and not away_text.is_empty():
 		status.text=away_text
 	if qa_clock<notice_until:

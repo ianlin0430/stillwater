@@ -4,9 +4,9 @@ import datetime, hashlib, json, pathlib, statistics, subprocess, time
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 OUT = ROOT / 'artifacts/performance-30m'
 OUT.mkdir(exist_ok=True)
-USER = pathlib.Path.home() / 'Library/Application Support/Godot/app_userdata/Stillwater Stream'
-APP = ROOT / 'builds/Stillwater Stream.app'
-EXE = str(APP / 'Contents/MacOS/Stillwater Stream')
+USER = pathlib.Path.home() / 'Library/Application Support/Godot/app_userdata/Stillwater Reef'
+APP = ROOT / 'builds/Stillwater Reef.app'
+EXE = str(APP / 'Contents/MacOS/Stillwater Reef')
 def digest():
     p = USER / 'stream.world'
     return hashlib.sha256(p.read_bytes()).hexdigest() if p.exists() else None

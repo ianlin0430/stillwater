@@ -15,11 +15,11 @@ machine sleep/wake is captured (see docs/validation.md, "Real sleep/wake procedu
 import argparse, datetime, hashlib, json, pathlib, subprocess, sys, time
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-APP = ROOT / 'builds/Stillwater Stream.app'
-EXE = APP / 'Contents/MacOS/Stillwater Stream'
-USER = pathlib.Path.home() / 'Library/Application Support/Godot/app_userdata/Stillwater Stream'
+APP = ROOT / 'builds/Stillwater Reef.app'
+EXE = APP / 'Contents/MacOS/Stillwater Reef'
+USER = pathlib.Path.home() / 'Library/Application Support/Godot/app_userdata/Stillwater Reef'
 REAL = ['stream.world', 'stream.world.bak', 'preferences.cfg']
-PROC = 'Stillwater Stream.app/Contents/MacOS/Stillwater Stream'
+PROC = 'Stillwater Reef.app/Contents/MacOS/Stillwater Reef'
 MODES = ['window_close', 'cmd_q', 'hidden_close']
 EXTRA_MODES = ['hidden_resume']
 
