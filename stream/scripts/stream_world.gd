@@ -5,7 +5,7 @@ const VERSION: int = 2
 const MAX_ANIMALS: int = 24
 const MAX_AWAY: float = 259200.0
 const DAY: float = 86400.0
-const ACTIVE_SPECIES: Array[String] = ["lawnmower_blenny","purple_firefish","green_chromis","garden_eel"]
+const ACTIVE_SPECIES: Array[String] = ["lawnmower_blenny","purple_firefish","green_chromis","garden_eel","yellow_tang"]
 const SPECIES: Dictionary = {
 	# Legacy entries: threadfin (2026-09-24), hatchetfish and shrimp (2026-09-23) and crayfish (2026-09-22) were removed
 	# from the cast; kept only so older saves validate, upgrade and still show their history.
@@ -20,15 +20,18 @@ const SPECIES: Dictionary = {
 	# Purple firefish replaced the red firefish (N. magnifica, key "firefish") on 2026-09-24, before any
 	# user save held one, so the red key was dropped rather than kept as a legacy entry.
 	"purple_firefish": {"label":"Purple firefish","latin":"Nemateleotris decora","initial":2,"mature":35.0,"lifespan":200.0,"body":0.5,"reserve":3.5,"cost":0.18,"bite":0.45,"brood":2,"breed":0.08,"cooldown":10.0,"pool":"microfauna","k_food":10.0},
-	"green_chromis": {"label":"Green chromis","latin":"Chromis viridis","initial":5,"mature":30.0,"lifespan":180.0,"body":0.5,"reserve":3.5,"cost":0.2,"bite":0.5,"brood":2,"breed":0.1,"cooldown":8.0,"pool":"microfauna","k_food":10.0}}
+	"green_chromis": {"label":"Green chromis","latin":"Chromis viridis","initial":5,"mature":30.0,"lifespan":180.0,"body":0.5,"reserve":3.5,"cost":0.2,"bite":0.5,"brood":2,"breed":0.1,"cooldown":8.0,"pool":"microfauna","k_food":10.0},
+	# Added 2026-09-24 (user decision): the largest fish of the pool, a biofilm grazer beside the
+	# blenny; longer lived and slower breeding than the chromis. Break-even at food 10 like the rest.
+	"yellow_tang": {"label":"Yellow tang","latin":"Zebrasoma flavescens","initial":2,"mature":120.0,"lifespan":540.0,"body":1.4,"reserve":7.0,"cost":0.32,"bite":0.8,"brood":2,"breed":0.03,"cooldown":30.0,"pool":"biofilm","k_food":10.0}}
 # Ecology v2 (docs/plans/2026-09-22-self-sustaining-ecosystem.md). Rates are per day, applied per one-minute tick.
 # Reef cast since 2026-09-24: caps 3+3+6+4 = 16, opening cast 2+2+5+2 = 11 (SPECIES.initial),
 # sized against the food pools by offline probe (tools/cast_probe.gd, docs/ecology.md). These
 # two are the only places the cast sizes live; the arrival limit (habitat_cap) and the
 # long-run band follow from them.
-const CAP: Dictionary = {"lawnmower_blenny":3,"purple_firefish":3,"green_chromis":6,"garden_eel":4}
+const CAP: Dictionary = {"lawnmower_blenny":3,"purple_firefish":3,"green_chromis":6,"garden_eel":4,"yellow_tang":3}
 # Species that arrive once, not live, in a save from before the reef (see restore()).
-const REEF_CAST: Array[String] = ["lawnmower_blenny","purple_firefish","green_chromis"]
+const REEF_CAST: Array[String] = ["lawnmower_blenny","purple_firefish","green_chromis","yellow_tang"]
 const POOLS: Array[String] = ["nutrients","stem","floating","biofilm","microfauna","detritus"]
 # Opening pools (R11, set with the earlier shrimp cast); also the v1 upgrade fill (R12).
 const OPENING: Dictionary = {"nutrients":0.4,"stem":45.0,"floating":24.0,"biofilm":32.0,"microfauna":24.0,"detritus":8.0}
@@ -42,7 +45,7 @@ const DECAY: float = 0.08
 const STREAM_IN: Dictionary = {"nutrients":0.7,"microfauna":0.35}
 const STREAM_OUT: Dictionary = {"nutrients":0.05,"microfauna":0.015,"detritus":0.04,"floating":0.005}
 # Swimming depth bands, a little wider than the authored targets in _choose_activity.
-const DEPTH: Dictionary = {"green_chromis":[180.0,430.0]}
+const DEPTH: Dictionary = {"green_chromis":[180.0,430.0],"yellow_tang":[120.0,540.0]}
 # Chromis school: the lowest-id chromis leads; each other member holds its own slot
 # (golden-angle direction, radius in `spread` px, flattened vertically, mirrored with the
 # leader's heading) and hurries (`catch_up` x speed) when more than `regroup` px from it.
@@ -53,7 +56,8 @@ const CHROMIS: Dictionary = {"spread":[34.0,80.0],"regroup":120.0,"catch_up":1.8
 const RESCUE_AT: int = 1
 # Opening ages in days (R11): one opener per stratum of [lo, hi]. The long-run gates derive
 # the old-age deaths the opening cast must produce from these (tests/ecology_acceptance.gd).
-const OPENING_AGE: Dictionary = {"fish":[40.0,150.0],"garden_eel":[100.0,220.0]}
+# Yellow tang openers are adults (mature at 120 days).
+const OPENING_AGE: Dictionary = {"fish":[40.0,150.0],"garden_eel":[100.0,220.0],"yellow_tang":[130.0,260.0]}
 const RESCUE_RATE: float = 1.0/96.0
 const ARRIVAL_RATE: float = 1.0/504.0
 # An unexplained position jump larger than this in one motion tick is a relocation
@@ -89,7 +93,13 @@ const LURE: Dictionary = {"range":320.0,"chance":0.5,"interest":45.0,"look":[6.0
 # Lawnmower blenny on the bed: `y` is always floor_y(x). Grazing/perching dwell ranges (s), hop
 # length (px) and speeds (px/s); a hop turns away from another blenny within `space` px.
 const BLENNY: Dictionary = {"graze":[6.0,20.0],"perch":[4.0,12.0],"sleep":[60.0,120.0],"hop":[20.0,90.0],"hop_speed":45.0,"dart_speed":90.0,"space":120.0}
-const NAMES: Dictionary = {"green_chromis":["Jade","Mint","Lagoon","Kelp","Glass"],"garden_eel":["Dune","Sprig"],"lawnmower_blenny":["Moss","Pebble"],"purple_firefish":["Ember","Flicker"]}
+# Yellow tang: cruises the upper midwater (`cruise` y range) and grazes rock `spots` [x, y, side]
+# on the left reef face and the right outcrop of the approved background (docs/BACKEND_SNAPSHOT_EVENTS.md).
+# The spot is where the mouth touches the rock; the body centre holds `reach` px out on the open
+# `side` (+1 right of the rock, -1 left), facing the rock. Graze/rest dwell times (s), cruise speed
+# (px/s), trip length (px), members keep `spacing` px apart. `graze` share of day choices, `night_rest` at night.
+const TANG: Dictionary = {"spots":[[170.0,318.0,1.0],[310.0,400.0,1.0],[240.0,472.0,1.0],[962.0,532.0,-1.0],[1080.0,486.0,-1.0]],"reach":22.0,"cruise":[150.0,360.0],"graze":0.4,"graze_time":[8.0,20.0],"rest":[30.0,90.0],"night_rest":0.7,"speed":20.0,"trip":[80.0,360.0],"spacing":70.0}
+const NAMES: Dictionary = {"green_chromis":["Jade","Mint","Lagoon","Kelp","Glass"],"garden_eel":["Dune","Sprig"],"lawnmower_blenny":["Moss","Pebble"],"purple_firefish":["Ember","Flicker"],"yellow_tang":["Saffron","Lemon"]}
 var rng := RandomNumberGenerator.new()
 var motion_rng := RandomNumberGenerator.new()
 var state: Dictionary
@@ -125,6 +135,10 @@ func _init(world_seed: int = 240921, wall_time: float = 0) -> void:
 				# The opening school, together in midwater.
 				animal.x=560.0+i*40.0
 				animal.y=280.0+(i%2)*30
+			elif species=="yellow_tang":
+				# The opening pair, in the upper midwater near the left reef.
+				animal.x=260.0+i*140.0
+				animal.y=260.0
 			animal.tx=animal.x
 			animal.ty=animal.y
 	state.ledger.initial = material()
@@ -143,6 +157,8 @@ func _place(species: String) -> Vector2:
 	var y: float = floor_y(x)
 	if species=="green_chromis":
 		y = motion_rng.randf_range(220,390)
+	elif species=="yellow_tang":
+		y = motion_rng.randf_range(TANG.cruise[0],TANG.cruise[1])
 	return Vector2(x,y)
 
 func spawn(species: String, age: float = 0, parent: int = 0) -> Dictionary:
@@ -308,7 +324,7 @@ func set_lure(point: Vector2) -> void:
 	lure={"x":point.x,"y":point.y,"since":state.elapsed}
 	# The school leader looks up at once (followers follow it; see _choose_activity).
 	for a: Dictionary in state.animals:
-		if a.species in DEPTH and a.activity in ["Schooling","Resting"]:
+		if a.species in DEPTH and a.activity in ["Schooling","Cruising","Resting"]:
 			a.decision_at=minf(a.decision_at,state.elapsed+1.0)
 
 func clear_lure() -> void:
@@ -370,18 +386,22 @@ func _move(delta: float) -> void:
 		var p:=Vector2(a.x,a.y)
 		var species: String=a.species
 		var startled: bool=a.activity=="Startled" and state.elapsed<a.decision_at
-		var follower: bool=not lead.is_empty() and a.id!=lead.id
+		var tang: bool=species=="yellow_tang"
+		var follower: bool=not tang and not lead.is_empty() and a.id!=lead.id
 		if not startled and not _seek_food(a):
 			if follower:
 				_follow(a,lead)
 			elif state.elapsed>=a.decision_at:
-				_choose_activity(a)
+				if tang:
+					_choose_tang(a)
+				else:
+					_choose_activity(a)
 		var target:=Vector2(a.tx,a.ty)
 		var offset: Vector2=target-p
-		var speed: float=17.0
+		var speed: float=TANG.speed if tang else 17.0
 		speed*=0.82+0.36*float((int(a.id)*37)%101)/100.0
 		var acceleration: float=15.0
-		if a.activity in ["Resting","Displaying"]:
+		if a.activity in ["Resting","Displaying","Grazing"]:
 			speed=1.2
 		elif a.activity=="Startled":
 			speed*=2.4
@@ -390,15 +410,16 @@ func _move(delta: float) -> void:
 			speed*=CHROMIS.catch_up if offset.length()>CHROMIS.regroup else 1.15
 		var desired: Vector2=offset.normalized()*minf(speed,sqrt(2.0*acceleration*offset.length()))
 		# Gentle changing headings for the leader, fading out on approach; no per-frame randomness.
-		if a.activity=="Schooling" and not follower and offset.length()>35:
+		if a.activity in ["Schooling","Cruising"] and not follower and offset.length()>35:
 			var bend: float=sin(state.elapsed*(0.28+float(int(a.id)%5)*0.025)+a.id*1.73)
 			desired+=offset.normalized().orthogonal()*bend*speed*0.22*minf(1,offset.length()/100)
 		for other: Dictionary in state.animals:
 			if other.id==a.id or other.species!=species:
 				continue
 			var apart: Vector2=p-Vector2(other.x,other.y)
-			if apart.length()<CHROMIS.spacing and apart.length()>0.01:
-				desired+=apart.normalized()*(CHROMIS.spacing-apart.length())*0.16
+			var spacing: float=TANG.spacing if tang else CHROMIS.spacing
+			if apart.length()<spacing and apart.length()>0.01:
+				desired+=apart.normalized()*(spacing-apart.length())*0.16
 		var velocity:=Vector2(a.get("vx",0.0),a.get("vy",0.0))
 		velocity=velocity.move_toward(desired,acceleration*delta)
 		var free: Vector2=p+velocity*delta
@@ -421,6 +442,61 @@ func _move(delta: float) -> void:
 		if next.distance_to(target)<5 and velocity.length()<7 and a.activity=="Schooling" and not follower:
 			a.activity="Resting"
 			a.decision_at=state.elapsed+motion_rng.randf_range(4,18)
+		if tang:
+			_tang_contact(a,next)
+
+# A tang that reaches the hold point of a rock spot starts grazing it; the contact point is
+# published only while it grazes.
+func _tang_contact(a: Dictionary, p: Vector2) -> void:
+	if a.activity=="Cruising" and p.distance_to(Vector2(a.tx,a.ty))<5:
+		# An open-water trip ends here: choose the next move now instead of idling on the spot.
+		a.decision_at=minf(a.decision_at,state.elapsed)
+		for s: Array in TANG.spots:
+			if Vector2(a.tx,a.ty)==_tang_hold(s):
+				a.activity="Grazing"
+				a.contact_x=s[0]
+				a.contact_y=s[1]
+				a.decision_at=state.elapsed+motion_rng.randf_range(TANG.graze_time[0],TANG.graze_time[1])
+	if a.activity=="Grazing" and a.has("contact_x"):
+		for s: Array in TANG.spots:
+			if s[0]==a.contact_x and s[1]==a.contact_y:
+				a.direction=-s[2]
+	else:
+		a.erase("contact_x")
+		a.erase("contact_y")
+
+static func _tang_hold(s: Array) -> Vector2:
+	return Vector2(s[0]+s[2]*TANG.reach,s[1])
+
+# A tang's next move: a trip across the upper midwater, a trip to a free rock spot to graze,
+# or a rest (mostly at night, when trips are short).
+func _choose_tang(a: Dictionary) -> void:
+	var band: Array=DEPTH[a.species]
+	var night: bool=state.light_hour<7 or state.light_hour>19
+	var r: float=motion_rng.randf()
+	a.tx=a.x
+	a.ty=a.y
+	var free: Array=[]
+	if not night and r>=0.08 and r<0.08+TANG.graze:
+		for s: Array in TANG.spots:
+			var hold: Vector2=_tang_hold(s)
+			if not state.animals.any(func(o): return o.species==a.species and o.id!=a.id and Vector2(o.tx,o.ty).distance_to(hold)<1.0):
+				free.append(hold)
+	if r<(TANG.night_rest if night else 0.08):
+		a.activity="Resting"
+		a.decision_at=state.elapsed+motion_rng.randf_range(TANG.rest[0],TANG.rest[1])
+	elif not free.is_empty():
+		var hold: Vector2=free[motion_rng.randi_range(0,free.size()-1)]
+		a.activity="Cruising"
+		a.tx=hold.x
+		a.ty=hold.y
+		a.decision_at=state.elapsed+Vector2(a.x,a.y).distance_to(hold)/TANG.speed*1.5+10.0
+	else:
+		a.activity="Cruising"
+		a.tx=_roaming_x(a,150.0 if night else TANG.trip[1],0.0 if night else 0.35)
+		a.ty=motion_rng.randf_range(TANG.cruise[0],TANG.cruise[1])
+		a.decision_at=state.elapsed+Vector2(a.tx-a.x,a.ty-a.y).length()/TANG.speed+motion_rng.randf_range(3,8)
+	_look(a,band)
 
 # Nearest free burrow site of the species' patch to the parent's burrow (or the patch
 # centre). No randomness.
@@ -573,7 +649,10 @@ func _choose_activity(a: Dictionary) -> void:
 		cruise*=0.82+0.36*float((int(a.id)*37)%101)/100.0
 		var distance: float=Vector2(a.tx-a.x,a.ty-a.y).length()
 		a.decision_at=state.elapsed+distance/cruise+motion_rng.randf_range(5,14)
-	# Only while a lure is set (live, never saved) does curiosity draw from motion_rng.
+	_look(a,band)
+
+# Only while a lure is set (live, never saved) does curiosity draw from motion_rng.
+func _look(a: Dictionary, band: Array) -> void:
 	if not lure.is_empty() and state.elapsed-lure.since<LURE.interest:
 		var spot:=Vector2(lure.x,clampf(lure.y,band[0],band[1]))
 		if Vector2(a.x,a.y).distance_to(spot)<LURE.range and motion_rng.randf()<LURE.chance:
@@ -920,7 +999,7 @@ static func validate(saved: Dictionary) -> bool:
 				return false
 		if a.has("food_id") and not a.food_id is int:
 			return false
-		for key: String in ["vx","vy","relocated_at","brood_until","tint","extend"]:
+		for key: String in ["vx","vy","relocated_at","brood_until","tint","extend","contact_x","contact_y"]:
 			if a.has(key) and not _number(a[key]):
 				return false
 		if a.get("brood_until",0)<0 or a.get("tint",0)<0 or a.get("tint",0)>1 or a.get("extend",0)<0 or a.get("extend",0)>1:

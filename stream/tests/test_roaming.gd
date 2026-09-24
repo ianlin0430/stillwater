@@ -1,5 +1,5 @@
 extends SceneTree
-# Live-path movement checks for the 0.4.1 roaming rules (the chromis school since 2026-09-24).
+# Live-path movement checks for the 0.4.1 roaming rules (the chromis school and the yellow tang since 2026-09-24).
 var failures: Array[String]=[]
 # Roaming destinations are clamped to x 130..1150 (StreamWorld._roaming_x).
 const SPAN: float=1020.0
@@ -148,7 +148,8 @@ func _initialize() -> void:
 			if night[species].resting_share<=s.resting_share:
 				failures.append("Night no longer settles "+species)
 		runs.append({"seed":seed_value,"day":day,"night":night})
-	if runs.any(func(r): return r.day.keys()!=["green_chromis"]):
-		failures.append("Roaming tracks species other than the green chromis")
+	# The swimmers: the chromis school and (2026-09-24) the yellow tang, which roam independently.
+	if runs.any(func(r): return r.day.keys()!=["green_chromis","yellow_tang"]):
+		failures.append("Roaming does not track exactly the chromis and the yellow tang")
 	print(JSON.stringify({"runs":runs,"failures":failures}))
 	quit(0 if failures.is_empty() else 1)
