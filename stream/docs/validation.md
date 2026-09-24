@@ -384,4 +384,35 @@ Offline 180 days on the committed code (identical to probe G): starvation 0/0/0,
 
 Local suites on `4d0675a` (headless): test_world 309/309, test_swimmers 103/103, test_roaming pass (chromis school: pair separation ≤ 0.111 of the width, turn IQR 0.48–0.75, no edge or band-rim hugging, night slower and more resting), test_lifecycle 63/63, test_persist_qa 27/27, test_presentation 29/29. test_frontend (Codex's, with Codex's uncommitted edits in the tree) fails 2 checks plus index errors: its fixtures pick a `threadfin` that no longer exists and the stage presents only threadfin/hatchet — the reef rigs are Codex's work. Old saves: v1, pre-eel v2 (shrimp + hatchetfish), hatchet-era and threadfin-era fixtures (real saves written by `f4db093` and `fdf54e4`) validate, their removed species depart once, the reef cast arrives once (`live:false`), material balances, and a second load changes nothing.
 
-Cloud (live, 180 days, seeds 42/812/240921, on `4d0675a`): unfed run 35957509294, fed daily run 35957512152 — results pending.
+Cloud (live, 180 days, seeds 42/812/240921, on `4d0675a`): unfed run 35957509294, fed daily run 35957512152 — both **cancelled** after 58 minutes, no result (superseded by the five-species cast below).
+
+## Five-species reef cast: yellow tang, purple firefish — sizing, gates, local checks (2026-09-24)
+
+User decision 2026-09-24 (final): garden eel, lawnmower blenny, **yellow tang** (new, biofilm), green chromis, **purple firefish** (replaces the red firefish; key `firefish` → `purple_firefish`, *Nemateleotris decora*). Commits: `8ed0374` (rename), `5dbc38b` (yellow tang), `801a727` (sizing + gates, derivation in [ecology](ecology.md) committed before the cloud runs were triggered), this docs commit.
+
+Chosen: caps blenny/firefish/chromis/eel/tang **3/3/6/4/2 = 18**, opening **2/2/5/2/2 = 13**, rescue at one, hard cap 24 unchanged. Probe table (offline, unfed, 180 and 365 days × seeds 42/812/240921) in [ecology](ecology.md) "Sizing". Gates re-derived from the configured rates: band **[13, 18]** (was [11, 16]); old age **≥ 6 by day 79** (unchanged: 5 chromis + the older purple firefish; the tang cannot die of old age within 180 days); offspring **≥ 11** (= 6 + (18 − 13), unchanged); all other gates unchanged, the tang's depth band 120–540 is audited like the chromis band.
+
+Red firefish removal: no user save and no fixture held `firefish` (checked: `tests/fixtures/*.var` contain no `firefish`; `app_userdata/Stillwater Reef` holds no world save, only `qa-performance-hidden.json`, listed by name, not opened). So no legacy entry was kept and no fixture needed changing.
+
+### Local quick suites (macOS, Godot 4.6.3 headless, on `801a727`)
+
+| Check | Result | Evidence |
+|---|---|---|
+| Core regression suite | 已通過 — 333 checks, 0 failures (was 309/310); 72-hour catch-up 257 ms | `tests/test_world.gd` |
+| Purple firefish key/label/latin, red `firefish` key gone (`SPECIES`, `HOMES`, `spawn("firefish")` refused) | 已通過 | `firefish_checks` |
+| Yellow tang: definition (biofilm, largest body, longer life/slower breeding than chromis, break-even at 10, pair / cap 2, adult openers) | 已通過 | `tang_checks` |
+| Yellow tang behaviour, 30 min by day (seed 42): always in band 120–540; only `Cruising`/`Grazing`/`Resting`; grazing only at a `TANG.spots` point with `contact_x/contact_y`, body 22 px out, facing the rock, contact fields absent otherwise; crosses > 400 px; night mostly `Resting`; eats biofilm; chases food; tap → `Startled` away inside band; lure → `Curious`; young born in band / disperse when full; arrivals at the edge in band; non-numeric `contact_x` rejected; conservation and validation | 已通過 | `tang_checks` |
+| Old saves (v1, pre-eel v2, hatchet-era, threadfin-era fixtures): removed species depart once, reef cast incl. 2 yellow tangs arrives once (`live:false`), material balances, second load changes nothing | 已通過 | `reef_cast_checks` |
+| Roaming (3 seeds, day/night 30 min): chromis school unchanged; yellow tang spans 973–1013 px, pair separation 0.347–0.453, turn IQR 0.72–0.78, edge 0, rim ≤ 0.002, night distance 1 686–2 585 vs day 22 350–26 266 px, night resting 0.95–0.97 | 已通過 | `tests/test_roaming.gd` |
+| Swimmer rig suite | 已通過 — 103 checks | `tests/test_swimmers.gd` |
+| Lifecycle / time-boundary | 已通過 — 63 checks | `tests/test_lifecycle.gd` |
+| Persist-QA helper | 已通過 — 27 checks | `tests/test_persist_qa.gd` |
+| Presentation read-only | 已通過 — 29 checks | `tests/test_presentation.gd` |
+| Frontend suite (Codex's, uncommitted edits in the tree, run read-only) | **失敗** — 42 checks, 2 failures ("Cruising fish render within 25% of true speed", fixed and jittered frames: 0 frames measured) plus 3 index errors. The same result on the pre-change backend `42c9ff7` with the same frontend files (temporary worktree), so not caused by this change (the cause inside the frontend test/stage was not examined further). Codex's file, not edited | `tests/test_frontend.gd` |
+| Offline 180 days on the committed code | 已通過（offline, not the acceptance）— identical to probe P1: starvation 0/0/0, births 9/11/9, dispersed 17/21/15, arrivals 3/2/5, old age 10/9/11 (first day 40/44/24), size 13–18 every day, microfauna min 8.0–10.5, biofilm min 22.7–24.4 | `tools/cast_probe.gd` |
+| `long_run.gd` smoke (1 live day, seed 812): depth audit covers the tang, 312 checks, 0 violations | 已通過（smoke only） | `tests/long_run.gd` |
+
+### Live 180-day ecology (GitHub Actions)
+
+未驗證 — triggered on `801a727`: unfed run [35963646036](https://github.com/ianlin0430/stillwater/actions/runs/35963646036), fed daily run [35963649344](https://github.com/ianlin0430/stillwater/actions/runs/35963649344). Both ended within seconds with no job started; GitHub's annotation: "The job was not started because recent account payments have failed or your spending limit needs to be increased." That is an account billing setting for the user; the runs must be re-triggered after it is resolved (same commands). No live result of this cast exists yet.
+
