@@ -23,7 +23,6 @@ var visual_pitch: float=0
 var contact_projection: float=1
 var activity_age: float=0
 var bite_timer: float=0
-var old_food: Dictionary={}
 var body_visible: bool=true
 var dying: bool=false
 var first_actor: bool=true
@@ -75,21 +74,16 @@ func _ready() -> void:
 	fish.material=fish_material
 	add_child(fish)
 
-func apply_actor(value: Dictionary, pellets: Array=[]) -> void:
+func apply_actor(value: Dictionary, _pellets: Array=[]) -> void:
 	actor=value.duplicate(true)
 	activity=actor.get("activity","Resting")
 	target_extension=clampf(float(actor.get("extend",1)),0,1)
 	if first_actor:
 		extension=target_extension
 		first_actor=false
-	var current: Dictionary={}
-	for pellet: Dictionary in pellets: current[pellet.id]=Vector2(pellet.x,pellet.y)
-	if species in ["garden_eel","purple_firefish"] and extension>0.7:
-		for id: Variant in old_food:
-			var at: Vector2=old_food[id]
-			if not current.has(id) and absf(at.x-position.x)<22 and at.y<position.y and at.y>position.y-80:
-				bite_timer=0.35
-	old_food=current
+
+func consume_food() -> void:
+	bite_timer=0.35
 
 func reset_contact() -> void:
 	previous=position
@@ -138,7 +132,7 @@ func animate(delta: float) -> void:
 	if absf(facing-tail_facing)>0.65 or is_equal_approx(facing,face_target):
 		tail_facing=move_toward(tail_facing,facing,delta*2.4)
 	fin_spread=lerpf(fin_spread,1.12 if activity=="Curious" else 0.85 if sleeping else 1.0,1-exp(-delta*4))
-	feeding=move_toward(feeding,1.0 if activity in ["Grazing","Feeding"] else 0.0,delta*4)
+	feeding=move_toward(feeding,1.0 if activity=="Grazing" else 0.0,delta*4)
 	bite_timer=maxf(0,bite_timer-delta)
 	touch_remaining=maxf(0,touch_remaining-delta)
 	var goal: float=0.0 if dying or touch_remaining>0 else target_extension
@@ -174,7 +168,14 @@ func animate(delta: float) -> void:
 	if arrival_age>=0:
 		arrival_age+=delta
 		if arrival_age<1.6:
-			visual_offset+=arrival_from*pow(1-arrival_age/1.6,2)
+			# Swim above the substrate before adopting the burrow's current sleep/hide state.
+			# A nighttime arrival must not travel underground in its final hidden pose.
+			extension=1
+			visual_pitch=0
+			facing=-signf(arrival_from.x)
+			tail_facing=facing
+			visual_offset=arrival_from*pow(1-arrival_age/1.6,2)
+			visual_offset.y-=float(actor.get("hover_y",32))/maxf(body_scale,0.1)
 		else: arrival_age=-1
 	body_visible=not (species in ["garden_eel","purple_firefish"] and extension<=0.001 and arrival_age<0)
 	fish.visible=body_visible

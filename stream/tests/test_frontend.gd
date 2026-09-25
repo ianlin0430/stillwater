@@ -298,7 +298,7 @@ func _reef_interactions() -> void:
 	stage.animate(0)
 	check(layer.full_until-layer.hud_clock==full,"Pause freezes full-today cue")
 	var chromis: Dictionary=snapshot.animals.filter(func(a: Dictionary)->bool: return a.species=="green_chromis")[0]
-	var rig: SwimmerRig=stage.rigs[chromis.id]
+	var rig: ReefRig=stage.rigs[chromis.id]
 	rig.activity="Startled"
 	rig.animate(0.2)
 	check(rig.effort>0.5,"Startled uses fast swimming effort")
@@ -307,7 +307,10 @@ func _reef_interactions() -> void:
 	check(rig.fin_spread>1,"Curious opens fins for hovering")
 	rig.activity="Feeding"
 	rig.animate(0.2)
-	check(rig.feeding>0.5,"Feeding drives the mouth animation")
+	check(rig.feeding==0,"Pursuing food does not imply a successful bite")
+	rig.consume_food()
+	rig.animate(0.1)
+	check(rig.bite_timer>0,"Confirmed food consumption drives a short mouth animation")
 	var phase: float=rig.phase
 	rig.animate(0)
 	check(rig.phase==phase,"Paused rig does not advance its animation")

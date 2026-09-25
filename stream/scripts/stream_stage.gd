@@ -68,6 +68,8 @@ func apply_snapshot(value: Dictionary) -> void:
 			if event.get("live",false):
 				events_layer.accept(event,value)
 				interaction_layer.accept(event)
+				if event.kind=="ate" and rigs.has(event.id):
+					rigs[event.id].consume_food()
 			if event.get("live",false) and event.kind=="death" and event.get("cause","") in ["old age","starvation"]:
 				_begin_death(event,value)
 	event_cursor=latest

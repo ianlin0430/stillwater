@@ -21,7 +21,7 @@ func run() -> void:
 	root.add_child(stage)
 	stage.apply_snapshot(snapshot)
 	tick(stage,0.5)
-	check(stage.rigs.size()==11,"Four-species opening cast shows eleven fish while backend migration is pending")
+	check(stage.rigs.size()==world.state.animals.size(),"Every individual in the current four-species backend has a visible rig")
 	var by_species: Dictionary={}
 	for id: int in stage.rigs:
 		var rig: ReefRig=stage.rigs[id]
@@ -66,6 +66,28 @@ func run() -> void:
 	chromis.face_target=-chromis.facing
 	for i in 60: chromis.animate(1.0/30)
 	check(is_equal_approx(chromis.facing,chromis.face_target) and is_equal_approx(chromis.tail_facing,chromis.facing),"Head-led turn finishes with attached tail")
+	fire.target_extension=0
+	fire.extension=0
+	fire.begin_arrival()
+	fire.animate(0.1)
+	check(fire.body_visible and fire.visual_pitch==0 and fire.visual_offset.y<0,"Night arrival swims above sand before hiding")
+	for i in 75: fire.animate(1.0/30)
+	check(not fire.body_visible,"Night arrival finishes by entering the burrow")
+	var eating: Dictionary=snapshot.duplicate(true)
+	eating.events.append({"seq":eating.next_event,"kind":"ate","id":fire.individual_id,"live":true})
+	eating.next_event+=1
+	stage.apply_snapshot(eating)
+	check(fire.bite_timer==0.35 and tang.bite_timer==0,"Explicit ate event animates only its actor")
+	stage.animate(0)
+	check(fire.bite_timer==0.35,"Pause freezes the actual bite")
+	tick(stage,0.5)
+	stage.apply_snapshot(eating)
+	check(fire.bite_timer==0,"The event cursor prevents repeated bites")
+	var offline_bite: Dictionary=eating.duplicate(true)
+	offline_bite.events.append({"seq":offline_bite.next_event,"kind":"ate","id":fire.individual_id,"live":false})
+	offline_bite.next_event+=1
+	stage.apply_snapshot(offline_bite)
+	check(fire.bite_timer==0,"Offline food events do not replay mouth animation")
 	check(var_to_bytes(snapshot)==frozen,"Rig updates never mutate snapshots")
 	check(var_to_bytes(world.export_state())==before,"Rig interactions preserve simulation and both random states")
 	stage.queue_free()

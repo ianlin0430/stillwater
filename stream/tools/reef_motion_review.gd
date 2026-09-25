@@ -7,6 +7,7 @@ var time: float=0
 var shown_tick: int=-1
 var frame: int=0
 var captured_time: float=-1
+var interaction_demo: bool=false
 var record: bool=false
 var duration: float=14
 var acted: Dictionary={}
@@ -26,6 +27,7 @@ func _ready() -> void:
 	DirAccess.make_dir_recursive_absolute(output)
 	for arg in OS.get_cmdline_user_args():
 		if arg=="--record": record=true
+		if arg=="--interaction-demo": interaction_demo=true
 		if arg=="--benchmark": benchmark=true
 		if arg.begins_with("--duration="): duration=float(arg.trim_prefix("--duration="))
 	if benchmark: DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_ALWAYS_ON_TOP,true)
@@ -77,7 +79,7 @@ func _process(delta: float) -> void:
 		stage.animate(0)
 		return
 	time+=delta
-	if record:
+	if record and not interaction_demo:
 		if time>1 and not acted.has("feed"):
 			acted.feed=true
 			world.feed(450)
@@ -89,6 +91,21 @@ func _process(delta: float) -> void:
 			acted.zoom=true
 			stage.zoom=1.65
 			stage.center=Vector2(600,465)
+	if record and interaction_demo:
+		for pinch in range(1,6):
+			var key: String="pinch_"+str(pinch)
+			if time>pinch and not acted.has(key):
+				acted[key]=world.feed(450)
+				if not acted[key]: stage.interaction_layer.show_full()
+		if time>18 and not acted.has("tap"):
+			acted.tap=true
+			var fish: Dictionary=world.state.animals.filter(func(a): return a.species=="green_chromis")[0]
+			world.startle(fish.x,fish.y)
+			stage.tap_feedback(Vector2(fish.x,fish.y))
+		if time>22 and not acted.has("lure"):
+			acted.lure=true
+			var fish: Dictionary=world.state.animals.filter(func(a): return a.species=="green_chromis")[0]
+			world.set_lure(Vector2(fish.x+45,fish.y))
 	world.advance_live(minf(delta,0.1))
 	if shown_tick!=world.state.motion_ticks:
 		stage.apply_snapshot(world.snapshot())
@@ -100,7 +117,7 @@ func _process(delta: float) -> void:
 			var report:=FileAccess.open(output+"render-benchmark.json",FileAccess.WRITE)
 			report.store_string(JSON.stringify({"wall_seconds":(Time.get_ticks_msec()-started_ms)/1000.0,"render_frames":render_frames,"resolution":[960,540]},"  "))
 		var file:=FileAccess.open(output+("events.json" if record else "live-events.json"),FileAccess.WRITE)
-		file.store_string(JSON.stringify({"seed":42,"biological_hour":12,"scripted_input_seconds":{"feed":1,"tap":3,"zoom":6},"samples":evidence},"  "))
+		file.store_string(JSON.stringify({"seed":42,"biological_hour":12,"scripted_input_seconds":({"feed_attempts":[1,2,3,4,5],"tap":18,"lure":22} if interaction_demo else {"feed":1,"tap":3,"zoom":6}),"input_results":acted,"live_events":world.state.events,"samples":evidence},"  "))
 		get_tree().quit()
 
 func capture() -> void:
