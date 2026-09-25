@@ -94,15 +94,29 @@ const STARTLE: Dictionary = {"radius":260.0,"dart":150.0,"seconds":3.0,"eel_seco
 const LURE: Dictionary = {"range":320.0,"chance":0.5,"interest":45.0,"look":[6.0,12.0],"stand_off":36.0,"still":8.0}
 # Lawnmower blenny on the bed: `y` is always floor_y(x). Grazing/perching dwell ranges (s), hop
 # length (px) and speeds (px/s); a hop turns away from another blenny within `space` px.
-const BLENNY: Dictionary = {"graze":[6.0,20.0],"perch":[4.0,12.0],"sleep":[60.0,120.0],"hop":[20.0,90.0],"hop_speed":45.0,"dart_speed":90.0,"space":120.0}
+# `burrow_clear` (2026-09-25, Codex recording): a blenny never perches, grazes or sleeps within this
+# many px of an occupied firefish burrow (half a 100 px blenny + half a 91 px firefish + 8 px), so a
+# hovering firefish is never drawn on top of it; it hops out when it finds itself there.
+const BLENNY: Dictionary = {"graze":[6.0,20.0],"perch":[4.0,12.0],"sleep":[60.0,120.0],"hop":[20.0,90.0],"hop_speed":45.0,"dart_speed":90.0,"space":120.0,"burrow_clear":104.0}
+# Adult body [length, height] in world px (the rig's art, ReefRig.LOOK), halved for juveniles
+# like the rig. Used to keep bodies apart (2026-09-25).
+const BODY: Dictionary = {"green_chromis":[68.0,39.0],"yellow_tang":[122.0,87.0],"lawnmower_blenny":[100.0,42.0],"purple_firefish":[91.0,55.0]}
+# Body separation between swimmers (2026-09-25, Codex recording: two tangs merged into one blob and
+# chromis swam straight through tangs). Each pair is measured in the ellipse of their combined
+# half bodies times `margin`; a fish reacts to where the pair will be up to `look` s ahead,
+# dodging mostly up or down (the upper fish rises), and never closes in once inside `close`.
+# A chromis gives way to a tang; a grazing tang holds its rock; chromis space themselves (CHROMIS).
+# A tang that just ate chews for `chew` s before chasing food again and skips pellets inside
+# another feeding tang's body, so two tangs take turns at a pinch instead of piling onto it.
+const SEPARATE: Dictionary = {"margin":1.2,"look":3.0,"gain":1.6,"close":1.05,"chew":3.0}
 # Yellow tang: cruises the upper midwater (`cruise` y range) and grazes rock `spots` [x, y, side]
 # on the left reef face and the right outcrop of the approved background (docs/BACKEND_SNAPSHOT_EVENTS.md).
 # The spot is where the mouth touches the rock; the body centre holds `reach` px out on the open
 # `side` (+1 right of the rock, -1 left), facing the rock. Graze/rest dwell times (s), cruise speed
-# (px/s), trip length (px), members keep `spacing` px apart. `graze` share of day choices, `night_rest` at night.
+# (px/s), trip length (px); two tangs keep their bodies apart (SEPARATE; was `spacing` 70 px). `graze` share of day choices, `night_rest` at night.
 # `clear` [w, h]: a spot is skipped while another tang holds or heads to a point closer than this on
 # both axes, so two grazing adults (122 x 87 px art) never overlap (spots 2/3 and 4/5 are exclusive).
-const TANG: Dictionary = {"spots":[[170.0,318.0,1.0],[310.0,400.0,1.0],[240.0,472.0,1.0],[962.0,532.0,-1.0],[1080.0,486.0,-1.0]],"reach":22.0,"cruise":[150.0,360.0],"graze":0.4,"graze_time":[8.0,20.0],"rest":[30.0,90.0],"night_rest":0.7,"speed":20.0,"trip":[80.0,360.0],"spacing":70.0,"clear":[130.0,92.0]}
+const TANG: Dictionary = {"spots":[[170.0,318.0,1.0],[310.0,400.0,1.0],[240.0,472.0,1.0],[962.0,532.0,-1.0],[1080.0,486.0,-1.0]],"reach":22.0,"cruise":[150.0,360.0],"graze":0.4,"graze_time":[8.0,20.0],"rest":[30.0,90.0],"night_rest":0.7,"speed":20.0,"trip":[80.0,360.0],"clear":[130.0,92.0]}
 const NAMES: Dictionary = {"green_chromis":["Jade","Mint","Lagoon","Kelp","Glass","Pearl"],"lawnmower_blenny":["Moss","Pebble"],"purple_firefish":["Ember","Flicker"],"yellow_tang":["Saffron","Lemon"]}
 var rng := RandomNumberGenerator.new()
 var motion_rng := RandomNumberGenerator.new()
@@ -111,6 +125,8 @@ var state: Dictionary
 var lure: Dictionary = {}
 # True only while a live ecology tick runs; stamps events the stage may play.
 var _live: bool = false
+# How urgently the last _avoid() call had to dodge (0 = clear, up to 1). Scratch, never saved.
+var _dodge: float = 0.0
 
 func _init(world_seed: int = 240921, wall_time: float = 0) -> void:
 	rng.seed = world_seed
@@ -354,10 +370,14 @@ func _sink_food(delta: float) -> void:
 func _seek_food(a: Dictionary) -> bool:
 	var best: Dictionary={}
 	var band: Array=DEPTH[a.species]
-	if SPECIES[a.species].reserve-a.energy>=FOOD.mass*0.8:
+	var tang: bool=a.species=="yellow_tang"
+	if SPECIES[a.species].reserve-a.energy>=FOOD.mass*0.8 and state.elapsed>=a.get("chew_until",-1.0):
 		var gap: float=FOOD.notice
+		var rivals: Array=state.animals.filter(func(o): return tang and o.id!=a.id and o.species=="yellow_tang" and o.activity=="Feeding") if tang else []
 		for f: Dictionary in state.get("food",[]):
 			if f.settled or f.y>band[1]+FOOD.eat:
+				continue
+			if rivals.any(func(o): return absf(f.x-o.x)<BODY.yellow_tang[0] and absf(f.y-o.y)<BODY.yellow_tang[1]):
 				continue
 			var d: float=Vector2(a.x,a.y).distance_to(Vector2(f.x,clampf(f.y,band[0],band[1])))
 			if d<gap:
@@ -381,6 +401,8 @@ func _eat(a: Dictionary, f: Dictionary) -> void:
 	state.resources.detritus+=f.mass*0.2
 	state.food.erase(f)
 	a.erase("food_id")
+	if a.species=="yellow_tang":
+		a.chew_until=state.elapsed+SEPARATE.chew
 	_live=true
 	_event("ate",a,"",{"food_id":f.id,"food_x":f.x,"food_y":f.y})
 	_live=false
@@ -426,14 +448,18 @@ func _move(delta: float) -> void:
 		if a.activity in ["Schooling","Cruising"] and not follower and offset.length()>35:
 			var bend: float=sin(state.elapsed*(0.28+float(int(a.id)%5)*0.025)+a.id*1.73)
 			desired+=offset.normalized().orthogonal()*bend*speed*0.22*minf(1,offset.length()/100)
-		# A tang grazing holds on to its rock; a passing tang gives way instead.
-		for other: Dictionary in state.animals:
-			if other.id==a.id or other.species!=species or a.activity=="Grazing":
-				continue
-			var apart: Vector2=p-Vector2(other.x,other.y)
-			var spacing: float=TANG.spacing if tang else CHROMIS.spacing
-			if apart.length()<spacing and apart.length()>0.01:
-				desired+=apart.normalized()*(spacing-apart.length())*0.16
+		# School members keep their spacing; bodies keep apart across the pool (_avoid).
+		if not tang:
+			for other: Dictionary in state.animals:
+				if other.id==a.id or other.species!=species:
+					continue
+				var apart: Vector2=p-Vector2(other.x,other.y)
+				if apart.length()<CHROMIS.spacing and apart.length()>0.01:
+					desired+=apart.normalized()*(CHROMIS.spacing-apart.length())*0.16
+		desired=_avoid(a,p,desired,TANG.speed if tang else 17.0)
+		if _dodge>0.0:
+			# Getting out of another body's way is quick, like a startle.
+			acceleration=maxf(acceleration,45.0*minf(1.0,_dodge*3.0))
 		var velocity:=Vector2(a.get("vx",0.0),a.get("vy",0.0))
 		velocity=velocity.move_toward(desired,acceleration*delta)
 		var free: Vector2=p+velocity*delta
@@ -458,6 +484,50 @@ func _move(delta: float) -> void:
 			a.decision_at=state.elapsed+motion_rng.randf_range(4,18)
 		if tang:
 			_tang_contact(a,next)
+
+func _body(a: Dictionary) -> Vector2:
+	var b: Array=BODY[a.species]
+	return Vector2(b[0],b[1])*animal_scale(a)
+
+# Steers `desired` (px/s) so this swimmer's body keeps clear of the others (SEPARATE).
+func _avoid(a: Dictionary, p: Vector2, desired: Vector2, speed: float) -> Vector2:
+	_dodge=0.0
+	if a.activity=="Grazing":
+		return desired
+	var own: Vector2=_body(a)
+	var v:=Vector2(a.get("vx",0.0),a.get("vy",0.0))
+	var push:=Vector2.ZERO
+	var yielding: float=0.0
+	for o: Dictionary in state.animals:
+		if o.id==a.id or o.species not in DEPTH or o.species==a.species and a.species=="green_chromis":
+			continue
+		var mixed: bool=o.species!=a.species
+		var r: Vector2=(own+_body(o))*0.5*SEPARATE.margin*(1.17 if mixed else 1.0)
+		var rel: Vector2=p-Vector2(o.x,o.y)
+		var relv: Vector2=v-Vector2(o.get("vx",0.0),o.get("vy",0.0))
+		var t: float=clampf(-rel.dot(relv)/maxf(relv.length_squared(),0.0001),0.0,SEPARATE.look)
+		var ahead: Vector2=rel+relv*t
+		var now: float=Vector2(rel.x/r.x,rel.y/r.y).length()
+		var q: float=minf(now,Vector2(ahead.x/r.x,ahead.y/r.y).length())
+		if q>=1.0:
+			continue
+		# Dodge up or down, away from the other (the upper fish rises; ids break a tie).
+		var up: float=signf(rel.y) if absf(rel.y)>1.0 else (1.0 if a.id>o.id else -1.0)
+		var side: float=signf(rel.x) if absf(rel.x)>1.0 else 0.0
+		# A chromis darts clear of a tang (twice the push, dropping its own aim); a tang only
+		# eases around chromis (a third).
+		var gain: float=SEPARATE.gain*({"green_chromis":2.0,"yellow_tang":0.33}[a.species] if o.species!=a.species else 1.0)
+		push+=Vector2(side*0.5,up).normalized()*speed*gain*(1.0-q)
+		_dodge=maxf(_dodge,(1.0-q)*minf(gain,1.0))
+		if a.species=="green_chromis" and o.species=="yellow_tang":
+			yielding=maxf(yielding,1.0-q)
+		if now<SEPARATE.close and gain>=1.0:
+			# Inside the other's space: nothing more toward it.
+			var n: Vector2=Vector2(rel.x/(r.x*r.x),rel.y/(r.y*r.y)).normalized()
+			var toward: float=-desired.dot(n)
+			if toward>0.0:
+				desired+=n*toward
+	return desired*(1.0-minf(0.8,yielding*2.0))+push
 
 # A tang that reaches the hold point of a rock spot starts grazing it; the contact point is
 # published only while it grazes.
@@ -555,6 +625,9 @@ func _burrower(a: Dictionary) -> void:
 # Perches, grazes and hops along the bed; pecks up settled food; sleeps where it is at night.
 func _blenny(a: Dictionary, delta: float) -> void:
 	var startled: bool=a.activity=="Startled" and state.elapsed<a.decision_at
+	# Resting where a firefish (perhaps a newborn) now hovers: move on at once.
+	if a.activity in ["Perching","Grazing","Sleeping"] and not is_nan(_burrow_at(a.x)):
+		a.decision_at=state.elapsed
 	if not startled and not _peck(a) and (state.elapsed>=a.decision_at or a.activity=="Startled"):
 		_choose_blenny(a)
 	var speed: float={"Hopping":BLENNY.hop_speed,"Feeding":BLENNY.hop_speed,"Startled":BLENNY.dart_speed}.get(a.activity,0.0)
@@ -579,7 +652,11 @@ func _choose_blenny(a: Dictionary) -> void:
 	a.tx=a.x
 	a.ty=a.y
 	var r: float=motion_rng.randf()
-	if state.light_hour<7 or state.light_hour>19:
+	var burrow: float=_burrow_at(a.x)
+	if not is_nan(burrow):
+		# Never perch, graze or sleep over a firefish burrow: hop clear of it first.
+		_hop(a,_clear_of_burrows(a.x,signf(a.x-burrow) if a.x!=burrow else a.direction))
+	elif state.light_hour<7 or state.light_hour>19:
 		a.activity="Sleeping"
 		a.decision_at=state.elapsed+motion_rng.randf_range(BLENNY.sleep[0],BLENNY.sleep[1])
 	elif r<0.45:
@@ -596,9 +673,36 @@ func _choose_blenny(a: Dictionary) -> void:
 		var to: float=a.x+side*motion_rng.randf_range(BLENNY.hop[0],BLENNY.hop[1])
 		if to<130 or to>1150:
 			to=a.x-(to-a.x)
-		a.activity="Hopping"
-		a.tx=clampf(to,130,1150)
-		a.decision_at=state.elapsed+BLENNY.hop[1]/BLENNY.hop_speed+1.0
+		to=clampf(to,130,1150)
+		if not is_nan(_burrow_at(to)):
+			to=_clear_of_burrows(to,signf(to-a.x) if to!=a.x else side)
+		_hop(a,to)
+
+func _hop(a: Dictionary, to: float) -> void:
+	a.activity="Hopping"
+	a.tx=clampf(to,130,1150)
+	a.decision_at=state.elapsed+maxf(BLENNY.hop[1],absf(a.tx-a.x))/BLENNY.hop_speed+1.0
+
+# The occupied firefish burrow whose margin covers bed position x, or NAN.
+func _burrow_at(x: float) -> float:
+	for o: Dictionary in state.animals:
+		if o.species=="purple_firefish" and absf(x-o.burrow_x)<BLENNY.burrow_clear:
+			return o.burrow_x
+	return NAN
+
+# The nearest bed position from x toward `side` (the other way if the bed ends first) that is
+# clear of every occupied firefish burrow.
+func _clear_of_burrows(x: float, side: float) -> float:
+	for way: float in [side,-side]:
+		var to: float=x
+		for i in 8:
+			var b: float=_burrow_at(to)
+			if is_nan(b):
+				break
+			to=b+way*(BLENNY.burrow_clear+2.0)
+		if is_nan(_burrow_at(to)) and to>=130 and to<=1150:
+			return to
+	return x
 
 # A hungry blenny hops to the nearest settled food within notice range and pecks it up.
 func _peck(a: Dictionary) -> bool:
@@ -1003,7 +1107,7 @@ static func validate(saved: Dictionary) -> bool:
 				return false
 		if a.has("food_id") and not a.food_id is int:
 			return false
-		for key: String in ["vx","vy","relocated_at","brood_until","tint","extend","contact_x","contact_y"]:
+		for key: String in ["vx","vy","relocated_at","brood_until","tint","extend","contact_x","contact_y","chew_until"]:
 			if a.has(key) and not _number(a[key]):
 				return false
 		if a.get("brood_until",0)<0 or a.get("tint",0)<0 or a.get("tint",0)>1 or a.get("extend",0)<0 or a.get("extend",0)>1:
