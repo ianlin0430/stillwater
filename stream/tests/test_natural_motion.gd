@@ -65,11 +65,11 @@ func kinematics_checks() -> void:
 	var no_teleport: bool=true
 	var direction_ok: bool=true
 	var chromis_speeds: Array=[]
+	var chromis_all: Array=[]
 	var tang_speeds: Array=[]
 	var max_turn: Dictionary={"green_chromis":0.0,"yellow_tang":0.0}
 	var bends: Array=[]
 	var kinks: float=0.0
-	var reversal_ticks: Array=[]
 	for seed_value: int in [42,812,240921]:
 		var w:=StreamWorld.new(seed_value,1000)
 		w.state.light_hour=12.0
@@ -95,26 +95,54 @@ func kinematics_checks() -> void:
 					no_teleport=no_teleport and Vector2(a.x,a.y).distance_to(p.pos)<=0.2*SWIM[a.species].cruise*1.18*2.4*1.35 and a.get("relocated_at",-1.0)<0
 					# Path shape while cruising straight on (not mid-reversal): the direction of travel
 					# on screen changes a little every tick (curved), never in a sharp kink.
-					if a==lead and a.activity=="Schooling" and v.length()>6 and p.v.length()>6 and absf(cos(a.heading))>0.95 and absf(cos(p.heading))>0.95:
+					# (Dodges around a tang, when avoid_x/avoid_y steer, are quicker on purpose.)
+					var calm: bool=Vector2(a.get("avoid_x",0.0),a.get("avoid_y",0.0)).length()<1.0 and Vector2(a.x,a.y).distance_to(Vector2(a.tx,a.ty))>40
+					if a==lead and calm and a.activity=="Schooling" and v.length()>6 and p.v.length()>6 and absf(cos(a.heading))>0.95 and absf(cos(p.heading))>0.95:
 						var bend: float=absf(angle_difference(p.v.angle(),v.angle()))
 						bends.append(bend)
-						kinks=maxf(kinks,bend)
+						# A kink shows when the fish is under way (a slow steep climb may swing more,
+						# but moves under 2 px a tick).
+						if v.length()>12 and p.v.length()>12:
+							kinks=maxf(kinks,bend)
 				prev[a.id]={"heading":a.heading,"pos":Vector2(a.x,a.y),"v":v,"activity":a.activity}
-				if a.activity in ["Schooling","Cruising"] and a.speed>3.0 and absf(cos(a.heading))>0.95:
-					if a==lead:
-						chromis_speeds.append(a.speed)
-					elif a.species=="yellow_tang":
+				# Steady cruising: under way, facing along the path, well short of the destination,
+				# for at least 5 s (the first 2 s of each stretch, speeding up, are left out).
+				if a==lead:
+					var steady: bool=a.activity in ["Schooling","Cruising"] and a.speed>3.0 and absf(cos(a.heading))>0.95 and Vector2(a.x,a.y).distance_to(Vector2(a.tx,a.ty))>120
+					if steady:
 						run[a.id]=run.get(a.id,[])+[a.speed]
-			# A reversal of the leader: ticks from facing one way to facing the other.
-		for id: int in run:
-			tang_speeds.append(cv(run[id]))
-	var chromis_cv: float=cv(chromis_speeds)
+					if not steady or i==2999:
+						var r: Array=run.get(a.id,[])
+						if r.size()>=25:
+							chromis_speeds.append(cv(r.slice(10)))
+							chromis_all.append_array(r.slice(10))
+						run.erase(a.id)
+	# The tangs' own gliding style, measured in open water of their own (dodging the school
+	# is quicker on purpose): two tangs, ten daytime minutes, three seeds.
+	for seed_value: int in [42,812,240921]:
+		var w:=StreamWorld.new(seed_value,1000)
+		only(w,func(x): return x.species=="yellow_tang")
+		w.state.light_hour=12.0
+		var run: Dictionary={}
+		for i in 3000:
+			w.advance_live(0.2)
+			for a: Dictionary in w.state.animals:
+				var steady: bool=a.activity=="Cruising" and a.speed>3.0 and absf(cos(a.heading))>0.95 and Vector2(a.x,a.y).distance_to(Vector2(a.tx,a.ty))>120 and Vector2(a.avoid_x,a.avoid_y).length()<1.0
+				if steady:
+					run[a.id]=run.get(a.id,[])+[a.speed]
+				if not steady or i==2999:
+					var r: Array=run.get(a.id,[])
+					if r.size()>=25:
+						tang_speeds.append(cv(r.slice(10)))
+					run.erase(a.id)
+	var chromis_cv: float=0.0
+	for c: float in chromis_speeds: chromis_cv+=c/chromis_speeds.size()
 	var tang_cv: float=0.0
-	for c: float in tang_speeds: tang_cv=maxf(tang_cv,c)
+	for c: float in tang_speeds: tang_cv+=c/tang_speeds.size()
 	var mean_bend: float=0.0
 	for b: float in bends: mean_bend+=b
 	mean_bend/=maxf(1,bends.size())
-	numbers.speed={"chromis_lead_cv":snappedf(chromis_cv,0.001),"chromis_min":snappedf(chromis_speeds.min(),0.01) if not chromis_speeds.is_empty() else 0.0,"chromis_max":snappedf(chromis_speeds.max(),0.01) if not chromis_speeds.is_empty() else 0.0,"tang_cv_max":snappedf(tang_cv,0.001)}
+	numbers.speed={"chromis_lead_cv":snappedf(chromis_cv,0.001),"chromis_min":snappedf(chromis_all.min(),0.01) if not chromis_all.is_empty() else 0.0,"chromis_max":snappedf(chromis_all.max(),0.01) if not chromis_all.is_empty() else 0.0,"tang_cv":snappedf(tang_cv,0.001),"stretches":[chromis_speeds.size(),tang_speeds.size()]}
 	numbers.heading={"max_change_per_tick":{"green_chromis":snappedf(max_turn.green_chromis,0.001),"yellow_tang":snappedf(max_turn.yellow_tang,0.001)}}
 	numbers.path={"mean_bend_per_tick":snappedf(mean_bend,0.0001),"max_bend_per_tick":snappedf(kinks,0.001),"samples":bends.size()}
 	check(fields_ok,"Every swimmer carries finite heading (0..pi), pitch, speed, thrust (0..1) and turn")
@@ -123,8 +151,8 @@ func kinematics_checks() -> void:
 	check(max_turn.green_chromis>0.3 and max_turn.yellow_tang>0.05,"Fish do turn around (heading changes)")
 	check(no_teleport,"No teleports: every step is within the fastest dash and never marked as a relocation")
 	check(chromis_cv>0.08 and chromis_cv<0.6,"Chromis swim in bursts and glides: cruising speed varies (CV %.3f)" % chromis_cv)
-	check(tang_cv<chromis_cv and tang_cv<0.2,"Tangs glide more evenly than the chromis (CV %.3f vs %.3f)" % [tang_cv,chromis_cv])
-	check(bends.size()>200 and mean_bend>0.004 and kinks<0.35,"Cruising paths curve gently (mean %.4f rad/tick, max %.3f)" % [mean_bend,kinks])
+	check(chromis_speeds.size()>=5 and tang_speeds.size()>=5 and tang_cv<chromis_cv*0.5 and tang_cv<0.08,"Tangs glide more evenly than the chromis (CV %.3f vs %.3f)" % [tang_cv,chromis_cv])
+	check(bends.size()>200 and mean_bend>0.004 and kinks<0.25,"Cruising paths curve gently (mean %.4f rad/tick, max %.3f above 12 px/s)" % [mean_bend,kinks])
 
 # A fish heading up into the top of its band eases off instead of stopping dead at the edge.
 func band_edge_checks() -> void:

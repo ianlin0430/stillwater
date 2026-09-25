@@ -108,7 +108,18 @@ const BODY: Dictionary = {"green_chromis":[68.0,39.0],"yellow_tang":[122.0,87.0]
 # A chromis gives way to a tang; a grazing tang holds its rock; chromis space themselves (CHROMIS).
 # A tang that just ate chews for `chew` s before chasing food again and skips pellets inside
 # another feeding tang's body, so two tangs take turns at a pinch instead of piling onto it.
-const SEPARATE: Dictionary = {"margin":1.2,"look":3.0,"gain":1.6,"close":1.05,"chew":3.0}
+# Swimming (2026-09-25, user: "natural first"). Per species: `cruise` px/s (x 0.82-1.18 per id),
+# `turn` max heading rate rad/s (x `startle_turn` when startled), `pitch` max nose up/down rad and
+# `pitch_rate` rad/s, water `drag` /s, stroke power `push` (terminal speed = push x wanted), `gap`
+# burst-and-glide band (0 = smooth rowing with `respond` /s and a `row` surge every `stroke` s),
+# pectoral `brake` px/s2, `scull` px/s at a standstill, `drift` rise-and-fall share while travelling.
+# `edge`: px over which a climb or dive eases off before a depth-band edge; `ramp`: how fast (/s)
+# thrust can build toward full.
+const SWIM: Dictionary = {
+	"green_chromis":{"cruise":17.0,"turn":4.0,"pitch":0.7,"pitch_rate":0.8,"drag":0.9,"push":2.0,"gap":0.3,"brake":24.0,"scull":6.0,"drift":0.22},
+	"yellow_tang":{"cruise":20.0,"turn":1.2,"pitch":0.45,"pitch_rate":0.5,"drag":0.3,"push":2.0,"gap":0.0,"respond":0.8,"row":0.05,"stroke":1.6,"brake":8.0,"scull":6.0,"drift":0.15},
+	"startle_speed":2.4,"startle_turn":4.0,"turn_gain":3.0,"edge":40.0,"ramp":2.0}
+const SEPARATE: Dictionary = {"margin":1.2,"look":5.0,"gain":1.6,"close":1.05,"chew":5.0,"tangs":1.12}
 # Yellow tang: cruises the upper midwater (`cruise` y range) and grazes rock `spots` [x, y, side]
 # on the left reef face and the right outcrop of the approved background (docs/BACKEND_SNAPSHOT_EVENTS.md).
 # The spot is where the mouth touches the rock; the body centre holds `reach` px out on the open
@@ -431,23 +442,28 @@ func _move(delta: float) -> void:
 					_choose_tang(a)
 				else:
 					_choose_activity(a)
+		var band: Array = DEPTH[species]
 		var target:=Vector2(a.tx,a.ty)
-		var offset: Vector2=target-p
-		var speed: float=TANG.speed if tang else 17.0
-		speed*=0.82+0.36*float((int(a.id)*37)%101)/100.0
-		var acceleration: float=15.0
+		# (Targets are always in the band; an edited one is aimed at the band edge.)
+		var offset: Vector2=Vector2(target.x,clampf(target.y,band[0],band[1]))-p
+		var gap: float=offset.length()
+		var cfg: Dictionary=SWIM[species]
+		var cruise: float=cfg.cruise*(0.82+0.36*float((int(a.id)*37)%101)/100.0)
+		var speed: float=cruise
 		if a.activity in ["Resting","Displaying","Grazing"]:
 			speed=1.2
 		elif a.activity=="Startled":
-			speed*=2.4
-			acceleration=45.0
+			speed*=SWIM.startle_speed
 		elif follower:
-			speed*=CHROMIS.catch_up if offset.length()>CHROMIS.regroup else 1.15
-		var desired: Vector2=offset.normalized()*minf(speed,sqrt(2.0*acceleration*offset.length()))
-		# Gentle changing headings for the leader, fading out on approach; no per-frame randomness.
-		if a.activity in ["Schooling","Cruising"] and not follower and offset.length()>35:
+			speed*=CHROMIS.catch_up if gap>CHROMIS.regroup else 1.15
+		# Arrive: never faster than the fish can brake to a stop at the target.
+		var arrive: Vector2=offset/gap*minf(speed,sqrt(2.0*cfg.brake*gap)) if gap>0.01 else Vector2.ZERO
+		# Everything else steering adds on top of arriving: rise and fall, spacing, dodging.
+		var desired:=Vector2.ZERO
+		# A gentle rise and fall while travelling, fading out on approach; no per-frame randomness.
+		if a.activity in ["Schooling","Cruising"] and not follower and gap>35:
 			var bend: float=sin(state.elapsed*(0.28+float(int(a.id)%5)*0.025)+a.id*1.73)
-			desired+=offset.normalized().orthogonal()*bend*speed*0.22*minf(1,offset.length()/100)
+			desired.y+=bend*speed*cfg.drift*minf(1,gap/100)
 		# School members keep their spacing; bodies keep apart across the pool (_avoid).
 		if not tang:
 			for other: Dictionary in state.animals:
@@ -456,18 +472,31 @@ func _move(delta: float) -> void:
 				var apart: Vector2=p-Vector2(other.x,other.y)
 				if apart.length()<CHROMIS.spacing and apart.length()>0.01:
 					desired+=apart.normalized()*(CHROMIS.spacing-apart.length())*0.16
-		desired=_avoid(a,p,desired,TANG.speed if tang else 17.0)
-		if _dodge>0.0:
-			# Getting out of another body's way is quick, like a startle.
-			acceleration=maxf(acceleration,45.0*minf(1.0,_dodge*3.0))
-		var velocity:=Vector2(a.get("vx",0.0),a.get("vy",0.0))
-		velocity=velocity.move_toward(desired,acceleration*delta)
+		# Give way smoothly: the steering _avoid() adds is eased over about two ticks, so a
+		# meeting reads as one sweeping dodge, not a twitch each tick.
+		var steer: Vector2=Vector2(a.get("avoid_x",0.0),a.get("avoid_y",0.0)).lerp(_avoid(a,p,arrive+desired,cruise)-arrive-desired,0.5)
+		a.avoid_x=steer.x
+		a.avoid_y=steer.y
+		_dodge=minf(1.0,steer.length()/cruise)
+		desired+=steer
+		# Soft edges: what steering adds toward a band edge or a side wall eases off over the last
+		# `edge` px (arriving already stops at its in-band target).
+		desired.y*=clampf(((p.y-band[0]) if desired.y<0 else (band[1]-p.y))/SWIM.edge,0.0,1.0)
+		desired.x*=clampf(((p.x-100.0) if desired.x<0 else (1180.0-p.x))/SWIM.edge,0.0,1.0)
+		desired+=arrive
+		# Which way to face: a grazing tang faces its rock, a school member settled in its slot
+		# faces the way the leader does (so the school turns almost together).
+		var face: float=0.0
+		if tang and a.activity in ["Cruising","Grazing"] and gap<8:
+			for sp: Array in TANG.spots:
+				if target==_tang_hold(sp):
+					face=-sp[2]
+		elif follower and gap<40:
+			face=lead.direction
+		var velocity: Vector2=_swim(a,desired,speed,cruise,cfg,delta,a.activity=="Startled",face)
 		var free: Vector2=p+velocity*delta
 		# Keep each fish in its own layer (the shoaling push once carried hatchetfish down).
-		var band: Array = DEPTH[species]
 		var next: Vector2=free.clamp(Vector2(100,band[0]),Vector2(1180,band[1]))
-		if absf(velocity.x)>1.3:
-			a.direction=1.0 if velocity.x>0 else -1.0
 		if next.distance_to(free)>RELOCATION:
 			a.relocated_at=state.elapsed
 		a.x=next.x
@@ -484,6 +513,89 @@ func _move(delta: float) -> void:
 			a.decision_at=state.elapsed+motion_rng.randf_range(4,18)
 		if tang:
 			_tang_contact(a,next)
+
+# Natural swimming (2026-09-25): the body turns at a limited rate, through facing the glass
+# (heading 0 = facing right, pi = facing left); the nose pitches up or down gently; speed along
+# the body follows burst-and-glide strokes (chromis) or smooth rowing (tang) against water drag,
+# with pectoral braking and, only at low speed, a little sculling that lets the fish settle
+# exactly. Returns the screen velocity (px/s); stores heading, pitch, speed, thrust and turn.
+func _swim(a: Dictionary, desired: Vector2, cap: float, cruise: float, cfg: Dictionary, delta: float, quick: bool, face: float) -> Vector2:
+	var psi: float=a.get("heading",0.0 if a.direction>0 else PI)
+	var theta: float=a.get("pitch",0.0)
+	var s: float=a.get("speed",Vector2(a.get("vx",0.0),a.get("vy",0.0)).length())
+	var turn: float=a.get("turn",0.0)
+	var want: float=desired.length()
+	var facing: float=face
+	if facing==0.0:
+		# (Only for a clear sideways lead: a mostly vertical move keeps the current facing.)
+		var now: float=1.0 if cos(psi)>=0.0 else -1.0
+		if want>0.5 and (absf(desired.x)>0.45*want or desired.x*now<0.0 and absf(desired.x)>0.15*want):
+			facing=signf(desired.x)
+		elif absf(cos(psi))<0.3 and absf(turn)>0.01:
+			# Mid-turn with nowhere in particular to go: finish the turn.
+			facing=-signf(turn)
+		else:
+			facing=1.0 if cos(psi)>=0.0 else -1.0
+	var rate: float=cfg.turn*(SWIM.startle_turn if quick else 1.0)
+	turn=move_toward(turn,clampf(((0.0 if facing>0 else PI)-psi)*SWIM.turn_gain,-rate,rate),rate*5.0*delta)
+	var turned: float=clampf(psi+turn*delta,0.0,PI)
+	turn=(turned-psi)/delta
+	psi=turned
+	# Headway: less while turning, hardly any while still facing away from the way to go.
+	# Headway: what lies ahead of the body (none while still facing away), and some to climb or dive.
+	var along: float=maxf(0.0,desired.x*cos(psi))+absf(desired.y)*0.6
+	along=minf(along,cruise*SWIM.startle_speed)
+	var full: float=cfg.push*cfg.drag*maxf(cruise,1.0)
+	var accel: float
+	if cfg.gap>0.0:
+		# Burst and glide: stroke hard up to (1+gap) x the wanted speed, coast down to (1-gap) x.
+		var bursting: bool=a.get("thrust",0.0)>0.0
+		if s<along*(1.0-cfg.gap):
+			bursting=true
+		elif s>along*(1.0+cfg.gap):
+			bursting=false
+		accel=cfg.push*cfg.drag*along if bursting and along>0.2 else 0.0
+	else:
+		# Rowing: steady strokes hold the wanted speed, with a slight surge on each stroke.
+		accel=clampf(cfg.drag*along+cfg.respond*(along-s),0.0,cfg.push*cfg.drag*maxf(cap,cruise))
+		accel*=1.0+cfg.row*sin(state.elapsed*TAU/cfg.stroke+a.id)
+	# A stroke builds up over a moment (SWIM.ramp); gliding starts at once.
+	accel=minf(accel,(a.get("thrust",0.0)+SWIM.ramp*delta)*full)
+	s=maxf(0.0,s+(accel-cfg.drag*s)*delta)
+	if accel==0.0 and s>along*(1.0+cfg.gap)+0.5:
+		# Flare the pectorals to brake.
+		s=maxf(along,s-cfg.brake*(3.0 if quick else 1.0)*delta)
+	var urgent: float=_dodge
+	var level: float=maxf(absf(desired.x),0.35*cap+0.5)
+	theta=move_toward(theta,clampf(atan2(desired.y,level),-cfg.pitch,cfg.pitch),cfg.pitch_rate*delta)
+	var body:=Vector2(cos(psi)*cos(theta),sin(theta))*s
+	# Sculling with the pectorals, a few px/s: in any direction only near a standstill; across
+	# the body (mostly up or down) also while getting out of another body's way. It never
+	# works along the body, so it cannot smooth away the burst-and-glide.
+	var slow: float=clampf(1.0-s/(0.5*cruise),0.0,1.0)
+	var axis:=Vector2(cos(psi),0.0) if absf(cos(psi))>0.01 else Vector2.ZERO
+	var miss: Vector2=desired-body
+	var ahead: Vector2=axis*miss.dot(axis)
+	var settle: float=slow if want<cfg.scull else 0.0
+	var velocity: Vector2=body+ahead.limit_length(cfg.scull*settle)+(miss-ahead).limit_length(cfg.scull*maxf(urgent,slow))
+	a.heading=psi
+	a.pitch=theta
+	a.speed=s
+	a.turn=turn
+	a.thrust=clampf(accel/full,0.0,1.0)
+	if absf(cos(psi))>0.05:
+		a.direction=signf(cos(psi))
+	return velocity
+
+# Between two tangs: anyone gives way to a grazing tang, one that just ate (chewing) gives way
+# to one that has not, and otherwise the younger id gives way.
+func _gives_way(a: Dictionary, o: Dictionary) -> bool:
+	if o.activity=="Grazing" or a.activity=="Grazing":
+		return o.activity=="Grazing"
+	var chewing: bool=state.elapsed<a.get("chew_until",-1.0)
+	if chewing!=(state.elapsed<o.get("chew_until",-1.0)):
+		return chewing
+	return a.id>o.id
 
 func _body(a: Dictionary) -> Vector2:
 	var b: Array=BODY[a.species]
@@ -502,7 +614,7 @@ func _avoid(a: Dictionary, p: Vector2, desired: Vector2, speed: float) -> Vector
 		if o.id==a.id or o.species not in DEPTH or o.species==a.species and a.species=="green_chromis":
 			continue
 		var mixed: bool=o.species!=a.species
-		var r: Vector2=(own+_body(o))*0.5*SEPARATE.margin*(1.17 if mixed else 1.0)
+		var r: Vector2=(own+_body(o))*0.5*SEPARATE.margin*(1.17 if mixed else SEPARATE.tangs)
 		var rel: Vector2=p-Vector2(o.x,o.y)
 		var relv: Vector2=v-Vector2(o.get("vx",0.0),o.get("vy",0.0))
 		var t: float=clampf(-rel.dot(relv)/maxf(relv.length_squared(),0.0001),0.0,SEPARATE.look)
@@ -521,18 +633,29 @@ func _avoid(a: Dictionary, p: Vector2, desired: Vector2, speed: float) -> Vector
 		_dodge=maxf(_dodge,(1.0-q)*minf(gain,1.0))
 		if a.species=="green_chromis" and o.species=="yellow_tang":
 			yielding=maxf(yielding,1.0-q)
-		if now<SEPARATE.close and gain>=1.0:
-			# Inside the other's space: nothing more toward it.
+		# The one that gives way (a chromis before a tang, the younger id of two tangs, anyone
+		# before a grazing tang) holds back as a meeting nears; inside the other's space nobody
+		# presses on toward it.
+		# (A tang only eases off, by half, for chromis ahead of it.)
+		var yields: float=1.0 if a.species=="green_chromis" or not mixed and _gives_way(a,o) else 0.5 if mixed else 0.0
+		if now<SEPARATE.close and gain>=1.0 or yields>0.0:
 			var n: Vector2=Vector2(rel.x/(r.x*r.x),rel.y/(r.y*r.y)).normalized()
 			var toward: float=-desired.dot(n)
 			if toward>0.0:
-				desired+=n*toward
+				desired+=n*toward*(1.0 if now<SEPARATE.close and gain>=1.0 else yields*clampf((1.0-q)*3.0,0.0,1.0))
 	return desired*(1.0-minf(0.8,yielding*2.0))+push
 
 # A tang that reaches the hold point of a rock spot starts grazing it; the contact point is
 # published only while it grazes.
 func _tang_contact(a: Dictionary, p: Vector2) -> void:
 	if a.activity=="Cruising" and p.distance_to(Vector2(a.tx,a.ty))<5:
+		var spot: Array=[]
+		for s: Array in TANG.spots:
+			if Vector2(a.tx,a.ty)==_tang_hold(s):
+				spot=s
+		# At a rock spot it first turns to face the rock (it may have come round from the far side).
+		if not spot.is_empty() and cos(a.get("heading",0.0))*-spot[2]<0.9:
+			return
 		# An open-water trip ends here: choose the next move now instead of idling on the spot.
 		a.decision_at=minf(a.decision_at,state.elapsed)
 		for s: Array in TANG.spots:
@@ -1107,7 +1230,7 @@ static func validate(saved: Dictionary) -> bool:
 				return false
 		if a.has("food_id") and not a.food_id is int:
 			return false
-		for key: String in ["vx","vy","relocated_at","brood_until","tint","extend","contact_x","contact_y","chew_until"]:
+		for key: String in ["vx","vy","relocated_at","brood_until","tint","extend","contact_x","contact_y","chew_until","avoid_x","avoid_y","heading","pitch","speed","thrust","turn","roll","flick"]:
 			if a.has(key) and not _number(a[key]):
 				return false
 		if a.get("brood_until",0)<0 or a.get("tint",0)<0 or a.get("tint",0)>1 or a.get("extend",0)<0 or a.get("extend",0)>1:
