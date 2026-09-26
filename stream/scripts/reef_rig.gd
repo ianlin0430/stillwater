@@ -49,6 +49,8 @@ var contact_offset:=Vector2.ZERO
 var portal: BurrowPortal
 var portal_fold: float=0
 var last_hiding: bool=false
+enum PortalMotion { IDLE, ENTERING, EMERGING }
+var portal_motion: PortalMotion=PortalMotion.IDLE
 
 func _ready() -> void:
 	texture_filter=CanvasItem.TEXTURE_FILTER_NEAREST
@@ -183,6 +185,14 @@ func animate(delta: float) -> void:
 	bite_timer=maxf(0,bite_timer-delta)
 	touch_remaining=maxf(0,touch_remaining-delta)
 	var goal: float=0.0 if dying or touch_remaining>0 else target_extension
+	if species=="purple_firefish":
+		# Finish the visible arc before consuming the latest ecological request.
+		# Opposite requests otherwise switch nose-down to nose-up in a single frame.
+		if portal_motion==PortalMotion.IDLE:
+			if goal<extension: portal_motion=PortalMotion.ENTERING
+			elif goal>extension: portal_motion=PortalMotion.EMERGING
+		if portal_motion!=PortalMotion.IDLE:
+			goal=0.0 if portal_motion==PortalMotion.ENTERING else 1.0
 	extension=move_toward(extension,goal,delta*(1.0/0.55 if species=="purple_firefish" and goal<extension else 6.0 if goal<extension else 1.0/1.3))
 	visual_offset=Vector2.ZERO
 	var desired_follow: Vector2=Vector2(clampf(-velocity.x*.035,-1.8,1.8),clampf(-velocity.y*.025,-1.2,1.2)) if species in ["green_chromis","yellow_tang"] and activity!="Grazing" else Vector2.ZERO
@@ -198,12 +208,13 @@ func animate(delta: float) -> void:
 			visual_pitch=lerp_angle(visual_pitch,0.31*face_target,1-exp(-delta*7))
 			visual_offset.y=-sin(absf(visual_pitch))*extent.x*0.5-0.5
 	elif species=="purple_firefish":
-		_firefish_pose(goal<extension or (goal==0 and extension==0))
+		_firefish_pose(portal_motion==PortalMotion.ENTERING or (goal==0 and extension==0))
 		if portal!=null:
 			var hiding: bool=goal==0
 			if hiding!=last_hiding: portal.disturb()
 			last_hiding=hiding
 			portal.advance(delta)
+		if is_equal_approx(extension,goal): portal_motion=PortalMotion.IDLE
 	elif species=="yellow_tang" and activity=="Grazing" and actor.has("contact_x"):
 		var contact: Vector2=(Vector2(actor.contact_x,actor.contact_y)-position)/maxf(body_scale,0.1)
 		# Keep the silhouette intact; ease a visual mouth pivot toward the rock.

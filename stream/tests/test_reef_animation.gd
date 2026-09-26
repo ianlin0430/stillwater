@@ -97,6 +97,24 @@ func run() -> void:
 	check(fire.fish_material.get_shader_parameter("portal") and not fire.fish_material.get_shader_parameter("clip_sand"),"Firefish uses its local aperture, never a whole-scene sand-plane cut")
 	for i in 20: fire.animate(1.0/30)
 	check(not fire.body_visible and fire.visual_offset.y>fire.extent.x*.5,"Body is hidden only after the tail has passed below the sand")
+	fire.target_extension=1
+	for i in 18: fire.animate(1.0/30)
+	var emergence_pitch: float=fire.visual_pitch
+	fire.target_extension=0
+	fire.animate(1.0/30)
+	check(absf(fire.visual_pitch-emergence_pitch)<0.5,"A new hide request during emergence cannot flip the visible fish upside down")
+	for i in 90: fire.animate(1.0/30)
+	check(not fire.body_visible,"Buffered hide request still reaches the shelter within a bounded transition")
+	fire.target_extension=1
+	for i in 45: fire.animate(1.0/30)
+	fire.target_extension=0
+	for i in 8: fire.animate(1.0/30)
+	var entry_pitch: float=fire.visual_pitch
+	fire.target_extension=1
+	fire.animate(1.0/30)
+	check(absf(fire.visual_pitch-entry_pitch)<0.5,"An early wake request during entry cannot reverse the visible pose")
+	for i in 90: fire.animate(1.0/30)
+	check(fire.body_visible and fire.extension>0.999,"Buffered wake request completes entry and then emerges fully")
 	var eating: Dictionary=snapshot.duplicate(true)
 	eating.events.append({"seq":eating.next_event,"kind":"ate","id":fire.individual_id,"live":true})
 	eating.next_event+=1
