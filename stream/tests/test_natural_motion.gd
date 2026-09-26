@@ -53,6 +53,7 @@ func _initialize() -> void:
 	feeding_checks()
 	blenny_checks()
 	firefish_checks()
+	tang_grazing_checks()
 	determinism_checks()
 	numbers.ms=Time.get_ticks_msec()-started
 	print(JSON.stringify({"checks":checks,"failures":failures,"numbers":numbers}))
@@ -316,6 +317,49 @@ func firefish_checks() -> void:
 	w.advance_live(1.0)
 	check(f.thrust<0.5,"The dash is brief")
 	numbers.firefish={"flicks_2min":flicks,"pitch_max":snappedf(pitch_max,0.001)}
+
+# Grazing in profile (user 2026-09-26: the grazing tang looked squashed): the body centre holds
+# half the tang's body length (x its scale) out from the rock contact, facing the rock, so the
+# mouth meets the rock without the frontend foreshortening the fish.
+func tang_grazing_checks() -> void:
+	var half: float=StreamWorld.BODY.yellow_tang[0]*0.5
+	check(is_equal_approx(float(StreamWorld.TANG.reach),half),"TANG.reach is half the adult tang body (%.1f px, reach %.1f)" % [half,float(StreamWorld.TANG.reach)])
+	var worst: float=0.0
+	var facing_min: float=1.0
+	var grazes: Dictionary={"adult":0,"juvenile":0}
+	for seed_value: int in [42,812,240921]:
+		var w:=StreamWorld.new(seed_value,1000)
+		w.state.light_hour=12.0
+		var tg: Array=of(w,"yellow_tang")
+		# One juvenile (half size) per world: it holds half as far out.
+		tg[1].age=10.0
+		for i in 6000:
+			w.advance_live(0.2)
+			for t: Dictionary in tg:
+				if t.activity!="Grazing":
+					continue
+				var side: float=0.0
+				for s: Array in StreamWorld.TANG.spots:
+					if s[0]==t.get("contact_x") and s[1]==t.get("contact_y"):
+						side=s[2]
+				if side==0.0:
+					worst=INF
+					continue
+				var want:=Vector2(t.contact_x+side*half*w.animal_scale(t),t.contact_y)
+				worst=maxf(worst,want.distance_to(Vector2(t.x,t.y)))
+				facing_min=minf(facing_min,cos(t.heading)*-side)
+				grazes["juvenile" if w.animal_scale(t)<1.0 else "adult"]+=1
+	numbers.tang_grazing={"max_hold_error":snappedf(worst,0.01),"min_facing_cos":snappedf(facing_min,0.001),"adult_ticks":grazes.adult,"juvenile_ticks":grazes.juvenile}
+	check(grazes.adult>100 and grazes.juvenile>100,"Adult and juvenile tangs both graze (%d / %d ticks)" % [grazes.adult,grazes.juvenile])
+	check(worst<6.0,"Grazing body centre sits half a body length x scale out from the contact, within the 5 px arrival plus coasting (worst %.2f px off)" % worst)
+	check(facing_min>=0.9,"A grazing tang faces its rock (min cos %.3f)" % facing_min)
+	# Every hold (adult and juvenile) is inside the tang band and the swimming x range.
+	var inside: bool=true
+	for s: Array in StreamWorld.TANG.spots:
+		for scale: float in [1.0,0.5]:
+			var h: Vector2=StreamWorld._tang_hold(s,scale)
+			inside=inside and h.x>=100.0 and h.x<=1180.0 and h.y>=StreamWorld.DEPTH.yellow_tang[0] and h.y<=StreamWorld.DEPTH.yellow_tang[1]
+	check(inside,"Every grazing hold lies inside the tang band")
 
 func determinism_checks() -> void:
 	var a:=StreamWorld.new(812,1000)

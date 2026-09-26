@@ -1,6 +1,6 @@
 # Backend 快照與自然事件（backend 側契約）
 
-更新：2026-09-26（自然游動欄位 heading/pitch/speed/thrust/turn/roll/flick、身體不重疊、blenny 避開紫雷達洞口；見「自然游動欄位」）。2026-09-25（最終四物種：花園鰻移除；紫雷達洞口重新排開；黃金吊岩石點互斥；新增 `ate` 事件）。實作在 `scripts/stream_world.gd`，測試 `tests/test_presentation.gd`、`tests/test_world.gd`（`eel_checks`、`feeding_checks`、`blenny_checks`、`firefish_checks`、`chromis_checks`、`tang_checks`、`reef_cast_checks`）。
+更新：2026-09-26 晚（黃金吊啃食改成側面：身體中心離嘴半個身長 `TANG.reach`＝61 px × 體型，岩石點剩 4 個；綠光鰓雀鯛會避開啃食中黃金吊的身體，見「黃金吊」）。2026-09-26（自然游動欄位 heading/pitch/speed/thrust/turn/roll/flick、身體不重疊、blenny 避開紫雷達洞口；見「自然游動欄位」）。2026-09-25（最終四物種：花園鰻移除；紫雷達洞口重新排開；黃金吊岩石點互斥；新增 `ate` 事件）。實作在 `scripts/stream_world.gd`，測試 `tests/test_presentation.gd`、`tests/test_world.gd`（`eel_checks`、`feeding_checks`、`blenny_checks`、`firefish_checks`、`chromis_checks`、`tang_checks`、`reef_cast_checks`）。
 前端契約（Codex）見 `FRONTEND_BACKEND_CONTRACT.md`；本檔只描述 backend 提供什麼。
 注意：該契約寫的 `stream_absence.gd` 實際檔名是 `scripts/absence.gd`。
 
@@ -10,7 +10,7 @@
 > **2026-09-25 最終四物種（使用者決定：不要花園鰻，取代下一段的五物種）**：`ACTIVE_SPECIES` = `lawnmower_blenny`、`purple_firefish`、`green_chromis`、`yellow_tang`（這個順序；`counts()` 就是這四個鍵，沒有 `garden_eel`）。
 > - **`garden_eel` 變成舊檔專用**（和 threadfin 一樣）：`SPECIES.garden_eel` 還在（`initial:0`），不在 `CAP`、`HOMES`、`REEF_CAST`；backend 不再產生、不會移入、不會救援。載入含活花園鰻的存檔時，每隻記一次 `departure`（`live:false`，x/y＝牠的洞口），進 `archive` 時保留 `burrow_x`/`burrow_y`/`extend`；重開不重複。舊存檔裡鰻的欄位與事件（`Swaying`/`Retracted`、`eel_colony`）照樣驗證、可載入。沒有 `eel_colony` 的舊存檔**不再**補一對鰻。新世界不再寫 `eel_colony`。
 > - 棲地上限 blenny 3、紫雷達 4、chromis 8、黃金吊 2（合計 17）；開場 2/2/6/2 = 12（第六隻 chromis 叫 Pearl）。舊溪流存檔的 `reef_cast` 開場成員因此是 2 blenny、2 紫雷達、6 chromis、2 黃金吊。
-> - 紫雷達洞口改成 `FIRE_BURROWS` = 650、540、760、410（見「紫雷達」）；黃金吊的岩石點 2/3、4/5 互斥（見「黃金吊」）；新事件 `ate`（見「事件」）。
+> - 紫雷達洞口改成 `FIRE_BURROWS` = 650、540、760、410（見「紫雷達」）；黃金吊的岩石點 2/3、4/5 互斥（2026-09-26 起剩 4 個點，只有右礁石 3/4 互斥；見「黃金吊」）；新事件 `ate`（見「事件」）。
 
 > **2026-09-24 五物種（已被上面取代）**：`ACTIVE_SPECIES` = `lawnmower_blenny`、`purple_firefish`、`green_chromis`、`garden_eel`、`yellow_tang`（這個順序；`counts()` 就是這五個鍵）。
 > - **紅雷達的鍵 `firefish` 已完全刪除**，換成 `purple_firefish`（label `"Purple firefish"`，latin *Nemateleotris decora*），行為和原本的火焰鰕虎完全一樣。珊瑚礁世界只在今天的開發 commit 存在過，沒有使用者存檔、也沒有測試 fixture 含 `firefish`，所以不留舊檔專用項目；含 `firefish` 的存檔會被 `validate()` 拒絕（實際上不存在）。
@@ -232,7 +232,7 @@ events 只保留 160 筆；若 `events_after` 最舊一筆 `seq > cursor+1`，�
 - 池裡**最大**的魚（`body` 1.4；其他 0.5–0.9），活最久（540 天 ±15%）、120 天成熟、繁殖最慢；開場兩隻都是成魚。最多 2 隻（「一小群、不擋畫面」）。
 - 水層 `DEPTH.yellow_tang` = 120–540（永遠在裡面）。`x/y` 是**身體中心**。
 - `Cruising`：在上中層（y 150–360）來回游，常橫越整個池子；和另一隻黃金吊的身體保持不重疊（見「自然游動欄位」，原本的 70 px 間距已取代）。
-- `Grazing`：游到一個岩石點停住啃 8–20 秒。這時 snapshot 有 `contact_x/contact_y`＝**嘴碰到岩石的點**，身體中心在它旁邊 `TANG.reach`＝22 px 的開放側，`direction` 朝向岩石（`direction == -side`）。前端讓嘴對準 `contact`、做啄的動作即可。**兩隻不會同時啃會互相重疊的點**（2026-09-25）：另一隻正在用或正要去的位置在 `TANG.clear`＝130×92 px（成魚圖 122×87 加間隔）以內的點都不選，所以點 2/3、點 4/5 各自互斥；啃食中的黃金吊也不再被經過的另一隻推離岩石。
+- `Grazing`：游到一個岩石點停住啃 8–20 秒。這時 snapshot 有 `contact_x/contact_y`＝**嘴碰到岩石的點**，身體中心在它旁邊 `TANG.reach × animal_scale`（成魚 61 px＝半個身長 122/2，幼魚 30.5 px）的開放側、同一高度，`direction` 朝向岩石（`direction == -side`），`heading` 也轉到朝岩石（cos 誤差 ≤ 0.1）。所以魚是**側面**貼著岩石，嘴剛好碰到 `contact`：前端**不需要**把身體沿深度壓扁去搆岩石，照原比例畫、做啄的動作即可（2026-09-26 使用者：啃食時看起來被壓扁；原本 22 px）。**兩隻不會同時啃會互相重疊的點**（2026-09-25）：另一隻正在用或正要去的位置在 `TANG.clear`＝130×92 px（成魚圖 122×87 加間隔）以內的點都不選，所以點 3/4（右礁石）互斥；啃食中的黃金吊也不再被經過的另一隻推離岩石。
 - `Resting`：夜裡大多停著（白天偶爾），速度很慢；夜裡也只做短程游動。
 - 餵食：像 chromis，去追 260 px 內還在下沉的飼料（`Feeding`、`food_id`）。敲玻璃：`Startled` 往反方向衝 3 秒（留在水層內）。游標引魚：會 `Curious` 過來看（每隻各自決定）。
 - 紫雷達把低空經過的黃金吊當成 chromis（同一條 `FIRE.dx/dy` 規則）。
@@ -246,19 +246,25 @@ events 只保留 160 筆；若 `events_after` 最舊一筆 `seq > cursor+1`，�
 | 割草機鳚 | `(x, floor_y(x))`：**腹部貼床面的點**，不是身體中心 | 腹鰭／胸鰭撐在這一點；`Hopping` 的弧線前端畫，落點仍是床面。x 130–1150。 |
 | 紫雷達 | 洞口 `(burrow_x, burrow_y)`，永遠不動 | 洞口在沙面上（`FIRE_BURROWS` = 650/540/760/410，彼此 ≥ 110 px）；出洞時身體中心在洞口正上方 `hover_y × extend`。 |
 | 綠光鰓雀鯛 | 身體中心，水層 180–430 | 不碰任何東西。 |
-| 黃金吊 | 身體中心，水層 120–540 | 只有 `Grazing` 時：嘴在 `(contact_x, contact_y)`，身體中心在 `contact_x + side × 22`。 |
+| 黃金吊 | 身體中心，水層 120–540 | 只有 `Grazing` 時：嘴在 `(contact_x, contact_y)`，身體中心在 `(contact_x + side × 61 × animal_scale, contact_y)`（容許 6 px：到點判定 5 px 加滑行）。 |
 
 黃金吊的岩石點 `StreamWorld.TANG.spots`（`[x, y, side]`，`side=+1`＝魚在岩石右邊、朝左；`-1`＝魚在左邊、朝右），依核可背景的岩石位置放：
 
 | 點 | 世界座標 | 背景上的位置 |
 |---|---|---|
-| 1 | (170, 318)，side +1 | 左邊大礁岩頂部靠左的岩面（背景約 (85, 159)） |
-| 2 | (310, 400)，side +1 | 左礁岩上層平台的右緣（背景約 (155, 200)） |
-| 3 | (240, 472)，side +1 | 左礁岩下半部的岩面（背景約 (120, 236)） |
-| 4 | (962, 532)，side −1 | 右邊小礁石的左側岩面（背景約 (481, 266)） |
-| 5 | (1080, 486)，side −1 | 右邊小礁石頂部（背景約 (540, 243)） |
+| 1 | (170, 318)，side +1 | 左邊大礁岩頂部靠左的岩面（背景約 (85, 159)）；成魚身體中心 (231, 318) |
+| 2 | (310, 400)，side +1 | 左礁岩上層平台的右緣（背景約 (155, 200)）；成魚身體中心 (371, 400) |
+| 3 | (962, 532)，side −1 | 右邊小礁石的左側岩面（背景約 (481, 266)）；成魚身體中心 (901, 532) |
+| 4 | (1048, 496)，side −1 | 右邊大礁石的左側岩面（背景約 (524, 248)）；成魚身體中心 (987, 496) |
 
-這些點和紫雷達的洞口左右都差超過 48 px。點 2 與 3、點 4 與 5 的啃食位置太近（成魚身體會疊），backend 不會讓兩隻同時用。**如果正式背景的岩石位置不同，告訴 Claude 新座標，由 backend 改 `TANG.spots`**（不要前端自己挪魚）。
+2026-09-26 依 61 px 身體距離、對照核可背景 `artifacts/reef-review/background-normal.png`（1280×720 世界座標）重新檢查：
+- 原本的點 3 (240, 472)（左礁岩下半部）**刪掉**：身體中心移到 61 px 外之後，整條魚疊在左礁岩的層狀平台上（在岩石裡）。左礁岩其他平台尖端（約 (394, 434)、(476, 460)）都會讓啃食中的黃金吊落在紫雷達洞口 410 或 540 正上方（`FIRE.dx`＝48 px、`FIRE.dy`＝200 px 內），害牠一直躲回洞裡，所以不換位置、直接少一個點。
+- 原本的點 5 (1080, 486) 在大礁石**頂上**，61 px 時頭半身疊進岩石；改到同一塊岩石的左側面 **(1048, 496)**。
+- 點 1、2、3（原 4）不變：成魚與幼魚的身體都在水裡、在水層 120–540 內。點 2 的成魚中心 (371, 400) 離洞口 410 橫向 39 px，但高度差 204.6 px > `FIRE.dy`，不會觸發躲藏。
+- 互斥：點 3/4（右礁石）的啃食位置太近（成魚身體會疊），backend 不會讓兩隻同時用；點 1/2 相距 140 px，可同時用。左右各還能同時有一隻在啃。
+- 載入舊存檔時若黃金吊正啃著已刪除或已移動的點（`contact_x/contact_y` 對不上），牠照舊停在原位，最多 20 秒後重選，之後只用新點。
+
+**如果正式背景的岩石位置不同，告訴 Claude 新座標，由 backend 改 `TANG.spots`**（不要前端自己挪魚）。
 
 ### 外觀與生命階段欄位（全部物種共用）
 - `species`、`name`、`sex`（`"female"`/`"male"`）、`age`（天）、`body`（成長中的體型，成體 = `SPECIES[species].body`）、`hunger`（0–1）、`direction`（±1，朝向）。

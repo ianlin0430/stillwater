@@ -1060,7 +1060,12 @@ func firefish_checks() -> void:
 	var clear: bool=true
 	for x: float in sites:
 		for sp: Array in StreamWorld.TANG.spots:
-			clear=clear and absf(x-sp[0])>StreamWorld.FIRE.dx and absf(x-StreamWorld._tang_hold(sp).x)>StreamWorld.FIRE.dx and not firefish_boxes(x).any(func(r): return r.intersects(tang_grazing_box(sp)))
+			clear=clear and absf(x-sp[0])>StreamWorld.FIRE.dx and not firefish_boxes(x).any(func(r): return r.intersects(tang_grazing_box(sp)))
+			# A grazing tang (adult or juvenile hold) never sits where it would send the firefish
+			# into its burrow (the hide rule: within `dx` sideways and `dy` above the mouth).
+			for scale: float in [1.0,0.5]:
+				var hold: Vector2=StreamWorld._tang_hold(sp,scale)
+				clear=clear and not (absf(x-hold.x)<StreamWorld.FIRE.dx and StreamWorld.floor_y(x)-hold.y<StreamWorld.FIRE.dy)
 	check(clear,"No firefish burrow or hovering firefish overlaps a tang rock spot or a grazing tang")
 	check(pair.map(func(x): return x.burrow_x)==[sites[0],sites[1]] and absf(sites[0]-sites[1])==sites.slice(1).map(func(x): return absf(x-sites[0])).min(),"The opening pair takes the first site and its nearest neighbour")
 	check(pair.all(func(x): return x.hover_y>=StreamWorld.FIRE.hover[0] and x.hover_y<=StreamWorld.FIRE.hover[1]),"Each firefish has its own hover height above the burrow")
@@ -1285,8 +1290,8 @@ func tang_checks() -> void:
 				for s: Array in StreamWorld.TANG.spots:
 					if s[0]==t.get("contact_x") and s[1]==t.get("contact_y"):
 						spot=s
-				# Mouth on the rock: body centre `reach` px out on the open side, facing the rock.
-				contact_ok=contact_ok and not spot.is_empty() and t.direction==-spot[2] and Vector2(t.x,t.y).distance_to(Vector2(spot[0]+spot[2]*StreamWorld.TANG.reach,spot[1]))<6.0
+				# Mouth on the rock: body centre `reach` (half a body) x scale out on the open side, facing the rock.
+				contact_ok=contact_ok and not spot.is_empty() and t.direction==-spot[2] and Vector2(t.x,t.y).distance_to(StreamWorld._tang_hold(spot,w.animal_scale(t)))<6.0
 			else:
 				contact_ok=contact_ok and not t.has("contact_x") and not t.has("contact_y")
 		low=minf(low,group[0].x)

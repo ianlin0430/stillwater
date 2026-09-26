@@ -124,13 +124,19 @@ const SWIM: Dictionary = {
 const SEPARATE: Dictionary = {"margin":1.2,"look":5.0,"gain":1.6,"close":1.05,"chew":5.0,"tangs":1.25}
 # Yellow tang: cruises the upper midwater (`cruise` y range) and grazes rock `spots` [x, y, side]
 # on the left reef face and the right outcrop of the approved background (docs/BACKEND_SNAPSHOT_EVENTS.md).
-# The spot is where the mouth touches the rock; the body centre holds `reach` px out on the open
-# `side` (+1 right of the rock, -1 left), facing the rock. Graze/rest dwell times (s), cruise speed
+# The spot is where the mouth touches the rock; the body centre holds `reach` px (half the adult
+# body, BODY.yellow_tang; x animal_scale, so a juvenile holds 30.5 px out) out on the open `side`
+# (+1 right of the rock, -1 left), facing the rock, so the fish grazes in profile (2026-09-26, user:
+# the tang looked squashed; was 22 px, which the frontend foreshortened the body to reach).
+# 2026-09-26 spots, checked against artifacts/reef-review/background-normal.png at the 61 px hold:
+# the old lower-left spot (240, 472) is gone (its body now lay over the reef ledges, and every
+# other left-reef ledge tip puts a grazing tang over a firefish burrow), and the right outcrop spot
+# moved from (1080, 486) on the rock top to its left face (1048, 496). Graze/rest dwell times (s), cruise speed
 # (px/s), trip length (px); two tangs keep their bodies apart (SEPARATE; was `spacing` 70 px). `graze` share of day choices, `night_rest` at night.
 # While grazing the body rolls up to `roll` rad toward the rock with each peck (every `peck` s).
 # `clear` [w, h]: a spot is skipped while another tang holds or heads to a point closer than this on
-# both axes, so two grazing adults (122 x 87 px art) never overlap (spots 2/3 and 4/5 are exclusive).
-const TANG: Dictionary = {"spots":[[170.0,318.0,1.0],[310.0,400.0,1.0],[240.0,472.0,1.0],[962.0,532.0,-1.0],[1080.0,486.0,-1.0]],"reach":22.0,"cruise":[150.0,360.0],"graze":0.4,"graze_time":[8.0,20.0],"rest":[30.0,90.0],"night_rest":0.7,"speed":20.0,"trip":[80.0,360.0],"roll":0.35,"peck":1.6,"clear":[130.0,92.0]}
+# both axes, so two grazing adults (122 x 87 px art) never overlap (spots 3/4, the right outcrop, are exclusive).
+const TANG: Dictionary = {"spots":[[170.0,318.0,1.0],[310.0,400.0,1.0],[962.0,532.0,-1.0],[1048.0,496.0,-1.0]],"reach":61.0,"cruise":[150.0,360.0],"graze":0.4,"graze_time":[8.0,20.0],"rest":[30.0,90.0],"night_rest":0.7,"speed":20.0,"trip":[80.0,360.0],"roll":0.35,"peck":1.6,"clear":[130.0,92.0]}
 const NAMES: Dictionary = {"green_chromis":["Jade","Mint","Lagoon","Kelp","Glass","Pearl"],"lawnmower_blenny":["Moss","Pebble"],"purple_firefish":["Ember","Flicker"],"yellow_tang":["Saffron","Lemon"]}
 var rng := RandomNumberGenerator.new()
 var motion_rng := RandomNumberGenerator.new()
@@ -448,6 +454,8 @@ func _move(delta: float) -> void:
 					_choose_activity(a)
 		var band: Array = DEPTH[species]
 		var target:=Vector2(a.tx,a.ty)
+		if not tang:
+			target=_off_grazing_tangs(a,target,band)
 		# (Targets are always in the band; an edited one is aimed at the band edge.)
 		var offset: Vector2=Vector2(target.x,clampf(target.y,band[0],band[1]))-p
 		var gap: float=offset.length()
@@ -494,7 +502,7 @@ func _move(delta: float) -> void:
 		var face: float=0.0
 		if tang and a.activity in ["Cruising","Grazing"] and gap<8:
 			for sp: Array in TANG.spots:
-				if target==_tang_hold(sp):
+				if target==_tang_hold(sp,animal_scale(a)):
 					face=-sp[2]
 		elif follower and gap<40:
 			face=lead.direction
@@ -655,13 +663,33 @@ func _avoid(a: Dictionary, p: Vector2, desired: Vector2, speed: float) -> Vector
 				desired+=n*toward*(1.0 if now<SEPARATE.close and gain>=1.0 else yields*clampf((1.0-q)*3.0,0.0,1.0))
 	return desired*(1.0-minf(0.8,yielding*2.0))+push
 
+# A chromis aiming inside a grazing tang's space (the _avoid ellipse) aims at its rim instead,
+# straight above or below, so arriving and giving way agree instead of bouncing the fish up and
+# down (2026-09-26: a grazing tang now holds half a body out from the rock, in open water).
+func _off_grazing_tangs(a: Dictionary, target: Vector2, band: Array) -> Vector2:
+	for o: Dictionary in state.animals:
+		if o.species!="yellow_tang" or o.activity!="Grazing":
+			continue
+		var r: Vector2=(_body(a)+_body(o))*0.5*SEPARATE.margin*1.17
+		var rel: Vector2=target-Vector2(o.x,o.y)
+		if Vector2(rel.x/r.x,rel.y/r.y).length()>=1.0:
+			continue
+		var rim: float=r.y*sqrt(maxf(0.0,1.0-rel.x*rel.x/(r.x*r.x)))+1.0
+		var up: float=o.y-rim
+		var down: float=o.y+rim
+		var above: bool=rel.y<0.0 if absf(rel.y)>1.0 else a.y<o.y
+		if above and up<band[0] or not above and down>band[1]:
+			above=not above
+		target.y=clampf(up if above else down,band[0],band[1])
+	return target
+
 # A tang that reaches the hold point of a rock spot starts grazing it; the contact point is
 # published only while it grazes.
 func _tang_contact(a: Dictionary, p: Vector2) -> void:
 	if a.activity=="Cruising" and p.distance_to(Vector2(a.tx,a.ty))<5:
 		var spot: Array=[]
 		for s: Array in TANG.spots:
-			if Vector2(a.tx,a.ty)==_tang_hold(s):
+			if Vector2(a.tx,a.ty)==_tang_hold(s,animal_scale(a)):
 				spot=s
 		# At a rock spot it first turns to face the rock (it may have come round from the far side).
 		if not spot.is_empty() and cos(a.get("heading",0.0))*-spot[2]<0.9:
@@ -669,7 +697,7 @@ func _tang_contact(a: Dictionary, p: Vector2) -> void:
 		# An open-water trip ends here: choose the next move now instead of idling on the spot.
 		a.decision_at=minf(a.decision_at,state.elapsed)
 		for s: Array in TANG.spots:
-			if Vector2(a.tx,a.ty)==_tang_hold(s):
+			if Vector2(a.tx,a.ty)==_tang_hold(s,animal_scale(a)):
 				a.activity="Grazing"
 				a.contact_x=s[0]
 				a.contact_y=s[1]
@@ -682,8 +710,8 @@ func _tang_contact(a: Dictionary, p: Vector2) -> void:
 		a.erase("contact_x")
 		a.erase("contact_y")
 
-static func _tang_hold(s: Array) -> Vector2:
-	return Vector2(s[0]+s[2]*TANG.reach,s[1])
+static func _tang_hold(s: Array, scale: float = 1.0) -> Vector2:
+	return Vector2(s[0]+s[2]*TANG.reach*scale,s[1])
 
 # A tang's next move: a trip across the upper midwater, a trip to a free rock spot to graze,
 # or a rest (mostly at night, when trips are short).
@@ -696,7 +724,7 @@ func _choose_tang(a: Dictionary) -> void:
 	var free: Array=[]
 	if not night and r>=0.08 and r<0.08+TANG.graze:
 		for s: Array in TANG.spots:
-			var hold: Vector2=_tang_hold(s)
+			var hold: Vector2=_tang_hold(s,animal_scale(a))
 			if not state.animals.any(func(o): return o.species==a.species and o.id!=a.id and absf(o.tx-hold.x)<TANG.clear[0] and absf(o.ty-hold.y)<TANG.clear[1]):
 				free.append(hold)
 	if r<(TANG.night_rest if night else 0.08):
