@@ -1,16 +1,23 @@
 extends SceneTree
 # Matching backend snapshots and camera for both versions; only rigs differ.
 const OUT="res://artifacts/natural-motion-review/"
+var output_root: String=OUT
+var fix_review: bool=false
 var before_script: Script
 func _initialize() -> void: call_deferred("run")
 func run() -> void:
 	Engine.max_fps=30
-	before_script=load(OUT+"before_rig.gd")
+	fix_review="--fix-review" in OS.get_cmdline_user_args()
+	if fix_review: output_root="res://artifacts/motion-fix-review/"
+	before_script=load(output_root+"before_rig.gd")
 	if before_script==null:
 		printerr("Missing archived before rig; see review README")
 		quit(1)
 		return
 	for species: String in ["green_chromis","yellow_tang","purple_firefish","lawnmower_blenny"]:
+		var requested: Array=Array(OS.get_cmdline_user_args()).filter(func(a): return a.begins_with("--species="))
+		if not requested.is_empty() and requested[0].trim_prefix("--species=")!=species: continue
+		if fix_review and species not in ["yellow_tang","purple_firefish"]: continue
 		await record_species(species)
 	quit()
 func record_species(species: String) -> void:
@@ -56,9 +63,10 @@ func record_species(species: String) -> void:
 		var label:=Label.new()
 		label.position=Vector2(18,side*540+12)
 		label.text=("BEFORE" if side==0 else "AFTER")+" · "+species+" · 1.65x · same simulation"
+		if fix_review and species=="purple_firefish": label.text+=" · Tap at 8s, then re-emerge"
 		label.add_theme_font_size_override("font_size",18)
 		container.add_child(label)
-	var output: String=OUT+species+"/"
+	var output: String=output_root+species+"/"
 	DirAccess.make_dir_recursive_absolute(output)
 	var samples: Array=[]
 	var prev: Vector2=Vector2(subject.x,subject.y)
@@ -66,7 +74,8 @@ func record_species(species: String) -> void:
 	var tick_age: float=0
 	var camera: Vector2=prev-Vector2(0,30)
 	var shown: int=-1
-	for frame in 360:
+	var duration: int=24 if fix_review and species=="purple_firefish" else 12
+	for frame in duration*30:
 		if frame==240 and species=="purple_firefish": w.startle(subject.x,subject.y)
 		w.advance_live(1.0/30)
 		if shown!=w.state.motion_ticks:
@@ -91,7 +100,7 @@ func record_species(species: String) -> void:
 		await process_frame
 		RenderingServer.force_draw(false)
 		container.get_texture().get_image().save_jpg(output+"frame-%04d.jpg"%frame,.9)
-	FileAccess.open(output+"trace.json",FileAccess.WRITE).store_string(JSON.stringify({"seed":42,"start":start,"seconds":12,"tap_at":start+8 if species=="purple_firefish" else -1,"samples":samples},"  "))
+	FileAccess.open(output+"trace.json",FileAccess.WRITE).store_string(JSON.stringify({"seed":42,"start":start,"seconds":duration,"tap_at":start+8 if species=="purple_firefish" else -1,"samples":samples},"  "))
 	container.free()
 	print("Recorded comparison: "+species)
 

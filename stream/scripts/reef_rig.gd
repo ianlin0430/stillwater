@@ -45,6 +45,7 @@ var hop_age: float=1
 var hop_power: float=0
 var last_thrust: float=0
 var follow_offset:=Vector2.ZERO
+var contact_offset:=Vector2.ZERO
 
 func _ready() -> void:
 	texture_filter=CanvasItem.TEXTURE_FILTER_NEAREST
@@ -108,6 +109,10 @@ func apply_actor(value: Dictionary, _pellets: Array=[]) -> void:
 	target_extension=clampf(float(actor.get("extend",1)),0,1)
 	if first_actor:
 		extension=target_extension
+		if species=="yellow_tang" and activity=="Grazing" and actor.has("contact_x"):
+			var contact: Vector2=(Vector2(actor.contact_x,actor.contact_y)-position)/maxf(body_scale,.1)
+			var angle: float=atan2(contact.y,absf(contact.x))*float(actor.get("direction",1))
+			contact_offset=contact-Vector2(extent.x*.5*cos(pose.heading),0).rotated(angle)
 		first_actor=false
 
 func consume_food() -> void:
@@ -171,7 +176,7 @@ func animate(delta: float) -> void:
 	bite_timer=maxf(0,bite_timer-delta)
 	touch_remaining=maxf(0,touch_remaining-delta)
 	var goal: float=0.0 if dying or touch_remaining>0 else target_extension
-	extension=move_toward(extension,goal,delta*((6.0+pose.thrust*5.0) if goal<extension else 0.65))
+	extension=move_toward(extension,goal,delta*((2.2+pose.thrust*0.4) if species=="purple_firefish" and goal<extension else 6.0 if goal<extension else 0.65))
 	visual_offset=Vector2.ZERO
 	var desired_follow: Vector2=Vector2(clampf(-velocity.x*.035,-1.8,1.8),clampf(-velocity.y*.025,-1.2,1.2)) if species in ["green_chromis","yellow_tang"] and activity!="Grazing" else Vector2.ZERO
 	follow_offset=follow_offset.lerp(desired_follow,1-exp(-delta*7))
@@ -188,18 +193,25 @@ func animate(delta: float) -> void:
 	elif species=="purple_firefish":
 		visual_offset.y=-float(actor.get("hover_y",32))*extension/maxf(body_scale,0.1)
 		# Nose leads into the hole, tail follows. The sand clips the actual mesh.
-		var retreat: float=1-extension
-		visual_pitch=pose.pitch*face_target*extension+retreat*PI*0.48*face_target
+		var retreat: float=smoothstep(0,1,1-extension)
+		visual_pitch=pose.pitch*face_target*extension+retreat*PI*0.48*face_target*(-1.0 if goal>extension else 1.0)
 		visual_offset.x=-cos(visual_pitch)*extent.x*0.5*facing*retreat
-		visual_offset.y+=retreat*extent.x*0.5
+		visual_offset.y+=retreat*extent.x*0.65
 		if extension>0.95: visual_offset.y+=sin(phase*1.1)*0.7
 	elif species=="yellow_tang" and activity=="Grazing" and actor.has("contact_x"):
 		var contact: Vector2=(Vector2(actor.contact_x,actor.contact_y)-position)/maxf(body_scale,0.1)
-		# Turn toward the rock in depth, keeping backend body center and mouth anchor.
-		contact_projection=clampf(contact.length()/(extent.x*0.5),0.1,1)
+		# Keep the silhouette intact; ease a visual mouth pivot toward the rock.
+		contact_projection=1.0
 		visual_pitch=atan2(contact.y,absf(contact.x))*face_target
 		# Head direction is backend-owned at contact; prevent overshoot of the mouth.
 		# Backend finishes the heading turn before grazing; no direction snap here.
+	if species=="yellow_tang":
+		var desired_contact:=Vector2.ZERO
+		if activity=="Grazing" and actor.has("contact_x"):
+			var contact: Vector2=(Vector2(actor.contact_x,actor.contact_y)-position)/maxf(body_scale,.1)
+			desired_contact=contact-Vector2(extent.x*.5*facing,0).rotated(visual_pitch)
+		contact_offset=contact_offset.lerp(desired_contact,1-exp(-delta*10))
+		visual_offset+=contact_offset
 	if arrival_age>=0:
 		arrival_age+=delta
 		if arrival_age<1.6:

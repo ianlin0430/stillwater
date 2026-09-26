@@ -39,7 +39,7 @@ func run() -> void:
 			a.extend=0.0
 			a.activity="Sleeping"
 	stage.apply_snapshot(night)
-	tick(stage,0.3)
+	tick(stage,0.7)
 	check(not fire.body_visible,"Sleeping burrow fish have no visible body")
 	stage.apply_snapshot(snapshot)
 	tick(stage,2)
@@ -54,8 +54,9 @@ func run() -> void:
 	grazing.contact_y=tang.position.y
 	tang.face_target=-1
 	tang.apply_actor(grazing)
-	tang.animate(0.2)
-	check(tang.mouth_position().distance_to(Vector2(grazing.contact_x,grazing.contact_y))<0.01,"Grazing mouth meets backend contact without moving body center")
+	for i in 40: tang.animate(1.0/30)
+	check(is_equal_approx(tang.contact_projection,1.0),"Grazing preserves tang body proportions instead of squeezing to the contact distance")
+	check(tang.mouth_position().distance_to(Vector2(grazing.contact_x,grazing.contact_y))<0.05,"Grazing mouth meets backend contact without moving body center")
 	var root_point: Vector2=blenny.position
 	var launch: Dictionary=blenny.actor.duplicate(true)
 	launch.activity="Hopping"
@@ -82,6 +83,15 @@ func run() -> void:
 	check(fire.body_visible and fire.visual_pitch==0 and fire.visual_offset.y<0,"Night arrival swims above sand before hiding")
 	for i in 75: fire.animate(1.0/30)
 	check(not fire.body_visible,"Night arrival finishes by entering the burrow")
+	fire.arrival_age=-1
+	fire.target_extension=1
+	fire.extension=1
+	fire.animate(1.0/30)
+	fire.target_extension=0
+	for i in 6: fire.animate(1.0/30)
+	check(fire.body_visible and fire.extension>0,"Retreat remains readable after 0.2 s instead of instantly hiding")
+	for i in 20: fire.animate(1.0/30)
+	check(not fire.body_visible and fire.visual_offset.y>fire.extent.x*.5,"Body is hidden only after the tail has passed below the sand")
 	var eating: Dictionary=snapshot.duplicate(true)
 	eating.events.append({"seq":eating.next_event,"kind":"ate","id":fire.individual_id,"live":true})
 	eating.next_event+=1

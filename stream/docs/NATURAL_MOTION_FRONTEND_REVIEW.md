@@ -27,3 +27,12 @@ Observed ranges: chromis heading 0–π, thrust 0–1; tang heading 0–3.10, ro
 - Formal packaged foreground/hidden/thermal acceptance is not established by these tests. Only a bounded rendering cost sample is performed here, after recording completes. §3.8 visual approval is pending; do not call the entire plan complete.
 
 Short cost sample: Apple M5, 960×540, 12 fish, 30 ps samples, mean CPU **13.26% of one core**, peak RSS **252.77 MiB**. Explicit draw calls with `--disable-render-loop` produced **1,138 frames / 38.346 seconds** (~29.7 FPS), without recording or simultaneous tests/export. This is a source-preview rendering benchmark, not packaged foreground/hidden or thermal acceptance. Evidence: `artifacts/natural-motion-review/process.json`, `render-benchmark.json`, `benchmark.log`.
+
+## User review fixes — 2026-09-26
+
+User reported tang proportions wrong at clip start and firefish disappearing near the end. Both reproduced from the exact saved comparison frames. Regression tests failed before fixing: grazing body projection, readable retreat at 0.2 s, hiding only once tail is below sand.
+
+- Tang: backend mouth reach is still 22 px; half the rendered body is 61 px. The old `22/61` horizontal projection squeezed the fish to 36% width. Removed that projection; preserve body proportions and ease a visual offset toward the mouth contact. Initialize the offset when loading an already-grazing actor, avoiding a first-frame jump. Simulation center stays untouched. **Backend follow-up:** consider matching the hold distance to the rendered half-body (~61 adult world px) so this ~39 px presentation offset can eventually be removed; retain existing contact safety/separation tests.
+- Firefish: old thrust-scaled withdrawal completed in a few frames, and body visibility switched off before the whole silhouette cleared the substrate. Now the motion lasts roughly 0.4 s, rotation eases, the tail clears the sand before hiding, and re-emergence leads with the head. Backend behavior/duration is unchanged.
+- Review: the old 12-second clip tapped at 8 s but ended before the 5-second hide finished. Corrected 24-second video shows Hovering return at 13 s and the full re-emergence. No fake return was inserted.
+- Evidence: `artifacts/motion-fix-review/{yellow_tang,purple_firefish}.mp4`; top = rejected ecf6495, bottom = corrected. Start/retreat/return frames inspected. Tests: reef animation 41/0, frontend 80/0, presentation 29/0. No new performance claim, backend edit, or user-save access.
