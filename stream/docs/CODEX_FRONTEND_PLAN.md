@@ -206,6 +206,29 @@
 - `test_frontend`、`test_swimmers`、`test_presentation` 都通過。
 - 四種動物在正式包的一般視角和 1.65× 下都清楚可辨，身體接觸地面或洞口的地方沒有穿模。
 
+### 3.8 自然游動：用 backend 數值驅動身體與鰭（使用者 2026-09-25 要求「以自然為主」）
+
+使用者覺得魚的動作生硬、不自然，確認的問題有三個：游的路線與節奏、轉向、身體與鰭的擺動。前兩項 Claude 已經改完 backend（commit `9956a41`、`2b8147a`、`b66742a`、`84c4bc0`），第三項由你做。
+
+**backend 現在提供的欄位**（細節見 `BACKEND_SNAPSHOT_EVENTS.md`；證據見 `artifacts/natural-motion/trace.json`，由 `tests/natural_motion_trace.gd` 產生）：`heading`（0 到 π 連續，π/2 是正對玻璃）、`pitch`、`speed`、`thrust`（0–1）、`turn`（rad/s）、黃金吊的 `roll`、紫雷達的 `flick`。`direction` 與 `vx/vy` 保持相容。
+
+**你要做的**：
+1. **轉身**：左右鏡像用 sign(cos(heading))，身體寬度用 |cos(heading)| 壓縮，正對玻璃時最窄。用 `turn` 做「頭先轉、尾巴延遲跟上」。不要再用左右一下翻面。
+2. **身體與鰭由數值驅動，不要播固定循環**：
+   - 藍綠光鰓魚：thrust≈1 時胸鰭划水，thrust≈0 時滑行、鰭收起；尾巴擺幅跟著 speed。
+   - 黃金吊：thrust 決定平穩划水的幅度；roll 是啃石頭時的側傾；轉大彎時身體有弧度。
+   - 紫雷達：懸停時用 pitch 做微小平衡，胸鰭與尾鰭輕輕扇；`flick`=1 時背鰭長棘彈起再收回（由你做彈回的動畫）；thrust=1 是衝回洞，要快而有爆發感。
+   - 割草機鳚：停著不動、眼睛會轉；thrust>0 那一 tick 是甩尾，之後滑行落地，胸鰭撐地。
+   - 鰭的節拍相位請用 thrust 在前端積分產生。snapshot 每 0.2 秒才一份，backend 無法提供高頻相位。
+3. **沒有這些欄位的舊資料**：heading 由 `direction` 推算，其他當 0。
+4. **黃金吊剛到岩石點時會先原地轉身才開始 `Grazing`**，請讓這個轉身看起來自然。
+
+**驗收**：
+- 先給使用者看，說好才算完成：每種魚一段 1.65× 的**修前修後對照短片**，要看得出「衝一下、滑行」的節奏、彎曲的路線、頭先轉尾巴跟、各物種的特色動作。
+- `test_frontend`、`test_reef_animation`、`test_natural_motion`、`test_presentation` 都通過。
+- 另外補一個測試：同一段 snapshot 序列下，畫面上的朝向不會一格就翻面。
+- 短跑效能自查：跟 §4 一樣，這不是正式驗收。
+
 ### 4. 效能自查（短跑，不是正式驗收）
 
 正式的 30 分鐘驗收由 Claude 在你交付後跑，只跑一次。你這邊只做短的自查，及早發現明顯超標：
