@@ -51,7 +51,7 @@ const DEPTH: Dictionary = {"green_chromis":[180.0,430.0],"yellow_tang":[120.0,54
 # (golden-angle direction, radius in `spread` px, flattened vertically, mirrored with the
 # leader's heading) and hurries (`catch_up` x speed) when more than `regroup` px from it.
 # Members keep `spacing` px apart.
-const CHROMIS: Dictionary = {"spread":[34.0,80.0],"regroup":120.0,"catch_up":1.8,"spacing":36.0}
+const CHROMIS: Dictionary = {"spread":[34.0,80.0],"regroup":120.0,"catch_up":1.8,"spacing":36.0,"breathe":0.12}
 # A species is rescued from upstream only when it can no longer breed here: one or none left
 # (2026-09-24; was two, when each species had six places and two was a third of them).
 const RESCUE_AT: int = 1
@@ -74,7 +74,7 @@ const RELOCATION: float = 3.0
 # swimming fish within `dx` sideways and `dy` above the mouth (the bottom of the chromis layer)
 # or a moving blenny within `dx` passes. (The garden eels' colony and rule left with them, 2026-09-25.)
 const FIRE_BURROWS: Array[float] = [650.0,540.0,760.0,410.0]
-const FIRE: Dictionary = {"seconds":6.0,"hover":[24.0,40.0],"dx":48.0,"dy":200.0}
+const FIRE: Dictionary = {"seconds":6.0,"hover":[24.0,40.0],"dx":48.0,"dy":200.0,"flick":12.0}
 # Species that live in a burrow of their own patch (spawn digs one, validate() requires it).
 const HOMES: Dictionary = {"purple_firefish":FIRE_BURROWS}
 # Feeding (user decision 2026-09-23: real food, never required). A pinch is `particles` of
@@ -93,11 +93,13 @@ const STARTLE: Dictionary = {"radius":260.0,"dart":150.0,"seconds":3.0,"eel_seco
 # for `look` seconds. Jitter under `still` px keeps the same lure. Never saved.
 const LURE: Dictionary = {"range":320.0,"chance":0.5,"interest":45.0,"look":[6.0,12.0],"stand_off":36.0,"still":8.0}
 # Lawnmower blenny on the bed: `y` is always floor_y(x). Grazing/perching dwell ranges (s), hop
-# length (px) and speeds (px/s); a hop turns away from another blenny within `space` px.
+# length (px) and flick speeds (px/s); a hop turns away from another blenny within `space` px.
+# A hop (2026-09-25): pivot to face the way at `turn` rad/s (twice that when startled), then tail
+# flicks at the flick speed, gliding down at `glide` /s, finishing at no less than `land` px/s.
 # `burrow_clear` (2026-09-25, Codex recording): a blenny never perches, grazes or sleeps within this
 # many px of an occupied firefish burrow (half a 100 px blenny + half a 91 px firefish + 8 px), so a
 # hovering firefish is never drawn on top of it; it hops out when it finds itself there.
-const BLENNY: Dictionary = {"graze":[6.0,20.0],"perch":[4.0,12.0],"sleep":[60.0,120.0],"hop":[20.0,90.0],"hop_speed":45.0,"dart_speed":90.0,"space":120.0,"burrow_clear":104.0}
+const BLENNY: Dictionary = {"graze":[6.0,20.0],"perch":[4.0,12.0],"sleep":[60.0,120.0],"hop":[20.0,90.0],"hop_speed":45.0,"dart_speed":90.0,"space":120.0,"burrow_clear":104.0,"turn":7.0,"glide":1.44,"land":8.0}
 # Adult body [length, height] in world px (the rig's art, ReefRig.LOOK), halved for juveniles
 # like the rig. Used to keep bodies apart (2026-09-25).
 const BODY: Dictionary = {"green_chromis":[68.0,39.0],"yellow_tang":[122.0,87.0],"lawnmower_blenny":[100.0,42.0],"purple_firefish":[91.0,55.0]}
@@ -119,15 +121,16 @@ const SWIM: Dictionary = {
 	"green_chromis":{"cruise":17.0,"turn":4.0,"pitch":0.7,"pitch_rate":0.8,"drag":0.9,"push":2.0,"gap":0.3,"brake":24.0,"scull":6.0,"drift":0.22},
 	"yellow_tang":{"cruise":20.0,"turn":1.2,"pitch":0.45,"pitch_rate":0.5,"drag":0.3,"push":2.0,"gap":0.0,"respond":0.8,"row":0.05,"stroke":1.6,"brake":8.0,"scull":6.0,"drift":0.15},
 	"startle_speed":2.4,"startle_turn":4.0,"turn_gain":3.0,"edge":40.0,"ramp":2.0}
-const SEPARATE: Dictionary = {"margin":1.2,"look":5.0,"gain":1.6,"close":1.05,"chew":5.0,"tangs":1.12}
+const SEPARATE: Dictionary = {"margin":1.2,"look":5.0,"gain":1.6,"close":1.05,"chew":5.0,"tangs":1.25}
 # Yellow tang: cruises the upper midwater (`cruise` y range) and grazes rock `spots` [x, y, side]
 # on the left reef face and the right outcrop of the approved background (docs/BACKEND_SNAPSHOT_EVENTS.md).
 # The spot is where the mouth touches the rock; the body centre holds `reach` px out on the open
 # `side` (+1 right of the rock, -1 left), facing the rock. Graze/rest dwell times (s), cruise speed
 # (px/s), trip length (px); two tangs keep their bodies apart (SEPARATE; was `spacing` 70 px). `graze` share of day choices, `night_rest` at night.
+# While grazing the body rolls up to `roll` rad toward the rock with each peck (every `peck` s).
 # `clear` [w, h]: a spot is skipped while another tang holds or heads to a point closer than this on
 # both axes, so two grazing adults (122 x 87 px art) never overlap (spots 2/3 and 4/5 are exclusive).
-const TANG: Dictionary = {"spots":[[170.0,318.0,1.0],[310.0,400.0,1.0],[240.0,472.0,1.0],[962.0,532.0,-1.0],[1080.0,486.0,-1.0]],"reach":22.0,"cruise":[150.0,360.0],"graze":0.4,"graze_time":[8.0,20.0],"rest":[30.0,90.0],"night_rest":0.7,"speed":20.0,"trip":[80.0,360.0],"clear":[130.0,92.0]}
+const TANG: Dictionary = {"spots":[[170.0,318.0,1.0],[310.0,400.0,1.0],[240.0,472.0,1.0],[962.0,532.0,-1.0],[1080.0,486.0,-1.0]],"reach":22.0,"cruise":[150.0,360.0],"graze":0.4,"graze_time":[8.0,20.0],"rest":[30.0,90.0],"night_rest":0.7,"speed":20.0,"trip":[80.0,360.0],"roll":0.35,"peck":1.6,"clear":[130.0,92.0]}
 const NAMES: Dictionary = {"green_chromis":["Jade","Mint","Lagoon","Kelp","Glass","Pearl"],"lawnmower_blenny":["Moss","Pebble"],"purple_firefish":["Ember","Flicker"],"yellow_tang":["Saffron","Lemon"]}
 var rng := RandomNumberGenerator.new()
 var motion_rng := RandomNumberGenerator.new()
@@ -400,7 +403,8 @@ func _seek_food(a: Dictionary) -> bool:
 	a.activity="Feeding"
 	a.food_id=best.id
 	a.tx=best.x
-	a.ty=clampf(best.y,band[0],band[1])
+	# Aim where the sinking pellet will be when the fish gets there (at most 3 s ahead).
+	a.ty=clampf(best.y+FOOD.sink*minf(3.0,Vector2(a.x,a.y).distance_to(Vector2(best.x,best.y))/SWIM[a.species].cruise),band[0],band[1])
 	# Choose again as soon as the food is gone.
 	a.decision_at=state.elapsed
 	return true
@@ -457,7 +461,8 @@ func _move(delta: float) -> void:
 		elif follower:
 			speed*=CHROMIS.catch_up if gap>CHROMIS.regroup else 1.15
 		# Arrive: never faster than the fish can brake to a stop at the target.
-		var arrive: Vector2=offset/gap*minf(speed,sqrt(2.0*cfg.brake*gap)) if gap>0.01 else Vector2.ZERO
+		# (Chasing a sinking pellet it keeps closing in: no slower than twice the sink speed.)
+		var arrive: Vector2=offset/gap*minf(speed,maxf(sqrt(2.0*cfg.brake*gap),2.0*FOOD.sink if a.activity=="Feeding" else 0.0)) if gap>0.01 else Vector2.ZERO
 		# Everything else steering adds on top of arriving: rise and fall, spacing, dodging.
 		var desired:=Vector2.ZERO
 		# A gentle rise and fall while travelling, fading out on approach; no per-frame randomness.
@@ -513,6 +518,11 @@ func _move(delta: float) -> void:
 			a.decision_at=state.elapsed+motion_rng.randf_range(4,18)
 		if tang:
 			_tang_contact(a,next)
+			# Grazing, each peck tips the body toward the rock face (roll, rad).
+			var roll: float=0.0
+			if a.activity=="Grazing":
+				roll=TANG.roll*(0.5+0.5*maxf(0.0,sin(state.elapsed*TAU/TANG.peck+a.id)))
+			a.roll=move_toward(a.get("roll",0.0),roll,TANG.roll*2.0*delta)
 
 # Natural swimming (2026-09-25): the body turns at a limited rate, through facing the glass
 # (heading 0 = facing right, pi = facing left); the nose pitches up or down gently; speed along
@@ -636,8 +646,8 @@ func _avoid(a: Dictionary, p: Vector2, desired: Vector2, speed: float) -> Vector
 		# The one that gives way (a chromis before a tang, the younger id of two tangs, anyone
 		# before a grazing tang) holds back as a meeting nears; inside the other's space nobody
 		# presses on toward it.
-		# (A tang only eases off, by half, for chromis ahead of it.)
-		var yields: float=1.0 if a.species=="green_chromis" or not mixed and _gives_way(a,o) else 0.5 if mixed else 0.0
+		# (A tang only eases off, by half, for chromis ahead of it, and not when going for food.)
+		var yields: float=1.0 if a.species=="green_chromis" or not mixed and _gives_way(a,o) else 0.5 if mixed and a.activity!="Feeding" else 0.0
 		if now<SEPARATE.close and gain>=1.0 or yields>0.0:
 			var n: Vector2=Vector2(rel.x/(r.x*r.x),rel.y/(r.y*r.y)).normalized()
 			var toward: float=-desired.dot(n)
@@ -705,6 +715,13 @@ func _choose_tang(a: Dictionary) -> void:
 		a.decision_at=state.elapsed+Vector2(a.tx-a.x,a.ty-a.y).length()/TANG.speed+motion_rng.randf_range(3,8)
 	_look(a,band)
 
+# A fixed pseudo-random number in [0, 1) for (a, b): scheduling without drawing from an RNG.
+static func _hash01(a: int, b: int) -> float:
+	var h: int=((a*73856093)^(b*19349663))&0xFFFFFFF
+	h=((h^(h>>13))*1274126177)&0xFFFFFFF
+	h=h^(h>>16)
+	return float(h&0xFFFF)/65536.0
+
 # Nearest free burrow site of the species' patch to the parent's burrow (or the patch
 # centre). No randomness.
 func _burrow(parent: int, species: String) -> Vector2:
@@ -738,7 +755,24 @@ func _burrower(a: Dictionary) -> void:
 			if passing and absf(o.x-a.burrow_x)<FIRE.dx and a.burrow_y-o.y<FIRE.dy:
 				a.decision_at=state.elapsed+FIRE.seconds
 		a.activity="Hiding" if state.elapsed<a.decision_at else "Hovering"
+	var was_out: bool=a.get("extend",0.0)==1.0
 	a.extend=1.0 if a.activity=="Hovering" else 0.0
+	# Motion (2026-09-25): hovering it holds nearly still with small balancing fin work and pitch,
+	# and now and then flicks its dorsal spine (`flick`, about every FIRE.flick s); going down it
+	# dashes in at full thrust. x/y stay the burrow. Deterministic (no draw from motion_rng).
+	a.heading=0.0 if a.direction>0 else PI
+	a.speed=0.0
+	a.turn=0.0
+	a.flick=0.0
+	if a.extend==1.0:
+		var t: float=state.elapsed+float(a.id)*3.1
+		a.pitch=0.04*sin(t*0.9)+0.025*sin(t*2.3)
+		a.thrust=0.12+0.08*maxf(0.0,sin(t*1.7))
+		if _hash01(int(a.id),int(state.motion_ticks))<0.2/FIRE.flick:
+			a.flick=1.0
+	else:
+		a.pitch=0.0
+		a.thrust=1.0 if was_out else maxf(0.0,a.get("thrust",0.0)-0.5)
 	if a.extend==1.0 and not state.get("food",[]).is_empty() and SPECIES[a.species].reserve-a.energy>=FOOD.mass*0.8:
 		for f: Dictionary in state.food:
 			if not f.settled and absf(f.x-a.burrow_x)<FOOD.eel_dx and f.y>a.burrow_y-FOOD.eel_reach and f.y<a.burrow_y:
@@ -753,13 +787,35 @@ func _blenny(a: Dictionary, delta: float) -> void:
 		a.decision_at=state.elapsed
 	if not startled and not _peck(a) and (state.elapsed>=a.decision_at or a.activity=="Startled"):
 		_choose_blenny(a)
-	var speed: float={"Hopping":BLENNY.hop_speed,"Feeding":BLENNY.hop_speed,"Startled":BLENNY.dart_speed}.get(a.activity,0.0)
-	var step: float=clampf(a.tx-a.x,-speed*delta,speed*delta)
+	# No sustained swimming (2026-09-25): it pivots on its pectorals to face the way, a tail
+	# flick launches it at full speed, it glides slowing (`glide` /s) and flicks again only
+	# while the landing is still beyond the glide; otherwise it perches perfectly still.
+	var top: float={"Hopping":BLENNY.hop_speed,"Feeding":BLENNY.hop_speed,"Startled":BLENNY.dart_speed}.get(a.activity,0.0)
+	var psi: float=a.get("heading",0.0 if a.direction>0 else PI)
+	var left: float=a.tx-a.x
+	var s: float=a.get("speed",0.0)*exp(-BLENNY.glide*delta)
+	var step: float=0.0
+	var turned: float=psi
+	a.thrust=0.0
+	if top>0.0 and absf(left)>0.0:
+		turned=move_toward(psi,0.0 if left>0 else PI,BLENNY.turn*(2.0 if a.activity=="Startled" else 1.0)*delta)
+		if cos(turned)*signf(left)>0.7:
+			# How far a glide from speed v carries: v x `coast`.
+			var coast: float=delta*exp(-BLENNY.glide*delta)/(1.0-exp(-BLENNY.glide*delta))
+			if s<top*0.4 and absf(left)>s*coast+BLENNY.land*delta:
+				# Flick just hard enough to glide to the landing (at most the flick speed).
+				s=minf(top,absf(left)/coast)
+				a.thrust=s/top
+			step=clampf(left,-maxf(s,BLENNY.land)*delta,maxf(s,BLENNY.land)*delta)
+	a.turn=(turned-psi)/delta
+	a.heading=turned
+	a.speed=absf(step)/delta
+	a.pitch=0.0
 	var y: float=floor_y(a.x+step)
 	a.vx=step/delta
 	a.vy=(y-a.y)/delta
-	if step!=0.0:
-		a.direction=signf(step)
+	if absf(cos(turned))>0.05:
+		a.direction=signf(cos(turned))
 	a.x+=step
 	a.y=y
 	if a.has("food_id"):
@@ -804,7 +860,8 @@ func _choose_blenny(a: Dictionary) -> void:
 func _hop(a: Dictionary, to: float) -> void:
 	a.activity="Hopping"
 	a.tx=clampf(to,130,1150)
-	a.decision_at=state.elapsed+maxf(BLENNY.hop[1],absf(a.tx-a.x))/BLENNY.hop_speed+1.0
+	# Flicks and glides average about half the flick speed.
+	a.decision_at=state.elapsed+maxf(BLENNY.hop[1],absf(a.tx-a.x))/(BLENNY.hop_speed*0.5)+1.5
 
 # The occupied firefish burrow whose margin covers bed position x, or NAN.
 func _burrow_at(x: float) -> float:
@@ -860,6 +917,8 @@ func _lead() -> Dictionary:
 func _follow(a: Dictionary, lead: Dictionary) -> void:
 	var k: float=float(a.id)*2.39996
 	var r: float=CHROMIS.spread[0]+float((int(a.id)*17)%int(CHROMIS.spread[1]-CHROMIS.spread[0]))
+	# The school's spacing breathes a little (slowly, +-`breathe`).
+	r*=1.0+CHROMIS.breathe*sin(state.elapsed*0.23+float(a.id)*0.9)
 	var band: Array=DEPTH[a.species]
 	a.tx=clampf(lead.x+cos(k)*r*lead.direction,130,1150)
 	a.ty=clampf(lead.y+sin(k)*r*0.5,band[0],band[1])
@@ -894,7 +953,9 @@ func _look(a: Dictionary, band: Array) -> void:
 		var spot:=Vector2(lure.x,clampf(lure.y,band[0],band[1]))
 		if Vector2(a.x,a.y).distance_to(spot)<LURE.range and motion_rng.randf()<LURE.chance:
 			a.activity="Curious"
-			a.tx=clampf(lure.x+(-1.0 if a.x<lure.x else 1.0)*LURE.stand_off,130,1150)
+			# A big tang hangs back a body length further, leaving the chromis room to look.
+			var off: float=LURE.stand_off+(BODY.yellow_tang[0] if a.species=="yellow_tang" else 0.0)
+			a.tx=clampf(lure.x+(-1.0 if a.x<lure.x else 1.0)*off,130,1150)
 			a.ty=spot.y
 			a.decision_at=state.elapsed+motion_rng.randf_range(LURE.look[0],LURE.look[1])
 		# While the lure is fresh the leader keeps glancing at it.
