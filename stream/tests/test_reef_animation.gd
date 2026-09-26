@@ -32,6 +32,8 @@ func run() -> void:
 	var blenny: ReefRig=by_species.lawnmower_blenny
 	var tang: ReefRig=by_species.yellow_tang
 	var chromis: ReefRig=by_species.green_chromis
+	check(fire.portal!=null and fire.portal.get_index()<fire.fish.get_index(),"Burrow rear wall draws above background and behind the fish")
+	check(fire.portal.z_index==0 and fire.portal.front.z_index==1,"Raised burrow lip occludes the fish while the rear wall remains above the backdrop")
 	check(tang.extent.x>blenny.extent.x and blenny.extent.x>fire.extent.x and fire.extent.x>chromis.extent.x,"Tang is largest and chromis smallest")
 	var night: Dictionary=snapshot.duplicate(true)
 	for a: Dictionary in night.animals:
@@ -50,13 +52,14 @@ func run() -> void:
 	grazing.activity="Grazing"
 	grazing.direction=-1.0
 	grazing.heading=PI
-	grazing.contact_x=tang.position.x-22.0
+	grazing.contact_x=tang.position.x-tang.extent.x*.5*tang.body_scale
 	grazing.contact_y=tang.position.y
 	tang.face_target=-1
 	tang.apply_actor(grazing)
 	for i in 40: tang.animate(1.0/30)
 	check(is_equal_approx(tang.contact_projection,1.0),"Grazing preserves tang body proportions instead of squeezing to the contact distance")
 	check(tang.mouth_position().distance_to(Vector2(grazing.contact_x,grazing.contact_y))<0.05,"Grazing mouth meets backend contact without moving body center")
+	check(tang.contact_offset.length()<0.05,"Size-scaled backend grazing reach needs no compensating body displacement")
 	var root_point: Vector2=blenny.position
 	var launch: Dictionary=blenny.actor.duplicate(true)
 	launch.activity="Hopping"
@@ -90,6 +93,8 @@ func run() -> void:
 	fire.target_extension=0
 	for i in 6: fire.animate(1.0/30)
 	check(fire.body_visible and fire.extension>0,"Retreat remains readable after 0.2 s instead of instantly hiding")
+	check(absf(fire.visual_pitch)>1.4 and fire.visual_offset.y<0,"Head bends toward the entrance above sand before the body descends")
+	check(fire.fish_material.get_shader_parameter("portal") and not fire.fish_material.get_shader_parameter("clip_sand"),"Firefish uses its local aperture, never a whole-scene sand-plane cut")
 	for i in 20: fire.animate(1.0/30)
 	check(not fire.body_visible and fire.visual_offset.y>fire.extent.x*.5,"Body is hidden only after the tail has passed below the sand")
 	var eating: Dictionary=snapshot.duplicate(true)

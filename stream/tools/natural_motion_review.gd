@@ -9,6 +9,8 @@ func run() -> void:
 	Engine.max_fps=30
 	fix_review="--fix-review" in OS.get_cmdline_user_args()
 	if fix_review: output_root="res://artifacts/motion-fix-review/"
+	for arg: String in OS.get_cmdline_user_args():
+		if arg.begins_with("--output="): output_root=arg.trim_prefix("--output=").trim_suffix("/")+"/"
 	before_script=load(output_root+"before_rig.gd")
 	if before_script==null:
 		printerr("Missing archived before rig; see review README")

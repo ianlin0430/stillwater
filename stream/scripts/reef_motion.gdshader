@@ -23,7 +23,10 @@ uniform float tail_drive = 0.;
 uniform float roll = 0.;
 uniform float ray_flick = 0.;
 uniform float eye_scan = 0.;
+uniform bool portal = false;
+uniform float portal_fold = 0.;
 varying float sand_y;
+varying vec2 local_point;
 void vertex() {
     vec2 p = VERTEX;
     if (eel) {
@@ -57,8 +60,8 @@ void vertex() {
         p.x+=eye*eye_scan;
         float jaw = smoothstep(.72,.98,p.x/extent.x+.5) * smoothstep(-.03,.07,p.y/extent.y);
         p.y += jaw * bite * .85;
+        p.y *= 1. - portal_fold*.70*fin;
         float local_facing=mix(facing,tail_facing,tail);
-        // A finite front-facing thickness preserves volume through each turn.
         p.x *= local_facing * projection;
         p.y *= cos(roll);
         p.x += sin(roll)*p.y*.25;
@@ -67,6 +70,7 @@ void vertex() {
     }
     p+=pose_offset;
     sand_y=p.y;
+    local_point=p;
     VERTEX=p;
 }
 void fragment() {
@@ -74,4 +78,5 @@ void fragment() {
     if (alpha<.86) discard;
     COLOR.a *= smoothstep(.86,.97,alpha)/max(alpha,.001);
     if (clip_sand && sand_y>0.) discard;
+    if (portal && abs(local_point.x)<21. && local_point.y>2.) discard;
 }

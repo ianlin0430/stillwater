@@ -46,6 +46,9 @@ var hop_power: float=0
 var last_thrust: float=0
 var follow_offset:=Vector2.ZERO
 var contact_offset:=Vector2.ZERO
+var portal: BurrowPortal
+var portal_fold: float=0
+var last_hiding: bool=false
 
 func _ready() -> void:
 	texture_filter=CanvasItem.TEXTURE_FILTER_NEAREST
@@ -86,6 +89,10 @@ func _ready() -> void:
 	fish_material.set_shader_parameter("pectoral_root",fin_root)
 	fish.material=fish_material
 	add_child(fish)
+	if species=="purple_firefish" and not detached:
+		portal=BurrowPortal.new()
+		add_child(portal)
+		move_child(portal,0)
 
 func apply_actor(value: Dictionary, _pellets: Array=[]) -> void:
 	pose_from=pose.duplicate()
@@ -176,7 +183,7 @@ func animate(delta: float) -> void:
 	bite_timer=maxf(0,bite_timer-delta)
 	touch_remaining=maxf(0,touch_remaining-delta)
 	var goal: float=0.0 if dying or touch_remaining>0 else target_extension
-	extension=move_toward(extension,goal,delta*((2.2+pose.thrust*0.4) if species=="purple_firefish" and goal<extension else 6.0 if goal<extension else 0.65))
+	extension=move_toward(extension,goal,delta*(1.0/0.55 if species=="purple_firefish" and goal<extension else 6.0 if goal<extension else 1.0/1.3))
 	visual_offset=Vector2.ZERO
 	var desired_follow: Vector2=Vector2(clampf(-velocity.x*.035,-1.8,1.8),clampf(-velocity.y*.025,-1.2,1.2)) if species in ["green_chromis","yellow_tang"] and activity!="Grazing" else Vector2.ZERO
 	follow_offset=follow_offset.lerp(desired_follow,1-exp(-delta*7))
@@ -191,13 +198,12 @@ func animate(delta: float) -> void:
 			visual_pitch=lerp_angle(visual_pitch,0.31*face_target,1-exp(-delta*7))
 			visual_offset.y=-sin(absf(visual_pitch))*extent.x*0.5-0.5
 	elif species=="purple_firefish":
-		visual_offset.y=-float(actor.get("hover_y",32))*extension/maxf(body_scale,0.1)
-		# Nose leads into the hole, tail follows. The sand clips the actual mesh.
-		var retreat: float=smoothstep(0,1,1-extension)
-		visual_pitch=pose.pitch*face_target*extension+retreat*PI*0.48*face_target*(-1.0 if goal>extension else 1.0)
-		visual_offset.x=-cos(visual_pitch)*extent.x*0.5*facing*retreat
-		visual_offset.y+=retreat*extent.x*0.65
-		if extension>0.95: visual_offset.y+=sin(phase*1.1)*0.7
+		_firefish_pose(goal<extension or (goal==0 and extension==0))
+		if portal!=null:
+			var hiding: bool=goal==0
+			if hiding!=last_hiding: portal.disturb()
+			last_hiding=hiding
+			portal.advance(delta)
 	elif species=="yellow_tang" and activity=="Grazing" and actor.has("contact_x"):
 		var contact: Vector2=(Vector2(actor.contact_x,actor.contact_y)-position)/maxf(body_scale,0.1)
 		# Keep the silhouette intact; ease a visual mouth pivot toward the rock.
@@ -244,7 +250,9 @@ func animate(delta: float) -> void:
 	fish_material.set_shader_parameter("bite",feeding*(0.5+sin(phase*9)*0.5)+sin(bite_timer/0.35*PI))
 	fish_material.set_shader_parameter("pose_offset",visual_offset)
 	fish_material.set_shader_parameter("pitch",visual_pitch)
-	fish_material.set_shader_parameter("clip_sand",not detached and species in ["garden_eel","purple_firefish","lawnmower_blenny"] and arrival_age<0)
+	fish_material.set_shader_parameter("portal",species=="purple_firefish" and not detached and arrival_age<0)
+	fish_material.set_shader_parameter("portal_fold",portal_fold)
+	fish_material.set_shader_parameter("clip_sand",not detached and species in ["garden_eel","lawnmower_blenny"] and arrival_age<0)
 	fish.modulate=Color(dim,dim,dim,1)
 	var shadow: bool=species=="lawnmower_blenny" and hop_height<1 and activity in ["Perching","Grazing","Sleeping"]
 	if selected!=drawn_selection or shadow!=drawn_shadow or (selected and selection_offset!=drawn_offset):
@@ -253,8 +261,34 @@ func animate(delta: float) -> void:
 		drawn_offset=selection_offset
 		queue_redraw()
 
+func _firefish_pose(entering: bool) -> void:
+	var h: float=float(actor.get("hover_y",32))/maxf(body_scale,.1)
+	var half: float=extent.x*.5
+	var direction: float=1 if face_target>0 else -1
+	var t: float=1-extension
+	portal_fold=smoothstep(0,.4,t)
+	if entering:
+		var bend: float=smoothstep(0,.4,t)
+		visual_pitch=lerpf(pose.pitch*direction,PI*.5*direction,bend)
+		var head:=Vector2(direction*half*(1-bend),lerpf(-h,-3,bend))
+		visual_offset=head-Vector2(direction*half,0).rotated(visual_pitch)
+		if t>.4:
+			visual_offset=Vector2(0,lerpf(-half-3,half+14,smoothstep(.4,1,t)))
+	else:
+		# Rotate inside the shelter, then emerge nose first. Finish the turn above its rim.
+		var rise: float=smoothstep(0,.6,extension)
+		visual_pitch=-PI*.5*direction
+		visual_offset=Vector2(0,lerpf(half+14,-half-3,rise))
+		if extension>.6:
+			var level: float=smoothstep(.6,1,extension)
+			visual_pitch=lerpf(-PI*.5*direction,pose.pitch*direction,level)
+			visual_offset.y=lerpf(-half-3,-h,level)
+	if extension>.999:
+		visual_pitch=pose.pitch*direction
+		visual_offset=Vector2(0,-h+sin(phase*1.1)*.7)
+
 func _draw() -> void:
-	if not detached and species in ["garden_eel","purple_firefish"]:
+	if not detached and species=="garden_eel":
 		var r: float=5 if species=="garden_eel" else 8
 		draw_set_transform(Vector2(0,1),0,Vector2(1,0.35))
 		draw_circle(Vector2.ZERO,r+2,Color("c4b58e"))
