@@ -54,6 +54,7 @@ func _initialize() -> void:
 	blenny_checks()
 	firefish_checks()
 	tang_grazing_checks()
+	night_rest_checks()
 	determinism_checks()
 	numbers.ms=Time.get_ticks_msec()-started
 	print(JSON.stringify({"checks":checks,"failures":failures,"numbers":numbers}))
@@ -360,6 +361,69 @@ func tang_grazing_checks() -> void:
 			var h: Vector2=StreamWorld._tang_hold(s,scale)
 			inside=inside and h.x>=100.0 and h.x<=1180.0 and h.y>=StreamWorld.DEPTH.yellow_tang[0] and h.y<=StreamWorld.DEPTH.yellow_tang[1]
 	check(inside,"Every grazing hold lies inside the tang band")
+
+# Night rest (user 2026-09-26: the chromis jittered up and down while resting at night): a slow,
+# smooth hover with no repeated small up/down corrections. A vertical reversal is counted when a
+# resting fish turns back by at least 0.5 px from its last vertical extreme. Before the fix: worst
+# 4.06, mean 1.92 per minute (a resting leader crept to new spots, the slots breathed vertically,
+# and spacing and small arrival corrections fought each other).
+func night_rest_checks() -> void:
+	var worst: float=0.0
+	var total_rev: int=0
+	var own_rev: int=0
+	var total_min: float=0.0
+	var fast: float=0.0
+	for seed_value: int in [42,812,240921]:
+		var w:=StreamWorld.new(seed_value,1000)
+		w.state.light_hour=1.0
+		w.advance_live(60)
+		var dodged: Dictionary={}
+		var ext: Dictionary={}
+		var way: Dictionary={}
+		var revs: Dictionary={}
+		var rest: Dictionary={}
+		for i in 3000:
+			w.advance_live(0.2)
+			for a: Dictionary in of(w,"green_chromis"):
+				# Last time it was giving way to a body (a tang swimming past).
+				if Vector2(a.get("avoid_x",0.0),a.get("avoid_y",0.0)).length()>0.2:
+					dodged[a.id]=w.state.elapsed
+				if a.activity!="Resting":
+					ext.erase(a.id)
+					continue
+				rest[a.id]=rest.get(a.id,0.0)+0.2
+				if not ext.has(a.id):
+					ext[a.id]=a.y
+					way[a.id]=0
+					continue
+				fast=maxf(fast,absf(a.vy))
+				var d: int=way[a.id]
+				var moved: float=a.y-ext[a.id]
+				if d==0:
+					if absf(moved)>=0.5:
+						way[a.id]=int(signf(moved))
+						ext[a.id]=a.y
+				elif moved*d>0.0:
+					ext[a.id]=a.y
+				elif absf(moved)>=0.5:
+					revs[a.id]=revs.get(a.id,0)+1
+					if w.state.elapsed-dodged.get(a.id,-INF)>5.0:
+						own_rev+=1
+					way[a.id]=-d
+					ext[a.id]=a.y
+		for id in rest:
+			if rest[id]>=60.0:
+				worst=maxf(worst,revs.get(id,0)/(rest[id]/60.0))
+			total_rev+=revs.get(id,0)
+			total_min+=rest[id]/60.0
+	var mean: float=total_rev/maxf(total_min,0.001)
+	var own: float=own_rev/maxf(total_min,0.001)
+	numbers.night_rest={"worst_reversals_per_min":snappedf(worst,0.01),"mean_reversals_per_min":snappedf(mean,0.01),"mean_without_a_passing_body_per_min":snappedf(own,0.01),"resting_fish_minutes":snappedf(total_min,0.1),"max_vy":snappedf(fast,0.01)}
+	check(total_min>60.0,"Chromis rest at night (%.1f fish-minutes)" % total_min)
+	# Unprovoked up/down corrections are gone; what is left is a fish giving way to a tang
+	# swimming past and gliding back (within 5 s of that dodge), about once per pass.
+	check(own<=0.05,"Resting chromis never bob on their own (%.2f vertical reversals per minute away from a passing tang; was 1.92 in all)" % own)
+	check(worst<=1.0 and mean<=0.3,"Resting chromis reverse at most about once a minute even with tangs passing (worst %.2f, mean %.2f per minute; was 4.06 / 1.92)" % [worst,mean])
 
 func determinism_checks() -> void:
 	var a:=StreamWorld.new(812,1000)

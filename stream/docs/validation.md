@@ -462,3 +462,42 @@ Depth audit is live-only (0 checked offline). Plants > 5 % on every day of every
 ### Live 180-day ecology (GitHub Actions)
 
 未驗證 — not triggered (GitHub Actions billing is blocked; the main session will run it). No live result of the four-species cast exists yet.
+
+## Tang grazes side-on; chromis rest without bobbing (2026-09-26)
+
+User feedback: the grazing yellow tang looked squashed (body centre only 22 px from the rock contact, so the frontend foreshortened it), and green chromis bobbed up and down while resting at night (about 2.5–5.5 times a minute).
+
+- Tang: `TANG.reach` 22 → 61 px (half the 122 px adult body) × `animal_scale` (juvenile 30.5 px); body centre at `(contact_x + side × reach × scale, contact_y)`, facing the rock. Spots rechecked on `artifacts/reef-review/background-normal.png`: old spot 3 (240, 472) removed (body over the reef ledges; the other ledge tips put a grazing tang over firefish burrows 410/540), right outcrop spot (1080, 486) moved to the rock's left face (1048, 496). Four spots; 3/4 (right) exclusive. A chromis aiming inside a grazing tang's avoid ellipse aims at its rim (the grazing tang now sits in open water; without this, seed 42's worst daytime chromis flip rate in `test_roaming` rose from 1.97 to 3.9/min, over the 3.0 gate).
+- Chromis: night `Resting` leader rests where it is; slot breathing is horizontal only; follower Resting/Schooling hysteresis 20/40 px; a resting chromis within `CHROMIS.hold` = 10 px of its spot stops steering to it and keeps its facing; resting spacing is sideways only and does not push the leader; `_avoid` steering eased 0.3 per tick (was 0.5: a 2-tick up/down limit cycle against an approaching cruising tang, 140 flips in 30 min on seed 240921 after the rest changes).
+- Old saves: a tang grazing a removed/moved spot stays until its graze ends (checked: seed 42 save grazing at (240, 472) → `Cruising` at 15 s, validates).
+
+### Local suites (macOS, Godot 4.6.3 headless)
+
+| Suite | Result |
+|---|---|
+| `test_world` | 已通過 — 333 checks (tang hold check now `_tang_hold(spot, scale)`; firefish-vs-tang check uses the real hide rule `FIRE.dx`/`FIRE.dy` at adult and juvenile holds) |
+| `test_swimmers` | 已通過 — 103 checks |
+| `test_roaming` | 已通過 — day chromis max flips 0.1 / 0.17 / 1.43 per min (seeds 42 / 812 / 240921) |
+| `test_lifecycle` | 已通過 — 63 checks |
+| `test_persist_qa` | 已通過 — 27 checks |
+| `test_presentation` | 已通過 — 29 checks |
+| `test_natural_motion` | 已通過 — 38 checks. Tang grazing (3 seeds × 20 min, one juvenile per world): 2738 adult / 2723 juvenile grazing ticks, worst hold error 5.68 px (5 px arrival + coasting; gate 6), min facing cos 0.951. Night rest (3 seeds × 10 min): unprovoked vertical reversals 0.01/min; including giving way to a passing tang, mean 0.24, worst 0.94/min (before: mean 1.92, worst 4.06). Tang overlap max 0.006; chromis through tang max 0.291 |
+| `test_frontend` (Codex) | 已通過 — 80 checks |
+| `test_reef_animation` (Codex) | 已通過 — 41 checks |
+
+### Offline 180-day acceptance (`--mode=offline --days=180 --seeds=42,812,240921 --year=false`)
+
+已通過 — both modes `ACCEPTANCE PASS`; numbers identical to the four-species table above (offline ecology does not use motion).
+
+| Feed | Seed | Births | Dispersed | Arrivals | Old age | First old age | Starvation | Band | Max | Max residual | Pinches | Detritus max |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| none | 42 | 13 | 20 | 1 | 10 | 32 | 0 | 1.000 | 17 | 1.8e-09 | 0 | 12.45 |
+| none | 812 | 11 | 30 | 2 | 10 | 34 | 0 | 1.000 | 17 | 1.4e-09 | 0 | 13.27 |
+| none | 240921 | 13 | 16 | 1 | 10 | 41 | 0 | 1.000 | 17 | 2.4e-09 | 0 | 12.36 |
+| daily | 42 | 15 | 51 | 1 | 11 | 32 | 0 | 1.000 | 17 | 3.2e-09 | 720 | 14.04 |
+| daily | 812 | 13 | 42 | 0 | 9 | 34 | 0 | 1.000 | 17 | 3.1e-09 | 720 | 14.25 |
+| daily | 240921 | 11 | 34 | 2 | 11 | 41 | 0 | 1.000 | 17 | 3.7e-09 | 720 | 15.93 |
+
+### Live 2-day check (`--mode=live --days=2 --seeds=42,812,240921`, local, 119 s)
+
+Every seed: 0 births/deaths/arrivals, max 12, band 1.000, all species present, depth audit 576 checks / 0 violations, residual 2.3e-13, detritus max 7.38, plants > 5 %. The script prints `ACCEPTANCE FAIL` only for the 180-day gates (reproduction, local replacement, old age, starvation < old age), which two days cannot meet. The three seeds gave identical summaries. The live 180-day run is still 未驗證.

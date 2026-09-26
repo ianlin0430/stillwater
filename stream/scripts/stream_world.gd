@@ -50,8 +50,10 @@ const DEPTH: Dictionary = {"green_chromis":[180.0,430.0],"yellow_tang":[120.0,54
 # Chromis school: the lowest-id chromis leads; each other member holds its own slot
 # (golden-angle direction, radius in `spread` px, flattened vertically, mirrored with the
 # leader's heading) and hurries (`catch_up` x speed) when more than `regroup` px from it.
-# Members keep `spacing` px apart.
-const CHROMIS: Dictionary = {"spread":[34.0,80.0],"regroup":120.0,"catch_up":1.8,"spacing":36.0,"breathe":0.12}
+# Members keep `spacing` px apart. A resting chromis within `hold` px of its spot stops steering
+# toward it and keeps its facing: it glides to a stop and hovers (2026-09-26, user: resting
+# chromis bobbed up and down at night from small repeated corrections).
+const CHROMIS: Dictionary = {"spread":[34.0,80.0],"regroup":120.0,"catch_up":1.8,"spacing":36.0,"breathe":0.12,"hold":10.0}
 # A species is rescued from upstream only when it can no longer breed here: one or none left
 # (2026-09-24; was two, when each species had six places and two was a third of them).
 const RESCUE_AT: int = 1
@@ -471,6 +473,9 @@ func _move(delta: float) -> void:
 		# Arrive: never faster than the fish can brake to a stop at the target.
 		# (Chasing a sinking pellet it keeps closing in: no slower than twice the sink speed.)
 		var arrive: Vector2=offset/gap*minf(speed,maxf(sqrt(2.0*cfg.brake*gap),2.0*FOOD.sink if a.activity=="Feeding" else 0.0)) if gap>0.01 else Vector2.ZERO
+		var hovering: bool=not tang and a.activity=="Resting" and gap<CHROMIS.hold
+		if hovering:
+			arrive=Vector2.ZERO
 		# Everything else steering adds on top of arriving: rise and fall, spacing, dodging.
 		var desired:=Vector2.ZERO
 		# A gentle rise and fall while travelling, fading out on approach; no per-frame randomness.
@@ -484,10 +489,16 @@ func _move(delta: float) -> void:
 					continue
 				var apart: Vector2=p-Vector2(other.x,other.y)
 				if apart.length()<CHROMIS.spacing and apart.length()>0.01:
-					desired+=apart.normalized()*(CHROMIS.spacing-apart.length())*0.16
-		# Give way smoothly: the steering _avoid() adds is eased over about two ticks, so a
-		# meeting reads as one sweeping dodge, not a twitch each tick.
-		var steer: Vector2=Vector2(a.get("avoid_x",0.0),a.get("avoid_y",0.0)).lerp(_avoid(a,p,arrive+desired,cruise)-arrive-desired,0.5)
+					var room: Vector2=apart.normalized()*(CHROMIS.spacing-apart.length())*0.16
+					# At rest the leader holds its place and the others make room sideways only,
+					# so spacing never bobs a resting school up and down (2026-09-26).
+					if a.activity=="Resting":
+						room=Vector2(0.0 if follower==false else room.x,0.0)
+					desired+=room
+		# Give way smoothly: the steering _avoid() adds is eased over about three ticks (0.3 a
+		# tick; 0.5 still let a chromis meeting a cruising tang flip up and down every tick,
+		# 2026-09-26), so a meeting reads as one sweeping dodge, not a twitch each tick.
+		var steer: Vector2=Vector2(a.get("avoid_x",0.0),a.get("avoid_y",0.0)).lerp(_avoid(a,p,arrive+desired,cruise)-arrive-desired,0.3)
 		a.avoid_x=steer.x
 		a.avoid_y=steer.y
 		_dodge=minf(1.0,steer.length()/cruise)
@@ -504,6 +515,8 @@ func _move(delta: float) -> void:
 			for sp: Array in TANG.spots:
 				if target==_tang_hold(sp,animal_scale(a)):
 					face=-sp[2]
+		elif hovering:
+			face=a.direction
 		elif follower and gap<40:
 			face=lead.direction
 		var velocity: Vector2=_swim(a,desired,speed,cruise,cfg,delta,a.activity=="Startled",face)
@@ -945,12 +958,16 @@ func _lead() -> Dictionary:
 func _follow(a: Dictionary, lead: Dictionary) -> void:
 	var k: float=float(a.id)*2.39996
 	var r: float=CHROMIS.spread[0]+float((int(a.id)*17)%int(CHROMIS.spread[1]-CHROMIS.spread[0]))
-	# The school's spacing breathes a little (slowly, +-`breathe`).
-	r*=1.0+CHROMIS.breathe*sin(state.elapsed*0.23+float(a.id)*0.9)
+	# The school's spacing breathes a little (slowly, +-`breathe`), side to side only: a vertical
+	# breath read as a slow bob while resting (2026-09-26, user: chromis jittered at night).
+	var breath: float=1.0+CHROMIS.breathe*sin(state.elapsed*0.23+float(a.id)*0.9)
 	var band: Array=DEPTH[a.species]
-	a.tx=clampf(lead.x+cos(k)*r*lead.direction,130,1150)
+	a.tx=clampf(lead.x+cos(k)*r*breath*lead.direction,130,1150)
 	a.ty=clampf(lead.y+sin(k)*r*0.5,band[0],band[1])
-	var settled: bool=Vector2(a.x,a.y).distance_to(Vector2(a.tx,a.ty))<20
+	# Settles within 20 px of its slot and keeps resting until 40 px off, so a resting fish does
+	# not flip to schooling (and a quick catch-up stroke) each time it drifts a little.
+	var gap: float=Vector2(a.x,a.y).distance_to(Vector2(a.tx,a.ty))
+	var settled: bool=gap<(40.0 if a.activity=="Resting" else 20.0)
 	a.activity="Resting" if lead.activity=="Resting" and settled else "Schooling"
 	a.decision_at=state.elapsed
 
@@ -966,6 +983,11 @@ func _choose_activity(a: Dictionary) -> void:
 	a.ty=motion_rng.randf_range(band[0]+CHROMIS.spread[1]*0.5,band[1]-CHROMIS.spread[1]*0.5)
 	if r<0.16 or night and r<0.6:
 		a.activity="Resting"
+		# At night the school rests where it is (a slow hover), instead of creeping to a new
+		# spot each choice and reversing up and down (2026-09-26).
+		if night:
+			a.tx=clampf(a.x,130,1150)
+			a.ty=clampf(a.y,band[0]+CHROMIS.spread[1]*0.5,band[1]-CHROMIS.spread[1]*0.5)
 	# Give trips enough time to reach a destination instead of repeatedly
 	# abandoning distant targets. Rest/feed choices keep their independent dwell time.
 	if a.activity=="Schooling":

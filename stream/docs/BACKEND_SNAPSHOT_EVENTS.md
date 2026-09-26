@@ -1,6 +1,6 @@
 # Backend 快照與自然事件（backend 側契約）
 
-更新：2026-09-26 晚（黃金吊啃食改成側面：身體中心離嘴半個身長 `TANG.reach`＝61 px × 體型，岩石點剩 4 個；綠光鰓雀鯛會避開啃食中黃金吊的身體，見「黃金吊」）。2026-09-26（自然游動欄位 heading/pitch/speed/thrust/turn/roll/flick、身體不重疊、blenny 避開紫雷達洞口；見「自然游動欄位」）。2026-09-25（最終四物種：花園鰻移除；紫雷達洞口重新排開；黃金吊岩石點互斥；新增 `ate` 事件）。實作在 `scripts/stream_world.gd`，測試 `tests/test_presentation.gd`、`tests/test_world.gd`（`eel_checks`、`feeding_checks`、`blenny_checks`、`firefish_checks`、`chromis_checks`、`tang_checks`、`reef_cast_checks`）。
+更新：2026-09-26 晚（黃金吊啃食改成側面：身體中心離嘴半個身長 `TANG.reach`＝61 px × 體型，岩石點剩 4 個；綠光鰓雀鯛會避開啃食中黃金吊的身體；綠光鰓雀鯛休息時平穩懸停、不再上下抖，見「黃金吊」「自然游動欄位」）。2026-09-26（自然游動欄位 heading/pitch/speed/thrust/turn/roll/flick、身體不重疊、blenny 避開紫雷達洞口；見「自然游動欄位」）。2026-09-25（最終四物種：花園鰻移除；紫雷達洞口重新排開；黃金吊岩石點互斥；新增 `ate` 事件）。實作在 `scripts/stream_world.gd`，測試 `tests/test_presentation.gd`、`tests/test_world.gd`（`eel_checks`、`feeding_checks`、`blenny_checks`、`firefish_checks`、`chromis_checks`、`tang_checks`、`reef_cast_checks`）。
 前端契約（Codex）見 `FRONTEND_BACKEND_CONTRACT.md`；本檔只描述 backend 提供什麼。
 注意：該契約寫的 `stream_absence.gd` 實際檔名是 `scripts/absence.gd`。
 
@@ -68,6 +68,13 @@
 路徑與速度（chromis、黃金吊）：不再等速直線、也不會在目標點急停：接近目標時依煞車能力減速（chromis 24、黃金吊 8 px/s²），旅行時有緩和的上下起伏；靠近水層上下緣（40 px 內）或左右牆時，往邊緣的轉向會漸弱，不是硬夾（實測層外 0 次、`relocated_at` 0 次）。位移仍是 `位置(t) ≈ 位置(t-0.2) + v*0.2`；`vx/vy` 是實際速度（身體方向速度＋低速時最多 6 px/s 的胸鰭微調）。全部由時間與 id 決定，沒有每 tick 的亂數；motion tick 仍是 0.2 秒。
 
 身體不重疊（2026-09-26）：兩隻黃金吊、以及 chromis 與黃金吊之間，用兩者成魚圖（`StreamWorld.BODY`，同 `ReefRig.LOOK`；幼體減半）的合併半身橢圓保持距離，預測 5 秒內的相遇、主要往上下閃；chromis 讓黃金吊，兩隻黃金吊之間「啃食中的優先、剛吃過的讓、否則 id 大的讓」。餵食時黃金吊會預判下沉中的飼料位置，並略過另一隻正在吃的黃金吊身體範圍內的飼料。草食鳚不會在任何有紫雷達住的洞口 104 px（`BLENNY.burrow_clear`）內停、啃或睡（發現自己在範圍內就跳開）；黃金吊的啃食點都不會讓身體蓋到床面上的 blenny（測試檢查）。
+
+綠光鰓雀鯛休息（2026-09-26 晚，使用者：夜裡休息時上下抖，約每分鐘 2.5–5.5 次）：
+- 夜裡領頭魚選 `Resting` 時**就地休息**（`tx/ty` = 目前位置，只夾進水層內縮範圍），不再慢慢爬向一個新的隨機點。
+- 成員的位置「呼吸」只剩左右，不再上下；成員離自己位置 20 px 內轉成 `Resting`，要偏離到 40 px 以上才回 `Schooling`（不再在 20 px 邊界來回切換、每次切換都補一下力）。
+- `Resting` 的 chromis 在自己位置 `CHROMIS.hold`＝10 px 內就**不再朝位置修正、保持朝向**，靠水阻滑行停下來懸停。休息時彼此間距只左右讓開，領頭魚不被推。
+- 結果（`tests/test_natural_motion.gd` `night_rest_checks`，3 個種子各 10 分鐘夜間）：沒有黃金吊經過時的上下折返 0.01 次/分鐘（原本全部合計平均 1.92、最高 4.06）；含黃金吊經過時讓路再滑回，平均 0.24、單隻最高 0.94 次/分鐘。
+- 連帶：閃避轉向的平滑從每 tick 0.5 改成 0.3（約三個 tick），原本 chromis 遇到迎面巡游的黃金吊時會每個 tick 上下翻一次。chromis 的目標若落在**啃食中**黃金吊的身體範圍（`_avoid` 的橢圓）內，改瞄準橢圓上緣或下緣（黃金吊啃食位置現在在開放水域）。
 
 ### 瞬間重定位
 
