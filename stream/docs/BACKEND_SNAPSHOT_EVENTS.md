@@ -1,6 +1,6 @@
 # Backend 快照與自然事件（backend 側契約）
 
-更新：2026-09-25（最終四物種：花園鰻移除；紫雷達洞口重新排開；黃金吊岩石點互斥；新增 `ate` 事件）。實作在 `scripts/stream_world.gd`，測試 `tests/test_presentation.gd`、`tests/test_world.gd`（`eel_checks`、`feeding_checks`、`blenny_checks`、`firefish_checks`、`chromis_checks`、`tang_checks`、`reef_cast_checks`）。
+更新：2026-09-26（自然游動欄位 heading/pitch/speed/thrust/turn/roll/flick、身體不重疊、blenny 避開紫雷達洞口；見「自然游動欄位」）。2026-09-25（最終四物種：花園鰻移除；紫雷達洞口重新排開；黃金吊岩石點互斥；新增 `ate` 事件）。實作在 `scripts/stream_world.gd`，測試 `tests/test_presentation.gd`、`tests/test_world.gd`（`eel_checks`、`feeding_checks`、`blenny_checks`、`firefish_checks`、`chromis_checks`、`tang_checks`、`reef_cast_checks`）。
 前端契約（Codex）見 `FRONTEND_BACKEND_CONTRACT.md`；本檔只描述 backend 提供什麼。
 注意：該契約寫的 `stream_absence.gd` 實際檔名是 `scripts/absence.gd`。
 
@@ -41,6 +41,33 @@
 | `reef_cast` | bool | state 頂層。`true`＝珊瑚礁陣容已經到過（新世界開場就是 true）。前端不用讀。 |
 | `eel_colony` | bool，可缺 | **舊檔專用**。2026-09-23–25 的存檔有它；新世界不再寫。validate 仍要求是 bool。前端不用讀。 |
 | `archive[]` | Array | 最近 96 個離開的個體（含 `cause`、`ended`、最後 x/y、species、age）。 |
+
+### 自然游動欄位（2026-09-26，使用者要求「自然優先」）
+
+全部是**可選、有預設**的 per-animal 欄位（schema version 不變，`validate()` 只要求出現時是有限數字）。實作 `StreamWorld._swim`（chromis、黃金吊）、`_blenny`、`_burrower`；規格測試 `tests/test_natural_motion.gd`；證據 `artifacts/natural-motion/`（gitignored）。backend 只給數字，身體／鰭怎麼動由 Codex 的 rig 決定。**缺欄位時**（舊存檔、剛出生還沒跑第一個 motion tick）：`heading = 0 if direction>0 else π`，其餘當 0。
+
+| 欄位 | 誰有 | 範圍 | 意義 |
+|---|---|---|---|
+| `heading` | chromis、黃金吊、blenny、紫雷達 | 0…π，**連續**、不會繞圈跳 | 身體偏航角（側視水族箱）：`0`＝朝右、`π`＝朝左、`π/2`＝轉身中正對玻璃。轉身是**限速**的，不會瞬間翻面：chromis 最多 4 rad/s（受驚 16）、黃金吊 1.2 rad/s（受驚 4.8，大轉彎）、blenny 7 rad/s（受驚 14）。rig 建議：左右鏡像用 `sign(cos(heading))`，寬度壓縮用 `abs(cos(heading))`（轉身時變窄＝身體轉向觀眾）。紫雷達固定 0 或 π。 |
+| `direction` | 全部 | ±1 | 相容用，**= sign(cos(heading))**（`abs(cos)`≤0.05 時保持前一個值）。舊的讀法照樣可用，但翻面會落在轉身正中間。 |
+| `pitch` | chromis、黃金吊、紫雷達（blenny 固定 0） | rad，正＝頭朝下（螢幕 y 向下） | 頭上仰／下俯。chromis 最多 ±0.7、黃金吊 ±0.45，限速（0.8、0.5 rad/s）；紫雷達懸停時是 ±0.065 內的小平衡擺動。 |
+| `speed` | chromis、黃金吊、blenny、紫雷達（=0） | px/s ≥0 | 沿身體方向的游速（不含胸鰭微調）。blenny＝這個 tick 的實際位移速度（= `abs(vx)`）。 |
+| `thrust` | 全部 | 0…1 | 此刻的推進出力。**chromis**：胸鰭划水的 burst（接近 1）與滑行（0）交替＝「停停走走」；**黃金吊**：平穩划水，巡游約 0.5–0.65，帶一點每 1.6 秒的划水起伏；**blenny**：只有尾巴一甩（flick）那一個 tick 是 >0（最大 1），其餘滑行＝0；**紫雷達**：懸停時 0.12–0.2 的平衡鰭動，**衝回洞那一 tick = 1**，之後每 tick −0.5。出力上升有斜率限制（每秒最多 +2.0），滑行立即開始。 |
+| `turn` | chromis、黃金吊、blenny、紫雷達（=0） | rad/s，帶號 | `heading` 的變化率（正＝往朝左轉）。rig 可拿來做頭先轉、尾巴延遲的彎身。 |
+| `roll` | 只有黃金吊 | 0…0.35 rad | 啃岩石時每一口（每 1.6 秒）身體往岩面傾斜；不啃時緩緩回到 0。 |
+| `flick` | 只有紫雷達 | 0 或 1 | 背鰭長棘偶爾一彈（平均約每 12 秒一次，只在 `Hovering`），該 tick 為 1。前端自己做彈起再慢慢收回。 |
+| `avoid_x`, `avoid_y` | chromis、黃金吊 | px/s | 閃避其他身體時加上的轉向（已平滑）。前端不用讀；長度 >0 代表正在讓路（測試用它分辨「閃避」與「一般巡游」）。 |
+| `chew_until` | 只有黃金吊（吃過之後） | 模擬秒 | 吃完一粒後 5 秒內不追下一粒，好讓另一隻輪流。前端不用讀。 |
+
+各物種的樣子（backend 端）：
+- **綠光鰓雀鯛**：胸鰭划水（labriform）的 burst-and-glide：速度在想要的速度 ±30% 之間一推一滑（巡游時 CV ≈0.29）。成員在自己位置附近時朝向跟領頭魚的 `direction` 一樣，所以整群幾乎同時轉身（領頭魚過了一半，成員跟上）。隊形半徑慢慢 ±12% 呼吸。
+- **黃金吊**：平穩划水、長滑行（巡游 CV ≈0.06）、大轉彎（轉身 ≈2.6 秒，轉身時前進速度自然變慢）；啃岩石時 `roll`。到岩石點後**先轉身面對岩石才開始 `Grazing`**，所以 `Grazing` 時 `direction == -side` 且與 `heading` 一致。
+- **紫雷達**：`x/y` 仍永遠是洞口、`vx=vy=0`（懸停的小飄動前端照舊自己加）；backend 給平衡用的 `pitch`/`thrust`、偶發 `flick`、以及衝回洞的 `thrust=1`。
+- **草食鳚**：停著時完全不動（`speed=0`，眼睛由前端動）；要走時先原地轉向（`turn`），尾巴一甩（`thrust`>0）以剛好能滑到落點的速度出發（最多 45 px/s，受驚 90），滑行減速（每秒 ×0.24），最後不低於 8 px/s 落地；太遠就再甩一次（skitter）。backend 的 y 仍貼床面，跳的弧線前端畫。
+
+路徑與速度（chromis、黃金吊）：不再等速直線、也不會在目標點急停：接近目標時依煞車能力減速（chromis 24、黃金吊 8 px/s²），旅行時有緩和的上下起伏；靠近水層上下緣（40 px 內）或左右牆時，往邊緣的轉向會漸弱，不是硬夾（實測層外 0 次、`relocated_at` 0 次）。位移仍是 `位置(t) ≈ 位置(t-0.2) + v*0.2`；`vx/vy` 是實際速度（身體方向速度＋低速時最多 6 px/s 的胸鰭微調）。全部由時間與 id 決定，沒有每 tick 的亂數；motion tick 仍是 0.2 秒。
+
+身體不重疊（2026-09-26）：兩隻黃金吊、以及 chromis 與黃金吊之間，用兩者成魚圖（`StreamWorld.BODY`，同 `ReefRig.LOOK`；幼體減半）的合併半身橢圓保持距離，預測 5 秒內的相遇、主要往上下閃；chromis 讓黃金吊，兩隻黃金吊之間「啃食中的優先、剛吃過的讓、否則 id 大的讓」。餵食時黃金吊會預判下沉中的飼料位置，並略過另一隻正在吃的黃金吊身體範圍內的飼料。草食鳚不會在任何有紫雷達住的洞口 104 px（`BLENNY.burrow_clear`）內停、啃或睡（發現自己在範圍內就跳開）；黃金吊的啃食點都不會讓身體蓋到床面上的 blenny（測試檢查）。
 
 ### 瞬間重定位
 
@@ -179,7 +206,7 @@ events 只保留 160 筆；若 `events_after` 最舊一筆 `seq > cursor+1`，�
 
 ### 草食鳚 `lawnmower_blenny`（*Salarias fasciatus*，吃 `biofilm`）
 - **永遠在沙床上**：`y == floor_y(x)`，x 在 130–1150。`vx/vy` 就是每 tick 的位移（沿著床面起伏）。
-- `Grazing`（原地低頭啃，6–20 秒）、`Perching`（撐著胸鰭停著，4–12 秒）、`Hopping`（沿床面跳 20–90 px，45 px/s；backend 的 y 仍貼床面，**跳的弧線請前端自己畫**）、`Sleeping`（夜裡原地不動）。跳的方向會避開 120 px 內的另一隻 blenny。
+- `Grazing`（原地低頭啃，6–20 秒）、`Perching`（撐著胸鰭停著，4–12 秒）、`Hopping`（沿床面跳 20–90 px，尾巴一甩最快 45 px/s 再滑行減速落地，見「自然游動欄位」；backend 的 y 仍貼床面，**跳的弧線請前端自己畫**）、`Sleeping`（夜裡原地不動）。跳的方向會避開 120 px 內的另一隻 blenny；不在有紫雷達的洞口 104 px 內停下。
 - 餵食：飼料**沉到床面後**（`settled:true`），260 px 內、吃得下的 blenny 會 `Feeding` 跳過去啄（`food_id` 指向那粒）。
 - 敲玻璃：範圍內的 blenny `Startled`，沿床面往反方向竄開（90 px/s）3 秒。游標引魚：**不理會**。
 - 出生：母親旁 ±30 px 的床面上；移入：x=130 或 1150 的床面上。
@@ -204,7 +231,7 @@ events 只保留 160 筆；若 `events_after` 最舊一筆 `seq > cursor+1`，�
 ### 黃金吊 `yellow_tang`（*Zebrasoma flavescens*，label `"Yellow tang"`，吃 `biofilm`）
 - 池裡**最大**的魚（`body` 1.4；其他 0.5–0.9），活最久（540 天 ±15%）、120 天成熟、繁殖最慢；開場兩隻都是成魚。最多 2 隻（「一小群、不擋畫面」）。
 - 水層 `DEPTH.yellow_tang` = 120–540（永遠在裡面）。`x/y` 是**身體中心**。
-- `Cruising`：在上中層（y 150–360）來回游，常橫越整個池子；遇到另一隻黃金吊保持 70 px。
+- `Cruising`：在上中層（y 150–360）來回游，常橫越整個池子；和另一隻黃金吊的身體保持不重疊（見「自然游動欄位」，原本的 70 px 間距已取代）。
 - `Grazing`：游到一個岩石點停住啃 8–20 秒。這時 snapshot 有 `contact_x/contact_y`＝**嘴碰到岩石的點**，身體中心在它旁邊 `TANG.reach`＝22 px 的開放側，`direction` 朝向岩石（`direction == -side`）。前端讓嘴對準 `contact`、做啄的動作即可。**兩隻不會同時啃會互相重疊的點**（2026-09-25）：另一隻正在用或正要去的位置在 `TANG.clear`＝130×92 px（成魚圖 122×87 加間隔）以內的點都不選，所以點 2/3、點 4/5 各自互斥；啃食中的黃金吊也不再被經過的另一隻推離岩石。
 - `Resting`：夜裡大多停著（白天偶爾），速度很慢；夜裡也只做短程游動。
 - 餵食：像 chromis，去追 260 px 內還在下沉的飼料（`Feeding`、`food_id`）。敲玻璃：`Startled` 往反方向衝 3 秒（留在水層內）。游標引魚：會 `Curious` 過來看（每隻各自決定）。

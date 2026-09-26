@@ -64,7 +64,7 @@ jobs:
         working-directory: stream
         run: |
           set -eu
-          for t in test_world test_swimmers test_roaming test_lifecycle test_persist_qa test_presentation test_frontend test_reef_animation; do
+          for t in test_world test_swimmers test_roaming test_lifecycle test_persist_qa test_presentation test_frontend test_reef_animation test_natural_motion; do
             [ -f "tests/$t.gd" ] || continue
             echo "== $t"
             godot --headless --path . --script "tests/$t.gd" 2>&1 | tee "../$t.log"
