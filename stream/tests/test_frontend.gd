@@ -299,7 +299,10 @@ func _reef_interactions() -> void:
 	check(layer.full_until-layer.hud_clock==full,"Pause freezes full-today cue")
 	var chromis: Dictionary=snapshot.animals.filter(func(a: Dictionary)->bool: return a.species=="green_chromis")[0]
 	var rig: ReefRig=stage.rigs[chromis.id]
-	rig.activity="Startled"
+	var startled: Dictionary=chromis.duplicate(true)
+	startled.activity="Startled"
+	startled.thrust=1.0
+	rig.apply_actor(startled)
 	rig.animate(0.2)
 	check(rig.effort>0.5,"Startled uses fast swimming effort")
 	rig.activity="Curious"

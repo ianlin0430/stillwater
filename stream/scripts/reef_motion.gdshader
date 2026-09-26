@@ -19,6 +19,10 @@ uniform vec2 pectoral_root = vec2(.74,.58);
 uniform vec2 pectoral_span = vec2(.2,.25);
 uniform float pectoral_drive = 1.;
 uniform float breath_phase = 0.;
+uniform float tail_drive = 0.;
+uniform float roll = 0.;
+uniform float ray_flick = 0.;
+uniform float eye_scan = 0.;
 varying float sand_y;
 void vertex() {
     vec2 p = VERTEX;
@@ -31,14 +35,16 @@ void vertex() {
     } else {
         float tail = clamp(.5 - p.x/extent.x, 0., 1.);
         float fin = smoothstep(0.08, 0.32, abs(p.y)/extent.y);
-        float body_drive = (.35 + effort * 2.4) * (1. - sleep_amount*.8);
+        float body_drive = (tail_drive * 2.8) * (1. - sleep_amount*.8);
         p.y += sin(phase - tail*4.4) * body_drive * tail*tail;
+        // A quiet, slow breath keeps coasting alive without adding jitter.
+        p.y += sin(breath_phase*.35)*.10*tail*tail;
         // Fin base stays attached; only the outer fan and caudal membrane flex.
-        p.y += sin(phase*1.17-tail*3.8)*(.2+effort*.4)*fin;
+        p.y += sin(phase*1.17-tail*3.8)*(effort*.6)*fin;
         p.y *= 1. + (fin_open-1.) * fin;
         // Firefish tall first dorsal ray bends progressively away from its base.
         float ray = smoothstep(.12, .7, -p.y/extent.y) * fin_ray;
-        p.x += sin(phase*.43)*ray*4.;
+        p.x += sin(phase*.43)*ray*effort*3.+ray*ray_flick*8.;
         vec2 atlas_point=vec2(p.x/extent.x+.5,p.y/extent.y+body_line);
         vec2 fin_delta=(atlas_point-pectoral_root)/pectoral_span;
         float pectoral=(1.-smoothstep(.5,1.,length(fin_delta)))*max(0.,-fin_delta.x);
@@ -47,11 +53,15 @@ void vertex() {
         // Local operculum breathing; the eye and body silhouette remain quiet.
         float gill=exp(-pow((atlas_point.x-.80)/.055,2.)-pow((atlas_point.y-body_line)/.15,2.));
         p.x+=sin(breath_phase)*gill*.28;
+        float eye=exp(-pow((atlas_point.x-.85)/.025,2.)-pow((atlas_point.y-.28)/.05,2.));
+        p.x+=eye*eye_scan;
         float jaw = smoothstep(.72,.98,p.x/extent.x+.5) * smoothstep(-.03,.07,p.y/extent.y);
         p.y += jaw * bite * .85;
         float local_facing=mix(facing,tail_facing,tail);
         // A finite front-facing thickness preserves volume through each turn.
-        p.x *= ((local_facing<0.?-1.:1.)*(.14+.86*abs(local_facing))) * projection;
+        p.x *= local_facing * projection;
+        p.y *= cos(roll);
+        p.x += sin(roll)*p.y*.25;
         p.y += sin(tail*3.14159) * (facing-tail_facing) * extent.y*.1;
         p=mat2(vec2(cos(pitch),sin(pitch)),vec2(-sin(pitch),cos(pitch)))*p;
     }

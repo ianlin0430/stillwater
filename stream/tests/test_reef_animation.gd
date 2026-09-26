@@ -49,21 +49,30 @@ func run() -> void:
 	var grazing: Dictionary=tang.actor.duplicate(true)
 	grazing.activity="Grazing"
 	grazing.direction=-1.0
+	grazing.heading=PI
 	grazing.contact_x=tang.position.x-22.0
 	grazing.contact_y=tang.position.y
 	tang.face_target=-1
 	tang.apply_actor(grazing)
-	tang.animate(0.1)
+	tang.animate(0.2)
 	check(tang.mouth_position().distance_to(Vector2(grazing.contact_x,grazing.contact_y))<0.01,"Grazing mouth meets backend contact without moving body center")
 	var root_point: Vector2=blenny.position
-	blenny.activity="Hopping"
+	var launch: Dictionary=blenny.actor.duplicate(true)
+	launch.activity="Hopping"
+	launch.thrust=1.0
+	launch.speed=30.0
+	blenny.apply_actor(launch)
 	blenny.position.x+=2
 	blenny.animate(1.0/30)
 	check(blenny.hop_height>0 and blenny.position.y==root_point.y,"Hop lifts visual body only, backend ground anchor preserved")
 	blenny.activity="Perching"
 	for i in 30: blenny.animate(1.0/30)
 	check(blenny.hop_height==0,"Perching settles precisely onto the substrate")
-	chromis.face_target=-chromis.facing
+	var turning: Dictionary=chromis.actor.duplicate(true)
+	turning.heading=PI
+	turning.direction=-1
+	chromis.face_target=-1
+	chromis.apply_actor(turning)
 	for i in 60: chromis.animate(1.0/30)
 	check(is_equal_approx(chromis.facing,chromis.face_target) and is_equal_approx(chromis.tail_facing,chromis.facing),"Head-led turn finishes with attached tail")
 	fire.target_extension=0
@@ -90,6 +99,47 @@ func run() -> void:
 	check(fire.bite_timer==0,"Offline food events do not replay mouth animation")
 	check(var_to_bytes(snapshot)==frozen,"Rig updates never mutate snapshots")
 	check(var_to_bytes(world.export_state())==before,"Rig interactions preserve simulation and both random states")
+	# Replay a complete turn as 0.2 s snapshots, rendering six frames per snapshot.
+	var largest_step: float=0
+	var previous_facing: float=chromis.facing
+	var turn_pose: Dictionary=chromis.actor.duplicate(true)
+	turn_pose.heading=PI
+	turn_pose.thrust=0.0
+	chromis.apply_actor(turn_pose)
+	chromis.animate(.2)
+	previous_facing=chromis.facing
+	var neutral_phase: float=chromis.water_phase
+	turn_pose.thrust=0.0
+	turn_pose.speed=30.0
+	for step in 16:
+		turn_pose.heading=PI*(1-float(step)/15)
+		turn_pose.turn=-PI/3.0
+		turn_pose.direction=1 if cos(turn_pose.heading)>=0 else -1
+		chromis.apply_actor(turn_pose)
+		for frame in 6:
+			chromis.animate(1.0/30)
+			largest_step=maxf(largest_step,absf(chromis.facing-previous_facing))
+			previous_facing=chromis.facing
+	check(largest_step<0.08,"A snapshot turn never flips the rendered orientation in one frame")
+	check(absf(chromis.water_phase-neutral_phase)<0.6,"Zero thrust eases out of the previous stroke instead of running a fixed loop")
+	var fallback: Dictionary={"activity":"Resting","direction":-1,"species":"green_chromis"}
+	chromis.apply_actor(fallback)
+	chromis.animate(.2)
+	check(chromis.pose.heading==PI and chromis.pose.thrust==0 and chromis.pose.speed==0,"Legacy snapshots default direction to heading and all other motion to zero")
+	chromis.effort=1
+	chromis.animate(1.0/30)
+	check(chromis.effort>0.7 and chromis.effort<1,"Stopping thrust eases out rather than snapping fins shut")
+	for i in 90: chromis.animate(1.0/30)
+	check(chromis.effort<.001,"Coasting reaches a quiet resting stroke")
+	var flick_pose: Dictionary=fire.actor.duplicate(true)
+	flick_pose.flick=1
+	fire.apply_actor(flick_pose)
+	fire.animate(1.0/30)
+	check(fire.ray_flick>0,"Firefish flick raises the dorsal ray")
+	flick_pose.flick=0
+	fire.apply_actor(flick_pose)
+	for i in 90: fire.animate(1.0/30)
+	check(absf(fire.ray_flick)<.001,"Dorsal ray returns after the flick instead of staying raised")
 	stage.queue_free()
 	print(JSON.stringify({"checks":checks,"failures":failures}))
 	quit(0 if failures.is_empty() else 1)

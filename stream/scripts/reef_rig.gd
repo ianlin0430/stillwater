@@ -33,6 +33,18 @@ var selection_offset:=Vector2.ZERO
 var drawn_selection: bool=false
 var drawn_offset:=Vector2.ZERO
 var drawn_shadow: bool=false
+var pose_from: Dictionary={}
+var pose_to: Dictionary={}
+var pose: Dictionary={}
+var pose_time: float=0.2
+var tail_heading: float=0
+var ray_flick: float=0
+var ray_velocity: float=0
+var last_flick: float=0
+var hop_age: float=1
+var hop_power: float=0
+var last_thrust: float=0
+var follow_offset:=Vector2.ZERO
 
 func _ready() -> void:
 	texture_filter=CanvasItem.TEXTURE_FILTER_NEAREST
@@ -75,6 +87,22 @@ func _ready() -> void:
 	add_child(fish)
 
 func apply_actor(value: Dictionary, _pellets: Array=[]) -> void:
+	pose_from=pose.duplicate()
+	pose_to={"heading":float(value.get("heading",0 if value.get("direction",1)>0 else PI))}
+	for key: String in ["pitch","speed","thrust","turn","roll"]:
+		pose_to[key]=float(value.get(key,0))
+	if first_actor:
+		pose=pose_to.duplicate()
+		pose_from=pose.duplicate()
+		tail_heading=pose.heading
+	pose_time=0
+	var flick: float=float(value.get("flick",0))
+	if flick>last_flick: ray_velocity=3.2
+	last_flick=flick
+	if species=="lawnmower_blenny" and pose_to.thrust>last_thrust+0.15:
+		hop_age=0
+		hop_power=clampf(pose_to.thrust,0,1)
+	last_thrust=pose_to.thrust
 	actor=value.duplicate(true)
 	activity=actor.get("activity","Resting")
 	target_extension=clampf(float(actor.get("extend",1)),0,1)
@@ -123,28 +151,36 @@ func animate(delta: float) -> void:
 	previous=position
 	motion=lerpf(motion,velocity.length(),1-exp(-delta*6))
 	var sleeping: bool=activity in ["Sleeping","Resting","Perching"]
-	var drive: float=clampf(motion/30,0,1)
-	if activity=="Startled": drive=1
-	if species=="purple_firefish": drive=0.14 if activity=="Hovering" else 0.05
-	effort=lerpf(effort,drive,1-exp(-delta*5))
-	water_phase+=delta*TAU*(0.4+effort*1.7)
-	facing=move_toward(facing,face_target,delta*2.8)
-	if absf(facing-tail_facing)>0.65 or is_equal_approx(facing,face_target):
-		tail_facing=move_toward(tail_facing,facing,delta*2.4)
-	fin_spread=lerpf(fin_spread,1.12 if activity=="Curious" else 0.85 if sleeping else 1.0,1-exp(-delta*4))
+	if pose_to.is_empty():
+		pose_to={"heading":0.0 if face_target>0 else PI,"pitch":0.0,"speed":0.0,"thrust":0.0,"turn":0.0,"roll":0.0}
+		pose_from=pose_to.duplicate()
+	pose_time=minf(.2,pose_time+delta)
+	for key: String in pose_to:
+		pose[key]=lerpf(float(pose_from[key]),float(pose_to[key]),pose_time/.2)
+	effort=lerpf(effort,clampf(pose.thrust,0,1),1-exp(-delta/(0.14 if pose.thrust>effort else 0.24)))
+	# Integrate propulsive effort, not a wall-clock swim loop. Coasting stops strokes.
+	water_phase+=delta*TAU*effort*(2.6 if species=="green_chromis" else 1.8)
+	facing=cos(pose.heading)
+	var trailing: float=clampf(pose.heading-pose.turn*0.08,0,PI)
+	tail_heading=lerpf(tail_heading,trailing,1-exp(-delta*8))
+	tail_facing=cos(tail_heading)
+	fin_spread=lerpf(fin_spread,0.82+effort*.28+(0.08 if activity=="Curious" else 0),1-exp(-delta*9))
+	ray_velocity+=(-36*ray_flick-12*ray_velocity)*delta
+	ray_flick+=ray_velocity*delta
 	feeding=move_toward(feeding,1.0 if activity=="Grazing" else 0.0,delta*4)
 	bite_timer=maxf(0,bite_timer-delta)
 	touch_remaining=maxf(0,touch_remaining-delta)
 	var goal: float=0.0 if dying or touch_remaining>0 else target_extension
-	extension=move_toward(extension,goal,delta*(6.0 if goal<extension else 0.65))
+	extension=move_toward(extension,goal,delta*((6.0+pose.thrust*5.0) if goal<extension else 0.65))
 	visual_offset=Vector2.ZERO
-	visual_pitch=lerp_angle(visual_pitch,clampf(velocity.y*0.008,-0.17,0.17)*face_target,1-exp(-delta*4))
+	var desired_follow: Vector2=Vector2(clampf(-velocity.x*.035,-1.8,1.8),clampf(-velocity.y*.025,-1.2,1.2)) if species in ["green_chromis","yellow_tang"] and activity!="Grazing" else Vector2.ZERO
+	follow_offset=follow_offset.lerp(desired_follow,1-exp(-delta*7))
+	if activity!="Grazing": visual_offset=follow_offset
+	visual_pitch=pose.pitch*(1 if facing>=0 else -1)
 	contact_projection=1
 	if species=="lawnmower_blenny":
-		if activity in ["Hopping","Startled","Feeding"] and motion>2:
-			hop_phase+=delta*(2.0 if activity=="Startled" else 1.4)*PI
-			hop_height=absf(sin(hop_phase))*minf(8,motion*0.18)
-		else: hop_height=move_toward(hop_height,0,delta*35)
+		hop_age+=delta
+		hop_height=pow(sin(clampf(hop_age/0.65,0,1)*PI),2)*hop_power*7.0 if pose.speed>1 and hop_age<0.65 else 0.0
 		visual_offset.y=-extent.y*(1-float(LOOK[species].line))-hop_height
 		if activity=="Grazing":
 			visual_pitch=lerp_angle(visual_pitch,0.31*face_target,1-exp(-delta*7))
@@ -153,7 +189,7 @@ func animate(delta: float) -> void:
 		visual_offset.y=-float(actor.get("hover_y",32))*extension/maxf(body_scale,0.1)
 		# Nose leads into the hole, tail follows. The sand clips the actual mesh.
 		var retreat: float=1-extension
-		visual_pitch=retreat*PI*0.48*face_target
+		visual_pitch=pose.pitch*face_target*extension+retreat*PI*0.48*face_target
 		visual_offset.x=-cos(visual_pitch)*extent.x*0.5*facing*retreat
 		visual_offset.y+=retreat*extent.x*0.5
 		if extension>0.95: visual_offset.y+=sin(phase*1.1)*0.7
@@ -163,8 +199,7 @@ func animate(delta: float) -> void:
 		contact_projection=clampf(contact.length()/(extent.x*0.5),0.1,1)
 		visual_pitch=atan2(contact.y,absf(contact.x))*face_target
 		# Head direction is backend-owned at contact; prevent overshoot of the mouth.
-		facing=face_target
-		tail_facing=move_toward(tail_facing,facing,delta*3)
+		# Backend finishes the heading turn before grazing; no direction snap here.
 	if arrival_age>=0:
 		arrival_age+=delta
 		if arrival_age<1.6:
@@ -183,13 +218,17 @@ func animate(delta: float) -> void:
 	fish_material.set_shader_parameter("phase",water_phase)
 	fish_material.set_shader_parameter("breath_phase",phase*TAU*(0.65 if sleeping else 1.1))
 	fish_material.set_shader_parameter("effort",effort)
+	fish_material.set_shader_parameter("tail_drive",clampf(pose.speed/45,0,1)*(0.2+effort*0.8))
+	fish_material.set_shader_parameter("roll",pose.roll)
+	fish_material.set_shader_parameter("ray_flick",ray_flick)
+	fish_material.set_shader_parameter("eye_scan",0.0)
 	fish_material.set_shader_parameter("facing",facing)
 	fish_material.set_shader_parameter("tail_facing",tail_facing)
 	fish_material.set_shader_parameter("projection",contact_projection)
 	fish_material.set_shader_parameter("extension",extension)
 	fish_material.set_shader_parameter("fin_open",fin_spread)
 	fish_material.set_shader_parameter("sleep_amount",1.0 if sleeping else 0.0)
-	fish_material.set_shader_parameter("pectoral_drive",0.0 if species=="lawnmower_blenny" and activity in ["Grazing","Perching","Sleeping"] else 0.3 if sleeping else 1.0)
+	fish_material.set_shader_parameter("pectoral_drive",0.0 if species=="lawnmower_blenny" and activity in ["Grazing","Perching","Sleeping"] else effort)
 	fish_material.set_shader_parameter("bite",feeding*(0.5+sin(phase*9)*0.5)+sin(bite_timer/0.35*PI))
 	fish_material.set_shader_parameter("pose_offset",visual_offset)
 	fish_material.set_shader_parameter("pitch",visual_pitch)
