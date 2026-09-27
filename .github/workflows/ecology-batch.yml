@@ -58,6 +58,7 @@ jobs:
             echo "::error::days=$DAYS must be a positive multiple of 3: the run is split into 3 chained jobs of days/3 each"
             exit 1
           fi
+          DAYS=$((10#$DAYS))
           echo "third=$((DAYS/3))" >> "$GITHUB_OUTPUT"
           echo "two_thirds=$((2*DAYS/3))" >> "$GITHUB_OUTPUT"
           echo "chunks: 0-$((DAYS/3)), $((DAYS/3))-$((2*DAYS/3)), $((2*DAYS/3))-$DAYS"
@@ -85,15 +86,16 @@ jobs:
 
       # Godot exits 0 even when a test script fails to load, so a suite passes only
       # if it exits 0, its last result line has an empty/zero "failures", and the
-      # log has no script or resource load error.
+      # log has no script or resource load error. A suite that hangs (a runtime
+      # error before quit()) is stopped after 15 minutes and fails.
       - name: Core tests
         working-directory: stream
         run: |
           fail=0
           for t in test_world test_swimmers test_roaming test_lifecycle test_persist_qa test_presentation test_frontend test_reef_animation test_natural_motion test_long_run_chunks; do
             echo "== $t"
-            if godot --headless --path . --script "tests/$t.gd" 2>&1 | tee "../$t.log" \
-              && grep '^{.*"failures"' "../$t.log" | tail -1 | jq -e '(.failures|length)==0' >/dev/null \
+            if timeout 900 godot --headless --path . --script "tests/$t.gd" 2>&1 | tee "../$t.log" \
+              && grep '^{.*"failures"' "../$t.log" | tail -1 | jq -e '.failures==[] or .failures==0' >/dev/null \
               && ! grep -qE 'SCRIPT ERROR|Parse Error|Failed loading resource' "../$t.log"; then
               echo "PASS $t"
             else
