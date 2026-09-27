@@ -19,6 +19,8 @@ const LOOK: Dictionary={
 	"lawnmower_blenny":{"region":Rect2(84,614,649,290),"width":100.0,"line":0.50},
 	"green_chromis":{"region":Rect2(859,607,579,344),"width":68.0,"line":0.49},
 	"garden_eel":{"region":Rect2(411,100,275,1360),"width":25.0,"line":1.0}}
+# Preview may make discrete actions brisker without changing positions or cruising speed.
+var action_tempo: float=1.0
 var actor: Dictionary={}
 var extent: Vector2
 var extension: float=1
@@ -219,7 +221,7 @@ func animate(delta: float) -> void:
 	if pose_to.is_empty():
 		pose_to={"heading":0.0 if face_target>0 else PI,"pitch":0.0,"speed":0.0,"thrust":0.0,"turn":0.0,"roll":0.0}
 		pose_from=pose_to.duplicate()
-	pose_time=minf(.2,pose_time+delta)
+	pose_time=minf(.2,pose_time+delta*action_tempo)
 	for key: String in pose_to:
 		pose[key]=lerpf(float(pose_from[key]),float(pose_to[key]),pose_time/.2)
 	effort=lerpf(effort,(0.0 if dying else clampf(pose.thrust,0,1)),1-exp(-delta/(0.14 if pose.thrust>effort else 0.24)))
@@ -254,7 +256,7 @@ func animate(delta: float) -> void:
 			elif goal>extension: portal_motion=PortalMotion.EMERGING
 		if portal_motion!=PortalMotion.IDLE:
 			goal=0.0 if portal_motion==PortalMotion.ENTERING else 1.0
-	extension=move_toward(extension,goal,delta*(1.0/(.95 if activity=="Sleeping" else .68) if species=="purple_firefish" and goal<extension else 6.0 if goal<extension else 1.0/1.3))
+	extension=move_toward(extension,goal,delta*action_tempo*(1.0/(.95 if activity=="Sleeping" else .68) if species=="purple_firefish" and goal<extension else 6.0 if goal<extension else 1.0/1.3))
 	visual_offset=Vector2.ZERO
 	var desired_follow: Vector2=Vector2(clampf(-velocity.x*.035,-1.8,1.8),clampf(-velocity.y*.025,-1.2,1.2)) if species in ["green_chromis","yellow_tang"] and activity!="Grazing" else Vector2.ZERO
 	follow_offset=follow_offset.lerp(desired_follow,1-exp(-delta*7))
@@ -263,7 +265,7 @@ func animate(delta: float) -> void:
 	contact_projection=1
 	if species=="lawnmower_blenny":
 		var old_hop_age: float=hop_age
-		hop_age+=delta
+		hop_age+=delta*action_tempo
 		if old_hop_age<.65 and hop_age>=.65: landing=1
 		landing=move_toward(landing,0,delta*5)
 		if hop_age>=.78 and queued_hop>0 and not dying:
