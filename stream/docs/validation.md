@@ -512,3 +512,18 @@ Why: every 180-day live job hit GitHub's 5h50m job cap and was cancelled with no
 - **Workflow**: `plan` (days must be a multiple of 3) → `chunk1` → `chunk2` → `chunk3`, a matrix over seeds in each, days/3 days per job, checkpoints passed as 3-day artifacts `checkpoint-<mode>-<days>d-feed-<feed>-seed-<seed>-day-<N>`. `chunk3` uploads `ecology-<mode>-<days>d-feed-<feed>-seed-<seed>` (log + `ci-*.json`) and fails on a gate. Core tests run once in `core`. The three chunk commands, taken from the YAML with `mode=offline days=12 feed=daily seed=42`, ran locally in sequence with the checkpoint moved out and back in between: chunked report identical to an unchunked 12-day run.
 - **Time per 60-day live chunk**: local 110 µs per 0.2 s tick with the opening 12 animals, 136-148 µs with 16-17 (after 90 offline days), at load average ~3.7 (another agent working). 60 days = 25.92 M ticks → 48-64 min locally → ×2.4 ≈ 1.9-2.6 h on GitHub, under the 5h50m cap.
 - The cloud run itself is 未驗證 until a real `ecology-batch` run passes.
+
+## 2026-09-27 — first live 180-day validation of the four-species reef (chunked CI) — 已通過
+
+Commit `1f6a9ec` (natural-motion backend, resting chromis sideways slide, before the 2026-09-27 "tang goes around" change and before the low-pixel atlas). Workflow `ecology-batch.yml`, mode live, 180 days as 3 chained 60-day jobs per seed. Runs 36290921712 (feed none) and 36290927414 (feed daily); all 18 chunk jobs and both core-test jobs succeeded; the final chunk fails its job on any gate, so every acceptance gate passed. Chunk wall time 1h23m–2h38m (limit 5h50m).
+
+| feed | seed | band share | max pop | starvation | old age | births | depth violations | min presence | longest absence | pinches |
+|---|---|---|---|---|---|---|---|---|---|---|
+| none | 42 | 1.0 | 17 | 0 | 10 | 13 | 0 | 1.0 | 0 | 0 |
+| none | 812 | 1.0 | 17 | 0 | 10 | 11 | 0 | 1.0 | 0 | 0 |
+| none | 240921 | 1.0 | 17 | 0 | 10 | 13 | 0 | 1.0 | 0 | 0 |
+| daily | 42 | 1.0 | 17 | 0 | 10 | 13 | 0 | 1.0 | 0 | 720 |
+| daily | 812 | 1.0 | 17 | 0 | 9 | 13 | 0 | 1.0 | 0 | 720 |
+| daily | 240921 | 1.0 | 17 | 0 | 11 | 12 | 0 | 1.0 | 0 | 720 |
+
+Offline smoke of the chunk chain first: run 36290742993 (offline 180 d, seed 42), all gates true. Still 未驗證: the motion changes after `1f6a9ec` (tang detour, tang grazing ease-in, BODY sizes for the new art) need one more live 180-day run before packaging.
