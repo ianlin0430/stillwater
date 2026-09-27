@@ -53,7 +53,15 @@ func advance(delta: float, _simulation_time: float, rigs: Dictionary) -> void:
 		var t: float=clampf(fade.age/fade.duration,0,1)
 		rigs[id].modulate.a*=smoothstep(0,1,t)
 		if fade.kind=="arrival" and not rigs[id].species in ["garden_eel","purple_firefish"]:
-			rigs[id].position.x+=fade.side*130*pow(1-t,2)
+			if rigs[id].species=="lawnmower_blenny":
+				var segment: float=minf(t*3,2.9999)
+				var hop_t: float=fmod(segment,1.0)
+				var progress: float=(floor(segment)+smoothstep(0,1,hop_t))/3.0
+				rigs[id].position.x+=fade.side*130*(1-progress)
+				rigs[id].position.y=StreamWorld.floor_y(rigs[id].position.x)
+				rigs[id].hop_age=hop_t*.65
+				rigs[id].hop_power=.8
+			else: rigs[id].position.x+=fade.side*130*pow(1-t,2)
 		if t>=1: fades.erase(id)
 	for effect: Dictionary in ghosts.duplicate():
 		effect.age+=maxf(delta,0)

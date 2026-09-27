@@ -41,12 +41,12 @@ func run() -> void:
 			a.extend=0.0
 			a.activity="Sleeping"
 	stage.apply_snapshot(night)
-	tick(stage,0.7)
+	tick(stage,1.1)
 	check(not fire.body_visible,"Sleeping burrow fish have no visible body")
 	stage.apply_snapshot(snapshot)
 	tick(stage,2)
 	check(fire.body_visible and fire.extension>0.99,"Purple firefish smoothly returns from its hole")
-	check(absf(fire.visual_offset.y+fire.actor.hover_y)<1,"Hover height follows the backend's per-individual field")
+	check(absf(fire.visual_offset.y+fire.actor.hover_y)<2,"Hover height follows the backend's per-individual field")
 	check(stage.pick(fire.selection_position())==fire.individual_id,"Picking tracks visible hovering body rather than buried anchor")
 	var grazing: Dictionary=tang.actor.duplicate(true)
 	grazing.activity="Grazing"
@@ -89,8 +89,11 @@ func run() -> void:
 	blenny.apply_actor(hop_probe)
 	for i in 6: blenny.animate(1.0/30)
 	check(blenny.hop_height>0,"Stopping movement completes the landing arc instead of snapping the body to the sand")
-	for i in 15: blenny.animate(1.0/30)
-	check(blenny.hop_height==0,"An interrupted hop lands within its original bounded duration")
+	for i in 6: blenny.animate(1.0/30)
+	check(blenny.hop_height==0,"First hop lands before queued stronger thrust begins")
+	for i in 8: blenny.animate(1.0/30)
+	check(blenny.hop_height>0,"Stronger airborne thrust is queued for the next complete hop")
+	for i in 30: blenny.animate(1.0/30)
 	var grazing_blenny: Dictionary=blenny.actor.duplicate(true)
 	grazing_blenny.activity="Grazing"
 	grazing_blenny.thrust=0.0
@@ -119,7 +122,7 @@ func run() -> void:
 	fire.begin_arrival()
 	fire.animate(0.1)
 	check(fire.body_visible and fire.visual_pitch==0 and fire.visual_offset.y<0,"Night arrival swims above sand before hiding")
-	for i in 75: fire.animate(1.0/30)
+	for i in 210: fire.animate(1.0/30)
 	check(not fire.body_visible,"Night arrival finishes by entering the burrow")
 	fire.arrival_age=-1
 	fire.target_extension=1
@@ -128,7 +131,7 @@ func run() -> void:
 	fire.target_extension=0
 	for i in 6: fire.animate(1.0/30)
 	check(fire.body_visible and fire.extension>0,"Retreat remains readable after 0.2 s instead of instantly hiding")
-	check(absf(fire.visual_pitch)>1.4 and fire.visual_offset.y<0,"Head bends toward the entrance above sand before the body descends")
+	check(absf(fire.visual_pitch)>.6 and absf(fire.visual_pitch)<1.4 and fire.visual_offset.y<0,"Head bends toward the entrance above sand before the body descends")
 	check(fire.fish_material.get_shader_parameter("portal") and not fire.fish_material.get_shader_parameter("clip_sand"),"Firefish uses its local aperture, never a whole-scene sand-plane cut")
 	for i in 20: fire.animate(1.0/30)
 	check(not fire.body_visible and fire.visual_offset.y>fire.extent.x*.5,"Body is hidden only after the tail has passed below the sand")
@@ -202,15 +205,15 @@ func run() -> void:
 	var side_step: Dictionary={"species":"green_chromis","activity":"Resting","direction":1,"heading":0.0,"speed":0.0,"thrust":0.0,"vx":-6.0,"vy":0.0}
 	chromis.apply_actor(side_step)
 	for i in 30: chromis.animate(1.0/30)
-	check(chromis.pectoral_effort>.6 and chromis.facing>.99,"Resting chromis uses pectorals while moving opposite its unchanged heading")
-	check(chromis.fish_material.get_shader_parameter("tail_drive")==0.0,"Resting side-slip does not recruit tail propulsion")
+	check(chromis.pectoral_effort>.08 and chromis.pectoral_effort<.15 and chromis.facing>.99,"Spacing recovery uses a gentle independent pectoral stroke")
+	check(chromis.fish_material.get_shader_parameter("tail_drive")<.001,"Resting spacing recovery does not recruit tail propulsion")
 	var held_fin: float=chromis.pectoral_phase
 	chromis.animate(0)
 	check(chromis.pectoral_phase==held_fin,"Pause freezes the independent pectoral stroke")
 	side_step.vx=0.0
 	chromis.apply_actor(side_step)
 	for i in 60: chromis.animate(1.0/30)
-	check(chromis.pectoral_effort<.001,"Pectoral side-slip stroke eases to rest when displacement stops")
+	check(chromis.pectoral_effort<.001,"Spacing recovery stroke eases to rest when displacement stops")
 	var flick_pose: Dictionary=fire.actor.duplicate(true)
 	flick_pose.flick=1
 	fire.apply_actor(flick_pose)

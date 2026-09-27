@@ -85,18 +85,16 @@ func _draw() -> void:
 		var tint:=Color("d9b980").lerp(Color("736b57"),clampf(age/900.0,0,1))
 		var at:=Vector2(pellet.x,pellet.y)
 		draw_rect(Rect2(at-Vector2(2,2),Vector2(4,4)),Color("514a39"))
-		draw_rect(Rect2(at-Vector2.ONE,Vector2(2,2)),tint)
+		draw_rect(Rect2(at-Vector2(2,2),Vector2(4,4)),tint)
 	for ring: Dictionary in rings:
 		var progress: float=ring.age/0.8
 		var radius: float=5+progress*(35 if ring.kind=="tap" else 20)
 		var tint:=Color(0.77,0.88,0.86,(1-progress)*0.4)
-		if ring.kind=="tap": draw_arc(ring.at,radius,0,TAU,32,tint,1,false)
-		else:
-			var points:=PackedVector2Array()
-			for i in 25:
-				var angle: float=TAU*i/24.0
-				points.append(ring.at+Vector2(cos(angle)*radius,sin(angle)*radius*0.25))
-			draw_polyline(points,tint,1,false)
+		var points:=PackedVector2Array()
+		for i in 25:
+			var angle: float=TAU*i/24.0
+			points.append((ring.at+Vector2(cos(angle)*radius,sin(angle)*radius*(1.0 if ring.kind=="tap" else .25))).snapped(Vector2(3,3)))
+		draw_polyline(points,tint,2,false)
 
 func _draw_hud() -> void:
 	for action: String in ["feed","tap"]:

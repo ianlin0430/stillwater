@@ -24,13 +24,19 @@ uniform float tail_drive = 0.;
 uniform float roll = 0.;
 uniform float ray_flick = 0.;
 uniform float eye_scan = 0.;
+uniform bool blenny = false;
+uniform float curious = 0.;
+uniform vec2 eye_anchor = vec2(.9,.35);
+uniform vec4 atlas_region = vec4(0.,0.,1.,1.);
 uniform bool portal = false;
+uniform float portal_radius = 21.;
 uniform float portal_fold = 0.;
 uniform float grounded_graze = 0.;
 varying float sand_y;
 varying vec2 local_point;
 void vertex() {
     vec2 p = VERTEX;
+    vec2 rest_point=vec2(p.x/extent.x+.5,p.y/extent.y+body_line);
     if (eel) {
         p.y += (1. - extension) * extent.y;
         float height = clamp(-p.y/extent.y, 0., 1.);
@@ -43,29 +49,29 @@ void vertex() {
         float body_drive = (tail_drive * 2.8) * (1. - sleep_amount*.8);
         p.y += sin(phase - tail*4.4) * body_drive * tail*tail;
         // A quiet, slow breath keeps coasting alive without adding jitter.
-        p.y += sin(breath_phase*.35)*.10*tail*tail;
+        // Whole-body breathing is continuous; no subpixel gill/eye mesh distortion.
         // Fin base stays attached; only the outer fan and caudal membrane flex.
         p.y += sin(phase*1.17-tail*3.8)*(effort*.6)*fin;
         p.y *= 1. + (fin_open-1.) * fin;
         // Firefish tall first dorsal ray bends progressively away from its base.
-        float ray = smoothstep(.12, .7, -p.y/extent.y) * fin_ray;
+        float ray = (1.-smoothstep(.05,.51,rest_point.y))*smoothstep(.35,.7,rest_point.x) * fin_ray;
         p.x += sin(phase*.43)*ray*effort*3.+ray*ray_flick*8.;
-        vec2 atlas_point=vec2(p.x/extent.x+.5,p.y/extent.y+body_line);
+        vec2 atlas_point=rest_point;
         // Tuck the lower pectoral fan toward its attached root during substrate grazing.
         // The body stays above the bed instead of clipping away the extended fin.
-        float planted_fin=smoothstep(.52,.70,atlas_point.y)*smoothstep(.50,.62,atlas_point.x)*(1.-smoothstep(.80,.90,atlas_point.x));
+        float planted_fin=smoothstep(.58,.76,atlas_point.y)*smoothstep(.51,.62,atlas_point.x)*(1.-smoothstep(.85,.91,atlas_point.x));
         p.y=mix(p.y,min(p.y,extent.y*.08),planted_fin*grounded_graze*.8);
         vec2 fin_delta=(atlas_point-pectoral_root)/pectoral_span;
         float pectoral=(1.-smoothstep(.5,1.,length(fin_delta)))*max(0.,-fin_delta.x);
         p.y+=sin(pectoral_phase)*pectoral*2.2*pectoral_drive;
         p.x+=cos(pectoral_phase)*pectoral*.8*pectoral_drive;
         // Local operculum breathing; the eye and body silhouette remain quiet.
-        float gill=exp(-pow((atlas_point.x-.80)/.055,2.)-pow((atlas_point.y-body_line)/.15,2.));
-        p.x+=sin(breath_phase)*gill*.28;
-        float eye=exp(-pow((atlas_point.x-.85)/.025,2.)-pow((atlas_point.y-.28)/.05,2.));
-        p.x+=eye*eye_scan;
+
+
+
+
         float jaw = smoothstep(.72,.98,p.x/extent.x+.5) * smoothstep(-.03,.07,p.y/extent.y);
-        p.y += jaw * bite * .85;
+        p.y += jaw * bite * 2.0;
         p.y *= 1. - portal_fold*.70*fin;
         float local_facing=mix(facing,tail_facing,tail);
         p.x *= local_facing * projection;
@@ -80,9 +86,24 @@ void vertex() {
     VERTEX=p;
 }
 void fragment() {
-    float alpha=texture(TEXTURE,UV).a;
+    vec4 texel=texture(TEXTURE,UV);
+    float alpha=texel.a;
+    // Move only the highlight by one native atlas cell inside the blenny's dark eye.
+    vec2 ap=(UV/TEXTURE_PIXEL_SIZE-atlas_region.xy)/atlas_region.zw;
+    if (blenny && eye_scan>.5 && distance(ap,eye_anchor)<.032) {
+        vec2 source=UV+vec2(12.*TEXTURE_PIXEL_SIZE.x,0.);
+        vec4 moved=texture(TEXTURE,source);
+        if (max(texel.r,max(texel.g,texel.b))<.22 || min(texel.r,min(texel.g,texel.b))>.82) {
+            COLOR.rgb=moved.rgb;
+        }
+    }
+    // Quiet breathing changes a whole color cluster, not the position of a single texel.
+    float gill_patch=(1.-step(.07,abs(ap.x-(pectoral_root.x+.09))))*(1.-step(.10,abs(ap.y-body_line)));
+    COLOR.rgb*=1.+gill_patch*sin(breath_phase*.45)*.025;
+    float eye_patch=1.-step(.027,distance(ap,eye_anchor));
+    COLOR.rgb=mix(COLOR.rgb,COLOR.rgb*1.10,eye_patch*curious);
     if (alpha<.86) discard;
     COLOR.a *= smoothstep(.86,.97,alpha)/max(alpha,.001);
     if (clip_sand && sand_y>0.) discard;
-    if (portal && abs(local_point.x)<21. && local_point.y>2.) discard;
+    if (portal && abs(local_point.x)<portal_radius && local_point.y>2.) discard;
 }

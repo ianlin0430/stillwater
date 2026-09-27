@@ -69,7 +69,7 @@ func apply_snapshot(value: Dictionary) -> void:
 				events_layer.accept(event,value)
 				interaction_layer.accept(event)
 				if event.kind=="ate" and rigs.has(event.id):
-					rigs[event.id].consume_food()
+					rigs[event.id].consume_food(event)
 			if event.get("live",false) and event.kind=="death" and event.get("cause","") in ["old age","starvation"]:
 				_begin_death(event,value)
 	event_cursor=latest
@@ -107,8 +107,7 @@ func apply_snapshot(value: Dictionary) -> void:
 		rig.apply_actor(a,value.get("food",[]))
 		rig.activity=a.activity
 		rig.face_target=a.direction
-		rig.body_scale=size_factor
-		rig.scale=Vector2.ONE*size_factor
+		rig.target_body_scale=size_factor
 		rig.dim=0.64 if a.activity in ["Sheltering","Molting"] else 1.0
 		# As an animal enters its dark crevice, retain only a faint silhouette.
 		var shelter_depth: float=clampf(1.0-absf(a.x-a.shelter)/75.0,0,1) if a.activity in ["Sheltering","Molting"] else 0.0
@@ -126,6 +125,7 @@ func apply_snapshot(value: Dictionary) -> void:
 			rigs[id].reset_contact()
 
 func animate(delta: float) -> void:
+	if not is_visible_in_tree(): return
 	water_clock+=delta
 	water_material.set_shader_parameter("water_clock",water_clock)
 	motes.advance(delta)
