@@ -114,7 +114,9 @@ const BODY: Dictionary = {"green_chromis":[68.0,39.0],"yellow_tang":[122.0,87.0]
 # The big fish goes around the small one (2026-09-27, user decision): a chromis that cannot get out
 # of a tang's way (resting, or pinned at a band edge or wall, _stuck) stays put, and the tang bends
 # its course into a wide arc that passes it `clear` px outside that ellipse, starting up to `ahead`
-# s before it (_around), and aims beside it rather than into it (_off_stuck_chromis).
+# s before it (_around), and aims beside it rather than into it (_off_stuck_chromis); a resting
+# tang lying in such a chromis's space swims out of it. `ease` (px/s2): how fast that bend may
+# change; `jolt` (px/s2): how fast a tang's whole steering may change (2026-09-27 review).
 # A tang that just ate chews for `chew` s before chasing food again and skips pellets inside
 # another feeding tang's body, so two tangs take turns at a pinch instead of piling onto it.
 # Swimming (2026-09-25, user: "natural first"). Per species: `cruise` px/s (x 0.82-1.18 per id),
@@ -128,7 +130,7 @@ const SWIM: Dictionary = {
 	"green_chromis":{"cruise":17.0,"turn":4.0,"pitch":0.7,"pitch_rate":0.8,"drag":0.9,"push":2.0,"gap":0.3,"brake":24.0,"scull":6.0,"drift":0.22},
 	"yellow_tang":{"cruise":20.0,"turn":1.2,"pitch":0.45,"pitch_rate":0.5,"drag":0.3,"push":2.0,"gap":0.0,"respond":0.8,"row":0.05,"stroke":1.6,"brake":8.0,"scull":6.0,"drift":0.15},
 	"startle_speed":2.4,"startle_turn":4.0,"turn_gain":3.0,"edge":40.0,"ramp":2.0}
-const SEPARATE: Dictionary = {"margin":1.2,"look":5.0,"gain":1.6,"close":1.05,"chew":5.0,"tangs":1.25,"clear":4.0,"ahead":14.0}
+const SEPARATE: Dictionary = {"margin":1.2,"look":5.0,"gain":1.6,"close":1.05,"chew":5.0,"tangs":1.25,"clear":4.0,"ahead":14.0,"ease":6.0,"jolt":10.0}
 # Yellow tang: cruises the upper midwater (`cruise` y range) and grazes rock `spots` [x, y, side]
 # on the left reef face and the right outcrop of the approved background (docs/BACKEND_SNAPSHOT_EVENTS.md).
 # The spot is where the mouth touches the rock; the body centre holds `reach` px (half the adult
@@ -154,6 +156,11 @@ var lure: Dictionary = {}
 var _live: bool = false
 # How urgently the last _avoid() call had to dodge (0 = clear, up to 1). Scratch, never saved.
 var _dodge: float = 0.0
+# Which way (+1 right, -1 left) a resting tang last moved off a chromis that cannot get out of its
+# way faces while it does, 0 when it did not (_off_stuck_chromis; per tick, never saved).
+var _away: float = 0.0
+# Whether the last _avoid() call met another fish of its own species (scratch, never saved).
+var _kin: bool = false
 # Per-tick scratch that _move() fills before moving anyone (2026-09-27, speed only; never saved):
 # the swimmers (species with a DEPTH band) in state.animals order, the same without the chromis,
 # and each swimmer's _body() by id. Within a motion tick no animal is added or removed and no
@@ -508,6 +515,12 @@ func _move(delta: float) -> void:
 		var speed: float=cruise
 		if a.activity in _SLOW:
 			speed=1.2
+			# A resting tang whose spot lies in the space of a chromis that cannot get out of its
+			# way swims clear of it at up to half its cruise, gathering speed by half SEPARATE.ease
+			# px/s2 (2026-09-27 review: at 1.2 px/s a tang lying 40 px from a resting chromis still
+			# covered it 10 s later; at full speed at once, sculling jerked it 5.5 px/s in a tick).
+			if tang and target!=Vector2(a.tx,a.ty):
+				speed=minf(0.5*cruise,maxf(speed,Vector2(a.get("vx",0.0),a.get("vy",0.0)).length()+0.5*SEPARATE.ease*delta))
 		elif a.activity=="Startled":
 			speed*=SWIM.startle_speed
 		elif follower:
@@ -515,6 +528,23 @@ func _move(delta: float) -> void:
 		# Arrive: never faster than the fish can brake to a stop at the target.
 		# (Chasing a sinking pellet it keeps closing in: no slower than twice the sink speed.)
 		var arrive: Vector2=offset/gap*minf(speed,maxf(sqrt(2.0*cfg.brake*gap),2.0*FOOD.sink if a.activity=="Feeding" else 0.0)) if gap>0.01 else Vector2.ZERO
+		# A tang never aims to cover more than half the remaining gap in one tick: settled on a
+		# spot it used to overshoot it every tick and scull back, a 2.6 px/s shiver (2026-09-27
+		# review).
+		if tang:
+			arrive=arrive.limit_length(0.5*gap/delta)
+		# A cruising tang whose target was moved off a chromis (_off_stuck_chromis) heads for its
+		# own target and steers the difference, so it eases in with the rest of its steering
+		# (2026-09-27 review: a school settling round the end of its course moved the target 93 px
+		# in a tick and jerked the tang 3.6 px/s); over its last 70 px it hands that back to
+		# arriving, which brakes it onto the moved target (a rock spot needs the full brake).
+		var shift:=Vector2.ZERO
+		if tang and a.activity!="Resting" and target!=Vector2(a.tx,a.ty):
+			var own: Vector2=Vector2(a.tx,clampf(a.ty,band[0],band[1]))-p
+			var far: float=own.length()
+			var straight: Vector2=(own/far*minf(speed,sqrt(2.0*cfg.brake*far))).limit_length(0.5*far/delta) if far>0.01 else Vector2.ZERO
+			shift=(arrive-straight)*clampf((gap-30.0)/40.0,0.0,1.0)
+			arrive-=shift
 		var hovering: bool=resting and gap<CHROMIS.hold
 		if hovering:
 			arrive=Vector2.ZERO
@@ -542,11 +572,27 @@ func _move(delta: float) -> void:
 		# Give way smoothly: the steering _avoid() adds is eased over about three ticks (0.3 a
 		# tick; 0.5 still let a chromis meeting a cruising tang flip up and down every tick,
 		# 2026-09-26), so a meeting reads as one sweeping dodge, not a twitch each tick.
-		var change: Vector2=_avoid(a,p,arrive+desired,cruise)-arrive-desired
-		# A tang bends its course around a chromis that cannot get out of its way (eased with the rest).
-		if tang and a.activity!="Grazing":
-			change+=_around(a,p,p+offset,band,arrive.length(),cruise)
-		var steer: Vector2=Vector2(a.get("avoid_x",0.0),a.get("avoid_y",0.0)).lerp(change,0.3)
+		var change: Vector2=_avoid(a,p,arrive+desired,cruise)-arrive-desired+shift
+		# A tang bends its course around a chromis that cannot get out of its way (eased with the
+		# rest). The bend itself changes by at most SEPARATE.ease px/s2 (`around_x`, `around_y`;
+		# 2026-09-27 review: a chromis settling to rest just ahead started the arc with a 2.5-3.4
+		# px/s jolt in one tick).
+		if tang:
+			var bent: Vector2=Vector2(a.get("around_x",0.0),a.get("around_y",0.0))
+			if a.activity!="Grazing":
+				bent+=(_around(a,p,p+offset,band,arrive.length(),cruise)-bent).limit_length(SEPARATE.ease*delta)
+			else:
+				bent=Vector2.ZERO
+			a.around_x=bent.x
+			a.around_y=bent.y
+			change+=bent
+		var was: Vector2=Vector2(a.get("avoid_x",0.0),a.get("avoid_y",0.0))
+		var steer: Vector2=was.lerp(change,0.3)
+		# A tang's steering never changes by more than `jolt` px/s2 (2026-09-27 review: when a
+		# school ahead settled to rest all at once it jerked 2.6-4 px/s in a tick) - except while
+		# it dodges the other tang, where that let two tangs overlap by 0.27.
+		if tang and not _kin:
+			steer=was+(steer-was).limit_length(SEPARATE.jolt*delta)
 		# A grazing tang holds its rock: the eased give-way steering of its approach stops when it
 		# starts grazing (2026-09-27: it carried the tang up to 7 px off its hold).
 		if a.activity=="Grazing":
@@ -569,9 +615,18 @@ func _move(delta: float) -> void:
 					face=-sp[2]
 		elif hovering:
 			face=a.direction
+		elif tang and a.activity=="Resting" and _away!=0.0:
+			# Moving off a chromis, it keeps facing away from it: rising or sinking takes some
+			# forward swimming, which must not carry it back over the chromis.
+			face=_away
 		elif follower and gap<40:
 			face=lead.direction
 		var velocity: Vector2=_swim(a,desired,speed,cruise,cfg,delta,a.activity=="Startled",face)
+		# A resting tang's velocity changes by at most 1.2 `jolt` px/s2 (2026-09-27 review: moving
+		# off a chromis and arriving, it sculled back from an overshoot 2.6 px/s faster in a tick).
+		if tang and a.activity=="Resting":
+			var was_v:=Vector2(a.get("vx",0.0),a.get("vy",0.0))
+			velocity=was_v+(velocity-was_v).limit_length(SEPARATE.jolt*1.2*delta)
 		var free: Vector2=p+velocity*delta
 		# Keep each fish in its own layer (the shoaling push once carried hatchetfish down).
 		var next: Vector2=free.clamp(Vector2(100,band[0]),Vector2(1180,band[1]))
@@ -688,6 +743,7 @@ func _body(a: Dictionary) -> Vector2:
 # Steers `desired` (px/s) so this swimmer's body keeps clear of the others (SEPARATE).
 func _avoid(a: Dictionary, p: Vector2, desired: Vector2, speed: float) -> Vector2:
 	_dodge=0.0
+	_kin=false
 	# A grazing tang holds its rock; a resting chromis stays put and the tang goes around it
 	# (_around, 2026-09-27).
 	if a.activity=="Grazing" or a.activity=="Resting" and a.species=="green_chromis":
@@ -713,6 +769,7 @@ func _avoid(a: Dictionary, p: Vector2, desired: Vector2, speed: float) -> Vector
 		var q: float=minf(now,Vector2(ahead.x/r.x,ahead.y/r.y).length())
 		if q>=1.0:
 			continue
+		_kin=_kin or not mixed
 		# Dodge up or down, away from the other (the upper fish rises; ids break a tie).
 		var up: float=signf(rel.y) if absf(rel.y)>1.0 else (1.0 if a.id>o.id else -1.0)
 		var side: float=signf(rel.x) if absf(rel.x)>1.0 else 0.0
@@ -772,8 +829,9 @@ func _stuck(c: Dictionary, t: Dictionary) -> bool:
 
 # A tang aiming inside the space (the _avoid ellipse) of a chromis that cannot get out of its way
 # aims `SEPARATE.clear` px outside its rim instead, straight above or below, the side it is on
-# (or the other when that is out of its band).
+# (or the other when that is out of its band); a resting one straight away from it (below).
 func _off_stuck_chromis(a: Dictionary, target: Vector2, band: Array) -> Vector2:
+	_away=0.0
 	for o: Dictionary in _swimmers:
 		if o.species!="green_chromis":
 			continue
@@ -781,6 +839,16 @@ func _off_stuck_chromis(a: Dictionary, target: Vector2, band: Array) -> Vector2:
 		var rel: Vector2=target-Vector2(o.x,o.y)
 		if Vector2(rel.x/r.x,rel.y/r.y).length()>=1.0 or not _stuck(o,a):
 			continue
+		# A resting tang moves its spot straight out from the chromis, to just outside that space,
+		# when that stays clear of the walls (2026-09-27 review: straight up or down it has to swim
+		# forward, and it swam back over the chromis); otherwise above or below it.
+		if a.activity=="Resting":
+			_away=signf(a.x-o.x) if absf(a.x-o.x)>1.0 else a.direction
+		if a.activity=="Resting" and rel.length()>1.0:
+			var out: Vector2=Vector2(o.x,o.y)+rel*((1.0+SEPARATE.clear/r.y)/Vector2(rel.x/r.x,rel.y/r.y).length())
+			if out.x>=100.0+SWIM.edge and out.x<=1180.0-SWIM.edge and out.y>=band[0] and out.y<=band[1]:
+				target=out
+				continue
 		var rim: float=r.y*sqrt(maxf(0.0,1.0-rel.x*rel.x/(r.x*r.x)))+SEPARATE.clear
 		var above: bool=rel.y<0.0 if absf(rel.y)>1.0 else a.y<o.y
 		if above and o.y-rim<band[0] or not above and o.y+rim>band[1]:
@@ -789,31 +857,65 @@ func _off_stuck_chromis(a: Dictionary, target: Vector2, band: Array) -> Vector2:
 	return target
 
 # The big fish goes around the small one (2026-09-27, user decision): the velocity (px/s) that
-# bends a tang's course to `target` into a wide arc above or below each chromis ahead of it that
-# cannot get out of its way (_stuck), passing it `SEPARATE.clear` px outside the _avoid ellipse.
-# It passes each on the side it is already on (away from the chromis; level with it, the side it
-# already bends toward, else the roomier one), or the other side when there is no room in its band
-# (SWIM.edge from the edges) - so the side holds for the whole pass. For each such chromis up to
-# `SEPARATE.ahead` s ahead (and before the target) it must rise or sink by some distance before
-# reaching the ellipse; it does so just in time, easing in over the first 3 s and out as the
-# chromis falls behind, and arriving then eases it back to its course: one wide arc. It crosses at
-# no more than half its speed; when that could not get it clear of the chromis's body in time (a
-# chromis met late, or already close by) it also slows, to no less than half its speed (it rises
-# and sinks by pitching as it swims, so it keeps going). Between chromis above and below it, the
-# two needs balance and it threads the gap.
+# bends a tang's course to `target` into a wide arc above or below the chromis ahead of it that
+# cannot get out of its way (_stuck), passing them `SEPARATE.clear` px outside the _avoid ellipse.
+# It passes all of them on one side (2026-09-27 review: taking each on its own side threaded it
+# between a school's fish, or crossed it in front of one): the side it has to rise or sink less
+# for, plus how far that pass reaches into the soft edge of its band (SWIM.edge), with a bonus of
+# SWIM.edge for the side it already bends toward, so the choice holds for the whole pass; a side
+# where the band cannot hold its body clear of a chromis's body at all is not taken while the
+# other can; when its course ends short of such a chromis, over or under it, it keeps to that
+# side. For each such chromis up to `SEPARATE.ahead` s ahead (its space reaching back over the
+# course) it must rise or sink by some distance before reaching the ellipse; it does so just in
+# time, easing in over the first 3 s and out as the chromis falls behind, and arriving then eases
+# it back to its course: one wide arc (in _move the bend changes by at most SEPARATE.ease px/s2,
+# so a chromis that settles just ahead does not start it with a jolt). It crosses at no more than half its
+# speed; when that could not get it clear of the chromis's body in time (a chromis met late, or
+# already close by) it also slows, to no less than half its speed (it rises and sinks by pitching
+# as it swims, so it keeps going).
 func _around(a: Dictionary, p: Vector2, target: Vector2, band: Array, speed: float, cruise: float) -> Vector2:
 	# (`speed`: how fast it is heading for its target, px/s; the arc is timed by it and fades out
 	# as the tang slows to arrive.)
+	# Beside such a chromis (within the width of its space, where no arc over or under it can
+	# help: a climb or dive past it, a short trip that starts under it), when its straight way to
+	# the target runs through that space it heads along the tangent of the space on the side nearer
+	# its way until the way is clear (2026-09-27 review: climbing or diving straight past a resting
+	# chromis, or setting off from under one to a spot over it, it crossed the chromis's body).
+	var cross:=Vector2.ZERO
+	var beside: Dictionary={}
+	var to: Vector2=target-p
+	var closest: float=INF
+	for o: Dictionary in (_swimmers if to.length()>1.0 else []):
+		if o.species!="green_chromis" or absf(p.x-o.x)>=(_bodies[a.id].x+_bodies[o.id].x)*0.5*SEPARATE.margin*1.17 or not _stuck(o,a):
+			continue
+		# (The _avoid ellipse itself: an arc passes SEPARATE.clear px outside it, clear of this.)
+		var e: Vector2=(_bodies[a.id]+_bodies[o.id])*0.5*SEPARATE.margin*1.17
+		var q: Vector2=(p-Vector2(o.x,o.y))/e
+		var way: Vector2=to/e
+		var d: float=q.length()
+		if d<=1.0 or (q+way*clampf(-q.dot(way)/way.length_squared(),0.0,1.0)).length()>=1.0:
+			continue
+		beside[o.id]=true
+		if d>=closest:
+			continue
+		closest=d
+		var back: Vector2=-q/d
+		var turn: float=signf(back.cross(way)) if absf(back.cross(way))>0.001 else -a.direction
+		var tangent: Vector2=back.rotated(turn*asin(1.0/d))
+		cross=(Vector2(tangent.x*e.x,tangent.y*e.y).normalized()-to.normalized())*speed
 	var dist: float=absf(target.x-p.x)
 	if dist<1.0:
-		return Vector2.ZERO
+		return cross
 	var ahead: float=signf(target.x-p.x)
 	var go: float=maxf(minf(speed,cruise),0.5)
 	var reach: float=go*SEPARATE.ahead
-	var bend: float=a.get("avoid_y",0.0)
-	# How fast to sink (0) and to rise (1), and how much to slow.
-	var rate: Array[float]=[0.0,0.0]
-	var slow: float=0.0
+	var bend: float=a.get("around_y",0.0)
+	# The chromis in the way, and per side (0 sink below them, 1 rise above them): the most it must
+	# move, how far the pass reaches into the band's soft edge, and whether its body fits at all.
+	var ways: Array=[]
+	var need: Array[float]=[0.0,0.0]
+	var fits: Array[bool]=[true,true]
+	var must: int=-1
 	for o: Dictionary in _swimmers:
 		if o.species!="green_chromis":
 			continue
@@ -821,23 +923,41 @@ func _around(a: Dictionary, p: Vector2, target: Vector2, band: Array, speed: flo
 		var along: float=(o.x-p.x)*ahead
 		var lat: float=o.y-p.y
 		var rn: float=r.y+SEPARATE.clear
-		# Ahead within reach and before the end of the course (a chromis beyond it is no
-		# obstacle: the tang stops at its target, which is outside every such chromis's space).
-		var limit: float=minf(dist,reach+r.x)
-		if absf(lat)>=rn or along<-r.x or along>limit or not _stuck(o,a):
+		# Ahead within reach, its space reaching back over the course (2026-09-27 review: a tang
+		# on a short diagonal trip cut the corner of a chromis beyond the end of it).
+		var limit: float=minf(dist+r.x,reach+r.x)
+		if absf(lat)>=rn or along<-r.x or along>limit or beside.has(o.id) or not _stuck(o,a):
 			continue
-		# Room beyond where it would pass below (0) or above (1), inside its band.
-		var room: Array[float]=[minf(o.y+rn-band[0],band[1]-o.y-rn)-SWIM.edge,minf(o.y-rn-band[0],band[1]-o.y+rn)-SWIM.edge]
-		var k: int=0 if room[0]>=room[1] else 1
-		if absf(lat)>=1.0:
-			k=1 if lat>0.0 else 0
-		elif absf(bend)>0.5:
-			k=0 if bend>0.0 else 1
-		if room[k]<0.0 and room[1-k]>=0.0:
-			k=1-k
+		ways.append([r,along,lat,rn,limit])
+		var body: Vector2=r/(SEPARATE.margin*1.17)
+		need[0]=maxf(need[0],lat+rn+maxf(0.0,SWIM.edge-minf(o.y+rn-band[0],band[1]-o.y-rn)))
+		need[1]=maxf(need[1],rn-lat+maxf(0.0,SWIM.edge-minf(o.y-rn-band[0],band[1]-o.y+rn)))
+		fits[0]=fits[0] and o.y+body.y<=band[1]
+		fits[1]=fits[1] and o.y-body.y>=band[0]
+		# Its course ends short of this chromis, over or under it (outside its space,
+		# _off_stuck_chromis): it keeps to that side.
+		if (o.x-target.x)*ahead>0.0 and absf(target.x-o.x)<r.x:
+			must=0 if target.y>o.y else 1
+	if ways.is_empty():
+		return cross
+	if absf(bend)>0.5:
+		need[0 if bend>0.0 else 1]-=SWIM.edge
+	var k: int=0 if need[0]<=need[1] else 1
+	if not fits[k] and fits[1-k]:
+		k=1-k
+	if must>=0:
+		k=must
+	var rate: float=0.0
+	var slow: float=0.0
+	for w: Array in ways:
+		var r: Vector2=w[0]
+		var along: float=w[1]
+		var lat: float=w[2]
+		var rn: float=w[3]
+		var limit: float=w[4]
 		var m: float=(lat+rn) if k==0 else (rn-lat)
 		var fade: float=clampf((limit-along)/maxf(go*3.0,r.x*0.5),0.0,1.0)*clampf((along+r.x)/r.x,0.0,1.0)
-		rate[k]=maxf(rate[k],fade*m/maxf((along-r.x)/go,2.0))
+		rate=maxf(rate,fade*m/maxf((along-r.x)/go,2.0))
 		# The most headway that still gets it clear of the chromis's body in time (the pair's
 		# half bodies without the margins, BODY), while the chromis is ahead.
 		var body: Vector2=r/(SEPARATE.margin*1.17)
@@ -845,7 +965,7 @@ func _around(a: Dictionary, p: Vector2, target: Vector2, band: Array, speed: flo
 		if mb>0.0:
 			var headway: float=maxf(0.0,along-body.x)*0.5*go/mb
 			slow=maxf(slow,fade*clampf(along/20.0,0.0,1.0)*clampf(go-headway,0.0,0.5*go))
-	return Vector2(-ahead*slow,minf(rate[0],0.5*go)-minf(rate[1],0.5*go))
+	return cross+Vector2(-ahead*slow,minf(rate,0.5*go)*(1.0 if k==0 else -1.0))
 
 # A tang that reaches the hold point of a rock spot starts grazing it; the contact point is
 # published only while it grazes.
@@ -1484,7 +1604,7 @@ static func validate(saved: Dictionary) -> bool:
 				return false
 		if a.has("food_id") and not a.food_id is int:
 			return false
-		for key: String in ["vx","vy","relocated_at","brood_until","tint","extend","contact_x","contact_y","chew_until","avoid_x","avoid_y","heading","pitch","speed","thrust","turn","roll","flick"]:
+		for key: String in ["vx","vy","relocated_at","brood_until","tint","extend","contact_x","contact_y","chew_until","avoid_x","avoid_y","around_x","around_y","heading","pitch","speed","thrust","turn","roll","flick"]:
 			if a.has(key) and not _number(a[key]):
 				return false
 		if a.get("brood_until",0)<0 or a.get("tint",0)<0 or a.get("tint",0)>1 or a.get("extend",0)<0 or a.get("extend",0)>1:
