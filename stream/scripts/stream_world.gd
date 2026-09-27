@@ -531,6 +531,10 @@ func _move(delta: float) -> void:
 		# tick; 0.5 still let a chromis meeting a cruising tang flip up and down every tick,
 		# 2026-09-26), so a meeting reads as one sweeping dodge, not a twitch each tick.
 		var steer: Vector2=Vector2(a.get("avoid_x",0.0),a.get("avoid_y",0.0)).lerp(_avoid(a,p,arrive+desired,cruise)-arrive-desired,0.3)
+		# A grazing tang holds its rock: the eased give-way steering of its approach stops when it
+		# starts grazing (2026-09-27: it carried the tang up to 7 px off its hold).
+		if a.activity=="Grazing":
+			steer=Vector2.ZERO
 		a.avoid_x=steer.x
 		a.avoid_y=steer.y
 		_dodge=minf(1.0,steer.length()/cruise)
