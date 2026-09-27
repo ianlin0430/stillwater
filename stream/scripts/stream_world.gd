@@ -149,6 +149,13 @@ var lure: Dictionary = {}
 var _live: bool = false
 # How urgently the last _avoid() call had to dodge (0 = clear, up to 1). Scratch, never saved.
 var _dodge: float = 0.0
+# Per-tick scratch that _move() fills before moving anyone (2026-09-27, speed only; never saved):
+# the swimmers (species with a DEPTH band) in state.animals order, the same without the chromis,
+# and each swimmer's _body() by id. Within a motion tick no animal is added or removed and no
+# species or age changes, so these equal what a scan of state.animals would find.
+var _swimmers: Array = []
+var _not_chromis: Array = []
+var _bodies: Dictionary = {}
 
 func _init(world_seed: int = 240921, wall_time: float = 0) -> void:
 	rng.seed = world_seed
@@ -430,10 +437,29 @@ func _eat(a: Dictionary, f: Dictionary) -> void:
 	_event("ate",a,"",{"food_id":f.id,"food_x":f.x,"food_y":f.y})
 	_live=false
 
+# Activity sets and per-activity values the per-tick motion code tests against (2026-09-27, speed
+# only: an array or dictionary literal in an expression is built anew each time it is evaluated).
+const _SLOW: Array = ["Resting","Displaying","Grazing"]
+const _ROAMING: Array = ["Schooling","Cruising"]
+const _AT_SPOT: Array = ["Cruising","Grazing"]
+const _GIVE: Dictionary = {"green_chromis":2.0,"yellow_tang":0.33}
+const _BLENNY_MOVING: Array = ["Hopping","Startled","Feeding"]
+const _BLENNY_SETTLED: Array = ["Perching","Grazing","Sleeping"]
+const _BLENNY_TOP: Dictionary = {"Hopping":BLENNY.hop_speed,"Feeding":BLENNY.hop_speed,"Startled":BLENNY.dart_speed}
+
 func _move(delta: float) -> void:
 	if not state.get("food",[]).is_empty():
 		_sink_food(delta)
 	var lead: Dictionary=_lead()
+	_swimmers.clear()
+	_not_chromis.clear()
+	_bodies.clear()
+	for o: Dictionary in state.animals:
+		if o.species in DEPTH:
+			_swimmers.append(o)
+			_bodies[o.id]=_body(o)
+			if o.species!="green_chromis":
+				_not_chromis.append(o)
 	for a: Dictionary in state.animals:
 		if a.species in HOMES:
 			_burrower(a)
@@ -464,7 +490,7 @@ func _move(delta: float) -> void:
 		var cfg: Dictionary=SWIM[species]
 		var cruise: float=cfg.cruise*(0.82+0.36*float((int(a.id)*37)%101)/100.0)
 		var speed: float=cruise
-		if a.activity in ["Resting","Displaying","Grazing"]:
+		if a.activity in _SLOW:
 			speed=1.2
 		elif a.activity=="Startled":
 			speed*=SWIM.startle_speed
@@ -479,17 +505,18 @@ func _move(delta: float) -> void:
 		# Everything else steering adds on top of arriving: rise and fall, spacing, dodging.
 		var desired:=Vector2.ZERO
 		# A gentle rise and fall while travelling, fading out on approach; no per-frame randomness.
-		if a.activity in ["Schooling","Cruising"] and not follower and gap>35:
+		if a.activity in _ROAMING and not follower and gap>35:
 			var bend: float=sin(state.elapsed*(0.28+float(int(a.id)%5)*0.025)+a.id*1.73)
 			desired.y+=bend*speed*cfg.drift*minf(1,gap/100)
 		# School members keep their spacing; bodies keep apart across the pool (_avoid).
 		if not tang:
-			for other: Dictionary in state.animals:
+			for other: Dictionary in _swimmers:
 				if other.id==a.id or other.species!=species:
 					continue
 				var apart: Vector2=p-Vector2(other.x,other.y)
-				if apart.length()<CHROMIS.spacing and apart.length()>0.01:
-					var room: Vector2=apart.normalized()*(CHROMIS.spacing-apart.length())*0.16
+				var dist: float=apart.length()
+				if dist<CHROMIS.spacing and dist>0.01:
+					var room: Vector2=apart.normalized()*(CHROMIS.spacing-dist)*0.16
 					# At rest the leader holds its place and the others make room sideways only,
 					# so spacing never bobs a resting school up and down (2026-09-26).
 					if a.activity=="Resting":
@@ -511,7 +538,7 @@ func _move(delta: float) -> void:
 		# Which way to face: a grazing tang faces its rock, a school member settled in its slot
 		# faces the way the leader does (so the school turns almost together).
 		var face: float=0.0
-		if tang and a.activity in ["Cruising","Grazing"] and gap<8:
+		if tang and a.activity in _AT_SPOT and gap<8:
 			for sp: Array in TANG.spots:
 				if target==_tang_hold(sp,animal_scale(a)):
 					face=-sp[2]
@@ -637,15 +664,16 @@ func _avoid(a: Dictionary, p: Vector2, desired: Vector2, speed: float) -> Vector
 	_dodge=0.0
 	if a.activity=="Grazing":
 		return desired
-	var own: Vector2=_body(a)
+	var own: Vector2=_bodies[a.id]
 	var v:=Vector2(a.get("vx",0.0),a.get("vy",0.0))
 	var push:=Vector2.ZERO
 	var yielding: float=0.0
-	for o: Dictionary in state.animals:
-		if o.id==a.id or o.species not in DEPTH or o.species==a.species and a.species=="green_chromis":
+	# Only other swimmers count, and for a chromis no other chromis (the school spaces itself).
+	for o: Dictionary in (_not_chromis if a.species=="green_chromis" else _swimmers):
+		if o.id==a.id:
 			continue
 		var mixed: bool=o.species!=a.species
-		var r: Vector2=(own+_body(o))*0.5*SEPARATE.margin*(1.17 if mixed else SEPARATE.tangs)
+		var r: Vector2=(own+_bodies[o.id])*0.5*SEPARATE.margin*(1.17 if mixed else SEPARATE.tangs)
 		var rel: Vector2=p-Vector2(o.x,o.y)
 		var relv: Vector2=v-Vector2(o.get("vx",0.0),o.get("vy",0.0))
 		var t: float=clampf(-rel.dot(relv)/maxf(relv.length_squared(),0.0001),0.0,SEPARATE.look)
@@ -659,7 +687,7 @@ func _avoid(a: Dictionary, p: Vector2, desired: Vector2, speed: float) -> Vector
 		var side: float=signf(rel.x) if absf(rel.x)>1.0 else 0.0
 		# A chromis darts clear of a tang (twice the push, dropping its own aim); a tang only
 		# eases around chromis (a third).
-		var gain: float=SEPARATE.gain*({"green_chromis":2.0,"yellow_tang":0.33}[a.species] if o.species!=a.species else 1.0)
+		var gain: float=SEPARATE.gain*(_GIVE[a.species] if o.species!=a.species else 1.0)
 		push+=Vector2(side*0.5,up).normalized()*speed*gain*(1.0-q)
 		_dodge=maxf(_dodge,(1.0-q)*minf(gain,1.0))
 		if a.species=="green_chromis" and o.species=="yellow_tang":
@@ -680,10 +708,10 @@ func _avoid(a: Dictionary, p: Vector2, desired: Vector2, speed: float) -> Vector
 # straight above or below, so arriving and giving way agree instead of bouncing the fish up and
 # down (2026-09-26: a grazing tang now holds half a body out from the rock, in open water).
 func _off_grazing_tangs(a: Dictionary, target: Vector2, band: Array) -> Vector2:
-	for o: Dictionary in state.animals:
+	for o: Dictionary in _not_chromis:
 		if o.species!="yellow_tang" or o.activity!="Grazing":
 			continue
-		var r: Vector2=(_body(a)+_body(o))*0.5*SEPARATE.margin*1.17
+		var r: Vector2=(_bodies[a.id]+_bodies[o.id])*0.5*SEPARATE.margin*1.17
 		var rel: Vector2=target-Vector2(o.x,o.y)
 		if Vector2(rel.x/r.x,rel.y/r.y).length()>=1.0:
 			continue
@@ -792,7 +820,7 @@ func _burrower(a: Dictionary) -> void:
 		a.activity="Sleeping"
 	else:
 		for o: Dictionary in state.animals:
-			var passing: bool=o.species in DEPTH or (o.species=="lawnmower_blenny" and o.activity in ["Hopping","Startled","Feeding"])
+			var passing: bool=o.species in DEPTH or (o.species=="lawnmower_blenny" and o.activity in _BLENNY_MOVING)
 			if passing and absf(o.x-a.burrow_x)<FIRE.dx and a.burrow_y-o.y<FIRE.dy:
 				a.decision_at=state.elapsed+FIRE.seconds
 		a.activity="Hiding" if state.elapsed<a.decision_at else "Hovering"
@@ -824,14 +852,14 @@ func _burrower(a: Dictionary) -> void:
 func _blenny(a: Dictionary, delta: float) -> void:
 	var startled: bool=a.activity=="Startled" and state.elapsed<a.decision_at
 	# Resting where a firefish (perhaps a newborn) now hovers: move on at once.
-	if a.activity in ["Perching","Grazing","Sleeping"] and not is_nan(_burrow_at(a.x)):
+	if a.activity in _BLENNY_SETTLED and not is_nan(_burrow_at(a.x)):
 		a.decision_at=state.elapsed
 	if not startled and not _peck(a) and (state.elapsed>=a.decision_at or a.activity=="Startled"):
 		_choose_blenny(a)
 	# No sustained swimming (2026-09-25): it pivots on its pectorals to face the way, a tail
 	# flick launches it at full speed, it glides slowing (`glide` /s) and flicks again only
 	# while the landing is still beyond the glide; otherwise it perches perfectly still.
-	var top: float={"Hopping":BLENNY.hop_speed,"Feeding":BLENNY.hop_speed,"Startled":BLENNY.dart_speed}.get(a.activity,0.0)
+	var top: float=_BLENNY_TOP.get(a.activity,0.0)
 	var psi: float=a.get("heading",0.0 if a.direction>0 else PI)
 	var left: float=a.tx-a.x
 	var s: float=a.get("speed",0.0)*exp(-BLENNY.glide*delta)
