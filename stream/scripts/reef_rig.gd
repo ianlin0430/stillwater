@@ -43,6 +43,8 @@ var ray_velocity: float=0
 var last_flick: float=0
 var hop_age: float=1
 var hop_power: float=0
+var blenny_graze: float=0
+var blenny_pitch: float=0
 var last_thrust: float=0
 var follow_offset:=Vector2.ZERO
 var contact_offset:=Vector2.ZERO
@@ -204,10 +206,14 @@ func animate(delta: float) -> void:
 		hop_age+=delta
 		# Once airborne, finish the bounded landing arc even if thrust/speed changes.
 		hop_height=pow(sin(clampf(hop_age/0.65,0,1)*PI),2)*hop_power*7.0 if hop_age<0.65 else 0.0
-		visual_offset.y=-extent.y*(1-float(LOOK[species].line))-hop_height
-		if activity=="Grazing":
-			visual_pitch=lerp_angle(visual_pitch,0.31*face_target,1-exp(-delta*7))
-			visual_offset.y=-sin(absf(visual_pitch))*extent.x*0.5-0.5
+		var grazing_goal: float=1.0 if activity=="Grazing" and hop_age>=0.65 else 0.0
+		blenny_graze=lerpf(blenny_graze,grazing_goal,1-exp(-delta*8))
+		# Retain easing state across frames; interpolating from pose.pitch anew never settles.
+		blenny_pitch=lerp_angle(blenny_pitch,lerpf(visual_pitch,0.31*face_target,blenny_graze),1-exp(-delta*7))
+		visual_pitch=blenny_pitch
+		var perch_y: float=-extent.y*(1-float(LOOK[species].line))
+		var grazing_y: float=-sin(absf(visual_pitch))*extent.x*0.5-3.0
+		visual_offset.y=lerpf(perch_y,grazing_y,blenny_graze)-hop_height
 	elif species=="purple_firefish":
 		_firefish_pose(portal_motion==PortalMotion.ENTERING or (goal==0 and extension==0))
 		if portal!=null:
@@ -264,6 +270,7 @@ func animate(delta: float) -> void:
 	fish_material.set_shader_parameter("pitch",visual_pitch)
 	fish_material.set_shader_parameter("portal",species=="purple_firefish" and not detached and arrival_age<0)
 	fish_material.set_shader_parameter("portal_fold",portal_fold)
+	fish_material.set_shader_parameter("grounded_graze",blenny_graze if species=="lawnmower_blenny" else 0.0)
 	fish_material.set_shader_parameter("clip_sand",not detached and species in ["garden_eel","lawnmower_blenny"] and arrival_age<0)
 	fish.modulate=Color(dim,dim,dim,1)
 	var shadow: bool=species=="lawnmower_blenny" and hop_height<1 and activity in ["Perching","Grazing","Sleeping"]

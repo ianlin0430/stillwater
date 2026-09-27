@@ -25,6 +25,7 @@ uniform float ray_flick = 0.;
 uniform float eye_scan = 0.;
 uniform bool portal = false;
 uniform float portal_fold = 0.;
+uniform float grounded_graze = 0.;
 varying float sand_y;
 varying vec2 local_point;
 void vertex() {
@@ -49,6 +50,10 @@ void vertex() {
         float ray = smoothstep(.12, .7, -p.y/extent.y) * fin_ray;
         p.x += sin(phase*.43)*ray*effort*3.+ray*ray_flick*8.;
         vec2 atlas_point=vec2(p.x/extent.x+.5,p.y/extent.y+body_line);
+        // Tuck the lower pectoral fan toward its attached root during substrate grazing.
+        // The body stays above the bed instead of clipping away the extended fin.
+        float planted_fin=smoothstep(.52,.70,atlas_point.y)*smoothstep(.50,.62,atlas_point.x)*(1.-smoothstep(.80,.90,atlas_point.x));
+        p.y=mix(p.y,min(p.y,extent.y*.08),planted_fin*grounded_graze*.8);
         vec2 fin_delta=(atlas_point-pectoral_root)/pectoral_span;
         float pectoral=(1.-smoothstep(.5,1.,length(fin_delta)))*max(0.,-fin_delta.x);
         p.y+=sin(phase*1.6)*pectoral*2.2*pectoral_drive;

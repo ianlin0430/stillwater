@@ -91,6 +91,22 @@ func run() -> void:
 	check(blenny.hop_height>0,"Stopping movement completes the landing arc instead of snapping the body to the sand")
 	for i in 15: blenny.animate(1.0/30)
 	check(blenny.hop_height==0,"An interrupted hop lands within its original bounded duration")
+	var grazing_blenny: Dictionary=blenny.actor.duplicate(true)
+	grazing_blenny.activity="Grazing"
+	grazing_blenny.thrust=0.0
+	grazing_blenny.speed=0.0
+	grazing_blenny.pitch=0.0
+	var perched_offset: float=blenny.visual_offset.y
+	blenny.apply_actor(grazing_blenny)
+	blenny.animate(1.0/30)
+	check(absf(blenny.visual_offset.y-perched_offset)<5,"Entering grazing does not drop the blenny body through the substrate in one frame")
+	for i in 60: blenny.animate(1.0/30)
+	check(absf(blenny.visual_pitch)>0.29,"Grazing pitch converges to the intended bend instead of restarting its easing each frame")
+	grazing_blenny.activity="Perching"
+	var feeding_offset: float=blenny.visual_offset.y
+	blenny.apply_actor(grazing_blenny)
+	blenny.animate(1.0/30)
+	check(absf(blenny.visual_offset.y-feeding_offset)<5,"Leaving grazing smoothly releases the ground contact pose")
 	var turning: Dictionary=chromis.actor.duplicate(true)
 	turning.heading=PI
 	turning.direction=-1
