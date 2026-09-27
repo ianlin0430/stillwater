@@ -60,15 +60,24 @@ jobs:
         working-directory: stream
         run: godot --headless --path . --import --quit-after 2000 || true
 
+      # Godot exits 0 even when a test script fails to load, so a suite passes only
+      # if it exits 0, its last result line has an empty/zero "failures", and the
+      # log has no script or resource load error.
       - name: Core tests
         working-directory: stream
         run: |
-          set -eu
+          fail=0
           for t in test_world test_swimmers test_roaming test_lifecycle test_persist_qa test_presentation test_frontend test_reef_animation test_natural_motion; do
-            [ -f "tests/$t.gd" ] || continue
             echo "== $t"
-            godot --headless --path . --script "tests/$t.gd" 2>&1 | tee "../$t.log"
+            if godot --headless --path . --script "tests/$t.gd" 2>&1 | tee "../$t.log" \
+              && grep '^{.*"failures"' "../$t.log" | tail -1 | jq -e '(.failures|length)==0' >/dev/null \
+              && ! grep -qE 'SCRIPT ERROR|Parse Error|Failed loading resource' "../$t.log"; then
+              echo "PASS $t"
+            else
+              echo "::error::$t failed (exit code, failures JSON or load error)"; fail=1
+            fi
           done
+          exit $fail
 
       # Still runs when a core test failed, so the long-run numbers are reported;
       # the job stays failed either way.
