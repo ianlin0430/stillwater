@@ -109,8 +109,8 @@ const BODY: Dictionary = {"green_chromis":[68.0,39.0],"yellow_tang":[122.0,87.0]
 # Body separation between swimmers (2026-09-25, Codex recording: two tangs merged into one blob and
 # chromis swam straight through tangs). Each pair is measured in the ellipse of their combined
 # half bodies times `margin`; a fish reacts to where the pair will be up to `look` s ahead,
-# dodging mostly up or down (the upper fish rises; a resting chromis slides sideways instead), and
-# never closes in once inside `close`.
+# dodging mostly up or down (the upper fish rises; a resting chromis slides sideways instead unless
+# a wall behind it leaves no room), and never closes in once inside `close`.
 # A chromis gives way to a tang; a grazing tang holds its rock; chromis space themselves (CHROMIS).
 # A tang that just ate chews for `chew` s before chasing food again and skips pellets inside
 # another feeding tang's body, so two tangs take turns at a pinch instead of piling onto it.
@@ -151,6 +151,10 @@ var lure: Dictionary = {}
 var _live: bool = false
 # How urgently the last _avoid() call had to dodge (0 = clear, up to 1). Scratch, never saved.
 var _dodge: float = 0.0
+# True when the last _avoid() call found a resting chromis with a wall behind it (no room to slide
+# clear of a tang), so it gives way up or down like any chromis, still on its pectorals. Scratch,
+# never saved.
+var _pinned: bool = false
 # Per-tick scratch that _move() fills before moving anyone (2026-09-27, speed only; never saved):
 # the swimmers (species with a DEPTH band) in state.animals order, the same without the chromis,
 # and each swimmer's _body() by id. Within a motion tick no animal is added or removed and no
@@ -539,8 +543,9 @@ func _move(delta: float) -> void:
 		# 2026-09-26), so a meeting reads as one sweeping dodge, not a twitch each tick.
 		var change: Vector2=_avoid(a,p,arrive+desired,cruise)-arrive-desired
 		# A resting chromis gives way only sideways (_avoid pushes it sideways; this drops the
-		# vertical part of holding back), so it never bobs for a passing tang (2026-09-26).
-		if resting:
+		# vertical part of holding back), so it never bobs for a passing tang (2026-09-26); with a
+		# wall behind it, it gives way up or down like any chromis (_avoid), still sliding (below).
+		if resting and not _pinned:
 			change.y=0.0
 		var steer: Vector2=Vector2(a.get("avoid_x",0.0),a.get("avoid_y",0.0)).lerp(change,0.3)
 		# A grazing tang holds its rock: the eased give-way steering of its approach stops when it
@@ -690,6 +695,7 @@ func _body(a: Dictionary) -> Vector2:
 # Steers `desired` (px/s) so this swimmer's body keeps clear of the others (SEPARATE).
 func _avoid(a: Dictionary, p: Vector2, desired: Vector2, speed: float) -> Vector2:
 	_dodge=0.0
+	_pinned=false
 	if a.activity=="Grazing":
 		return desired
 	var own: Vector2=_bodies[a.id]
@@ -720,14 +726,16 @@ func _avoid(a: Dictionary, p: Vector2, desired: Vector2, speed: float) -> Vector
 		# eases around chromis (a third).
 		var gain: float=SEPARATE.gain*(_GIVE[a.species] if o.species!=a.species else 1.0)
 		var away: Vector2=Vector2(side*0.5,up).normalized()
-		# A resting chromis slides sideways instead, away from the tang (ids break a tie), or
-		# toward the open side when the wall leaves it no room to clear the tang's space
+		# A resting chromis slides sideways instead, away from the tang (ids break a tie)
 		# (2026-09-26, user: it bobbed up and down each time a tang passed its resting spot).
+		# With a wall behind it leaving no room to clear the tang's space, sliding the other way
+		# would carry it through the tang (2026-09-27), so it gives way up or down like any chromis.
 		if a.species=="green_chromis" and a.activity=="Resting":
 			var way: float=side if side!=0.0 else (1.0 if a.id>o.id else -1.0)
 			if ((p.x-100.0) if way<0.0 else (1180.0-p.x))<r.x-absf(rel.x)+SWIM.edge:
-				way=-way
-			away=Vector2(way,0.0)
+				_pinned=true
+			else:
+				away=Vector2(way,0.0)
 		push+=away*speed*gain*(1.0-q)
 		_dodge=maxf(_dodge,(1.0-q)*minf(gain,1.0))
 		if a.species=="green_chromis" and o.species=="yellow_tang":

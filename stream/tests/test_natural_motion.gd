@@ -455,29 +455,50 @@ func night_rest_checks() -> void:
 	check(worst<=1.0 and mean<=0.2,"Resting chromis reverse at most about once a minute even with tangs passing (worst %.2f, mean %.2f per minute; was 4.06 / 1.92, then 0.94 / 0.24 dodging tangs up and down)" % [worst,mean])
 	check(not moved.is_empty() and upright.is_empty(),"A resting chromis gives way to a passing tang sideways, not up or down (%d of %d give-way episodes not mostly horizontal)" % [upright.size(),moved.size()])
 
-# A resting chromis beside a side wall, with a resting tang inside its space on the open side,
-# slides toward the open side (spec: the wall leaves it no room), level: over 20 s it moves at
-# least 1 px toward open water and never 0.5 px (one counted vertical move) up or down.
+# A resting chromis near a side wall with a resting tang inside its space (spec, 2026-09-27):
+# - tang on the wall side, open water behind the chromis: it slides sideways away from the tang,
+#   level (moves at least 1 px away and never 0.5 px, one counted vertical move, up or down);
+# - tang on the open side, the wall behind the chromis: sliding away is blocked by the wall and
+#   sliding the other way would carry it through the tang, so it gives way as any chromis does.
+# Either way it never goes deeper into the tang than where it started (box overlap, 0.02 for
+# numeric noise) and is out of the tang's body over the last 10 s of 20 (overlap <= 0.05, a
+# sliver at the rim counts as touching). Thresholds from that spec, set before measuring.
 func wall_give_way_checks() -> void:
-	var ok: bool=true
+	var level_ok: bool=true
+	var clear_ok: bool=true
 	var shown: Array=[]
 	for side: float in [1.0,-1.0]:
-		var w:=StreamWorld.new(42,1000)
-		w.state.light_hour=1.0
-		var c: Dictionary=of(w,"green_chromis")[0]
-		var t: Dictionary=of(w,"yellow_tang")[0]
-		only(w,func(x): return x==c or x==t)
-		var cx: float=125.0 if side>0.0 else 1155.0
-		for k: Array in [[c,cx],[t,cx+side*80.0]]:
-			var a: Dictionary=k[0]
-			a.merge({"x":k[1],"y":300.0,"tx":k[1],"ty":300.0,"vx":0.0,"vy":0.0,"activity":"Resting","decision_at":w.state.elapsed+1000.0},true)
-		var drift: float=0.0
-		for i in 100:
-			w.advance_live(0.2)
-			drift=maxf(drift,absf(c.y-300.0))
-		ok=ok and (c.x-cx)*side>=1.0 and drift<0.5
-		shown.append("%.1f px, %.2f px" % [(c.x-cx)*side,drift])
-	check(ok,"A resting chromis by a wall slides toward the open side, level (toward open water, up/down: %s)" % ", ".join(shown))
+		for open_side: bool in [true,false]:
+			var w:=StreamWorld.new(42,1000)
+			w.state.light_hour=1.0
+			var c: Dictionary=of(w,"green_chromis")[0]
+			var t: Dictionary=of(w,"yellow_tang")[0]
+			only(w,func(x): return x==c or x==t)
+			# side>0: the wall is on the left. Tang on the open side: chromis 25 px off the wall, tang 80 px
+			# further out; tang on the wall side: tang 50 px off the wall, chromis 80 px further out.
+			var wall: float=100.0 if side>0.0 else 1180.0
+			var cx: float=wall+side*(25.0 if open_side else 130.0)
+			var tx: float=cx+side*(80.0 if open_side else -80.0)
+			for k: Array in [[c,cx],[t,tx]]:
+				var a: Dictionary=k[0]
+				a.merge({"x":k[1],"y":300.0,"tx":k[1],"ty":300.0,"vx":0.0,"vy":0.0,"activity":"Resting","decision_at":w.state.elapsed+1000.0},true)
+			var start: float=overlap(w,c,t)
+			var deepest: float=start
+			var late: float=0.0
+			var drift: float=0.0
+			for i in 100:
+				w.advance_live(0.2)
+				deepest=maxf(deepest,overlap(w,c,t))
+				if i>=50:
+					late=maxf(late,overlap(w,c,t))
+				drift=maxf(drift,absf(c.y-300.0))
+			clear_ok=clear_ok and deepest<=start+0.02 and late<=0.05
+			if not open_side:
+				level_ok=level_ok and (c.x-cx)*side>=1.0 and drift<0.5
+			shown.append("%s %s: overlap %.2f->max %.2f, last 10 s %.2f; %.1f px toward open water, %.2f px up/down" % ["left" if side>0.0 else "right","wall behind" if open_side else "tang by wall",start,deepest,late,(c.x-cx)*side,drift])
+	numbers.wall_give_way=shown
+	check(level_ok,"A resting chromis with open water behind it slides away from a tang by the wall, level (%s)" % "; ".join(shown))
+	check(clear_ok,"A resting chromis by a wall never slides through a tang, and gets out of its body (%s)" % "; ".join(shown))
 
 func determinism_checks() -> void:
 	var a:=StreamWorld.new(812,1000)
