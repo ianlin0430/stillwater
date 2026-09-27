@@ -35,6 +35,14 @@ func overlap(w: StreamWorld, a: Dictionary, b: Dictionary) -> float:
 	var r: Vector2=(body(w,a)+body(w,b))*0.5
 	return maxf(0.0,minf(1.0-absf(a.x-b.x)/r.x,1.0-absf(a.y-b.y)/r.y))
 
+# Seed list of a multi-seed gate. `--seeds=a,b,c` after `--` overrides every list (for a CI
+# sweep over more worlds); without it each gate keeps its own default.
+func seeds(fallback: Array) -> Array:
+	for arg: String in OS.get_cmdline_user_args():
+		if arg.begins_with("--seeds="):
+			return Array(arg.trim_prefix("--seeds=").split(",",false)).map(func(x: String): return x.to_int())
+	return fallback
+
 func cv(values: Array) -> float:
 	if values.size()<2:
 		return 0.0
@@ -55,7 +63,7 @@ func _initialize() -> void:
 	firefish_checks()
 	tang_grazing_checks()
 	night_rest_checks()
-	wall_give_way_checks()
+	encounter_checks()
 	determinism_checks()
 	numbers.ms=Time.get_ticks_msec()-started
 	print(JSON.stringify({"checks":checks,"failures":failures,"numbers":numbers}))
@@ -73,7 +81,7 @@ func kinematics_checks() -> void:
 	var max_turn: Dictionary={"green_chromis":0.0,"yellow_tang":0.0}
 	var bends: Array=[]
 	var kinks: float=0.0
-	for seed_value: int in [42,812,240921]:
+	for seed_value: int in seeds([42,812,240921]):
 		var w:=StreamWorld.new(seed_value,1000)
 		w.state.light_hour=12.0
 		var lead: Dictionary=of(w,"green_chromis")[0]
@@ -122,7 +130,7 @@ func kinematics_checks() -> void:
 						run.erase(a.id)
 	# The tangs' own gliding style, measured in open water of their own (dodging the school
 	# is quicker on purpose): two tangs, ten daytime minutes, three seeds.
-	for seed_value: int in [42,812,240921]:
+	for seed_value: int in seeds([42,812,240921]):
 		var w:=StreamWorld.new(seed_value,1000)
 		only(w,func(x): return x.species=="yellow_tang")
 		w.state.light_hour=12.0
@@ -196,9 +204,14 @@ func separation_checks() -> void:
 	var mixed_ticks: int=0
 	var ticks: int=0
 	var spread_sum: float=0.0
-	for seed_value: int in [42,812,240921]:
+	var per_seed: Dictionary={}
+	# 7, 11, 314 and 2 are regression seeds: a chromis pinned at a band edge or corner by a
+	# cruising tang was run into there (2026-09-27, before the tang went around it).
+	for seed_value: int in seeds([42,812,240921,7,11,314,2]):
 		var w:=StreamWorld.new(seed_value,1000)
 		w.state.light_hour=12.0
+		var seed_max: float=0.0
+		var seed_deep: int=0
 		for i in 4500:
 			w.advance_live(0.2)
 			ticks+=1
@@ -211,16 +224,19 @@ func separation_checks() -> void:
 			for t: Dictionary in tg:
 				for c: Dictionary in ch:
 					var o: float=overlap(w,t,c)
-					mixed_max=maxf(mixed_max,o)
-					if o>0.25: mixed_ticks+=1
+					seed_max=maxf(seed_max,o)
+					if o>0.25: seed_deep+=1
 			var c0:=Vector2.ZERO
 			for c: Dictionary in ch: c0+=Vector2(c.x,c.y)
 			c0/=ch.size()
 			var s: float=0.0
 			for c: Dictionary in ch: s+=c0.distance_to(Vector2(c.x,c.y))
 			spread_sum+=s/ch.size()
+		mixed_max=maxf(mixed_max,seed_max)
+		mixed_ticks+=seed_deep
+		per_seed[str(seed_value)]=[snappedf(seed_max,0.001),seed_deep]
 	numbers.tang_overlap={"max_fraction":snappedf(tang_max,0.001),"ticks_touching_share":snappedf(tang_share/ticks,0.0001)}
-	numbers.chromis_through_tang={"max_fraction":snappedf(mixed_max,0.001),"ticks_over_quarter":mixed_ticks}
+	numbers.chromis_through_tang={"max_fraction":snappedf(mixed_max,0.001),"ticks_over_quarter":mixed_ticks,"per_seed_max_and_deep_ticks":per_seed}
 	numbers.school_spread=snappedf(spread_sum/ticks,0.1)
 	check(tang_max<=0.2,"Two tangs never overlap by more than a fifth of their bodies (max %.3f)" % tang_max)
 	check(mixed_max<=0.4 and mixed_ticks<ticks*0.002,"Chromis go around tangs instead of through them (max %.3f, %d deep ticks)" % [mixed_max,mixed_ticks])
@@ -263,7 +279,7 @@ func blenny_checks() -> void:
 	var closest: float=INF
 	var rests: int=0
 	var hops: Array=[]
-	for seed_value: int in [42,812,240921]:
+	for seed_value: int in seeds([42,812,240921]):
 		var w:=StreamWorld.new(seed_value,1000)
 		w.state.light_hour=6.5
 		# A full firefish patch, so every burrow is in play.
@@ -329,7 +345,7 @@ func tang_grazing_checks() -> void:
 	var worst: float=0.0
 	var facing_min: float=1.0
 	var grazes: Dictionary={"adult":0,"juvenile":0}
-	for seed_value: int in [42,812,240921]:
+	for seed_value: int in seeds([42,812,240921]):
 		var w:=StreamWorld.new(seed_value,1000)
 		w.state.light_hour=12.0
 		var tg: Array=of(w,"yellow_tang")
@@ -368,11 +384,14 @@ func tang_grazing_checks() -> void:
 # resting fish turns back by at least 0.5 px from its last vertical extreme. Before the fix: worst
 # 4.06, mean 1.92 per minute (a resting leader crept to new spots, the slots breathed vertically,
 # and spacing and small arrival corrections fought each other).
-# Giving way (user 2026-09-26): a resting chromis yields to a passing tang by sliding sideways, not
-# up or down. A give-way episode is a run of ticks in which a resting fish is giving way (the same
-# avoid > 0.2 px/s as below) that starts while it rests (not the tail of a dodge it began while
-# swimming, which may still be up or down); over every episode that moves it at least 1 px, its
-# horizontal travel must exceed its vertical travel (thresholds from that spec, set before measuring).
+# The big fish goes around the small one (user decision 2026-09-27; replaces the sideways slide of
+# 2026-09-26): a resting chromis stays nearly still when a tang passes and the tang goes around it.
+# A give-way episode is a run of ticks in which a resting fish is giving way (the same avoid >
+# 0.2 px/s as below) that starts while it rests (not the tail of a dodge it began while swimming);
+# no episode may carry it CHROMIS.hold (10 px) sideways or 0.5 px (the reversal unit) up or down in
+# total travel, and at night the tangs keep out of the school as by day (the day gate's numbers:
+# box overlap <= 0.4, deeper than a quarter on under 0.2 % of tang-chromis tick pairs).
+# Thresholds from that spec, set before measuring.
 func night_rest_checks() -> void:
 	var worst: float=0.0
 	var total_rev: int=0
@@ -380,10 +399,19 @@ func night_rest_checks() -> void:
 	var total_min: float=0.0
 	var fast: float=0.0
 	var episodes: Array=[]
-	for seed_value: int in [42,812,240921]:
+	var mixed_max: float=0.0
+	var mixed_deep: int=0
+	var pairs: int=0
+	var per_seed: Dictionary={}
+	# 7, 11, 314 and 2: regression seeds shared with the day separation gate.
+	for seed_value: int in seeds([42,812,240921,7,11,314,2]):
 		var w:=StreamWorld.new(seed_value,1000)
 		w.state.light_hour=1.0
 		w.advance_live(60)
+		var seed_max: float=0.0
+		var seed_deep: int=0
+		var seed_rev: int=0
+		var seed_min: float=0.0
 		var dodged: Dictionary={}
 		var ext: Dictionary={}
 		var way: Dictionary={}
@@ -394,6 +422,12 @@ func night_rest_checks() -> void:
 		var calm: Dictionary={}
 		for i in 3000:
 			w.advance_live(0.2)
+			for t: Dictionary in of(w,"yellow_tang"):
+				for c: Dictionary in of(w,"green_chromis"):
+					var o: float=overlap(w,t,c)
+					seed_max=maxf(seed_max,o)
+					pairs+=1
+					if o>0.25: seed_deep+=1
 			for a: Dictionary in of(w,"green_chromis"):
 				var giving: bool=Vector2(a.get("avoid_x",0.0),a.get("avoid_y",0.0)).length()>0.2
 				# Last time it was giving way to a body (a tang swimming past).
@@ -439,66 +473,107 @@ func night_rest_checks() -> void:
 				worst=maxf(worst,revs.get(id,0)/(rest[id]/60.0))
 			total_rev+=revs.get(id,0)
 			total_min+=rest[id]/60.0
+			seed_rev+=revs.get(id,0)
+			seed_min+=rest[id]/60.0
+		mixed_max=maxf(mixed_max,seed_max)
+		mixed_deep+=seed_deep
+		per_seed[str(seed_value)]={"tang_overlap_max":snappedf(seed_max,0.001),"deep_pairs":seed_deep,"reversals_per_min":snappedf(seed_rev/maxf(seed_min,0.001),0.01),"resting_minutes":snappedf(seed_min,0.1)}
 	var mean: float=total_rev/maxf(total_min,0.001)
 	var own: float=own_rev/maxf(total_min,0.001)
-	var moved: Array=episodes.filter(func(e: Vector2): return e.x+e.y>=1.0)
-	var upright: Array=moved.filter(func(e: Vector2): return e.x<=e.y)
-	var travel:=Vector2.ZERO
-	for e: Vector2 in moved: travel+=e
-	numbers.give_way={"episodes":moved.size(),"not_sideways":upright.size(),"horizontal_px":snappedf(travel.x,0.1),"vertical_px":snappedf(travel.y,0.1)}
-	numbers.night_rest={"worst_reversals_per_min":snappedf(worst,0.01),"mean_reversals_per_min":snappedf(mean,0.01),"mean_without_a_passing_body_per_min":snappedf(own,0.01),"resting_fish_minutes":snappedf(total_min,0.1),"max_vy":snappedf(fast,0.01)}
+	var far:=Vector2.ZERO
+	for e: Vector2 in episodes: far=Vector2(maxf(far.x,e.x),maxf(far.y,e.y))
+	numbers.give_way={"episodes":episodes.size(),"max_sideways_px":snappedf(far.x,0.01),"max_up_down_px":snappedf(far.y,0.01)}
+	numbers.night_rest={"worst_reversals_per_min":snappedf(worst,0.01),"mean_reversals_per_min":snappedf(mean,0.01),"mean_without_a_passing_body_per_min":snappedf(own,0.01),"resting_fish_minutes":snappedf(total_min,0.1),"max_vy":snappedf(fast,0.01),"tang_overlap_max":snappedf(mixed_max,0.001),"deep_pairs":mixed_deep,"pairs":pairs,"per_seed":per_seed}
 	check(total_min>60.0,"Chromis rest at night (%.1f fish-minutes)" % total_min)
-	# Unprovoked up/down corrections are gone. A resting fish now gives way to a tang sideways
-	# (2026-09-26: dodging up or down and gliding back left 0.94 worst / 0.24 mean per minute);
-	# what is left is the odd reversal within 5 s of a give-way.
+	# Unprovoked up/down corrections are gone. A resting fish no longer dodges a tang up or down
+	# (2026-09-26: dodging and gliding back left 0.94 worst / 0.24 mean per minute); the tang goes
+	# around it (2026-09-27).
 	check(own<=0.05,"Resting chromis never bob on their own (%.2f vertical reversals per minute away from a passing tang; was 1.92 in all)" % own)
 	check(worst<=1.0 and mean<=0.2,"Resting chromis reverse at most about once a minute even with tangs passing (worst %.2f, mean %.2f per minute; was 4.06 / 1.92, then 0.94 / 0.24 dodging tangs up and down)" % [worst,mean])
-	check(not moved.is_empty() and upright.is_empty(),"A resting chromis gives way to a passing tang sideways, not up or down (%d of %d give-way episodes not mostly horizontal)" % [upright.size(),moved.size()])
+	check(far.x<StreamWorld.CHROMIS.hold and far.y<0.5,"A resting chromis stays nearly still for a passing tang (%d give-way episodes, at most %.2f px sideways and %.2f px up or down)" % [episodes.size(),far.x,far.y])
+	check(mixed_max<=0.4 and mixed_deep<pairs*0.002,"At night the tangs go around the resting school (max overlap %.3f, %d of %d tick pairs deeper than a quarter)" % [mixed_max,mixed_deep,pairs])
 
-# A resting chromis near a side wall with a resting tang inside its space (spec, 2026-09-27):
-# - tang on the wall side, open water behind the chromis: it slides sideways away from the tang,
-#   level (moves at least 1 px away and never 0.5 px, one counted vertical move, up or down);
-# - tang on the open side, the wall behind the chromis: sliding away is blocked by the wall and
-#   sliding the other way would carry it through the tang, so it gives way as any chromis does.
-# Either way it never goes deeper into the tang than where it started (box overlap, 0.02 for
-# numeric noise) and is out of the tang's body over the last 10 s of 20 (overlap <= 0.05, a
-# sliver at the rim counts as touching). Thresholds from that spec, set before measuring.
-func wall_give_way_checks() -> void:
-	var level_ok: bool=true
-	var clear_ok: bool=true
-	var shown: Array=[]
-	for side: float in [1.0,-1.0]:
-		for open_side: bool in [true,false]:
-			var w:=StreamWorld.new(42,1000)
-			w.state.light_hour=1.0
-			var c: Dictionary=of(w,"green_chromis")[0]
-			var t: Dictionary=of(w,"yellow_tang")[0]
-			only(w,func(x): return x==c or x==t)
-			# side>0: the wall is on the left. Tang on the open side: chromis 25 px off the wall, tang 80 px
-			# further out; tang on the wall side: tang 50 px off the wall, chromis 80 px further out.
-			var wall: float=100.0 if side>0.0 else 1180.0
-			var cx: float=wall+side*(25.0 if open_side else 130.0)
-			var tx: float=cx+side*(80.0 if open_side else -80.0)
-			for k: Array in [[c,cx],[t,tx]]:
-				var a: Dictionary=k[0]
-				a.merge({"x":k[1],"y":300.0,"tx":k[1],"ty":300.0,"vx":0.0,"vy":0.0,"activity":"Resting","decision_at":w.state.elapsed+1000.0},true)
-			var start: float=overlap(w,c,t)
-			var deepest: float=start
-			var late: float=0.0
-			var drift: float=0.0
-			for i in 100:
-				w.advance_live(0.2)
-				deepest=maxf(deepest,overlap(w,c,t))
-				if i>=50:
-					late=maxf(late,overlap(w,c,t))
-				drift=maxf(drift,absf(c.y-300.0))
-			clear_ok=clear_ok and deepest<=start+0.02 and late<=0.05
-			if not open_side:
-				level_ok=level_ok and (c.x-cx)*side>=1.0 and drift<0.5
-			shown.append("%s %s: overlap %.2f->max %.2f, last 10 s %.2f; %.1f px toward open water, %.2f px up/down" % ["left" if side>0.0 else "right","wall behind" if open_side else "tang by wall",start,deepest,late,(c.x-cx)*side,drift])
-	numbers.wall_give_way=shown
-	check(level_ok,"A resting chromis with open water behind it slides away from a tang by the wall, level (%s)" % "; ".join(shown))
-	check(clear_ok,"A resting chromis by a wall never slides through a tang, and gets out of its body (%s)" % "; ".join(shown))
+# The big fish goes around the small one (user decision 2026-09-27, final): a chromis that cannot
+# get out of a tang's way (resting, or pinned at a band edge or tank wall) stays nearly still, and
+# the tang takes a smooth, wide arc above or below it. Controlled scenes, one chromis and one tang,
+# 60 s each. Spec thresholds, set before measuring:
+# - the chromis stays within CHROMIS.hold (10 px) of its resting spot and moves < 0.5 px up or
+#   down (the reversal unit of the night-rest gate);
+# - box overlap (overlap()) stays <= 0.25 (the "deep" quarter of the day separation gate);
+# - the tang gets past the chromis (its centre beyond the chromis's by the pair's half box widths;
+#   by a wall, where its course ends: level with it) within 40 s, in one smooth arc: its vy changes
+#   sign at most twice on the way (a change counts from >= +0.1 to <= -0.1 px/s or back), and
+#   until it comes within 50 px (x) of the end of its course no tick changes vx or vy by 2.5 px/s
+#   or more (the band-edge jolt limit) and no step exceeds the kinematics no-teleport limit;
+#   nobody is marked relocated. (Stopping at the end of the course is not part of the encounter:
+#   a tang arriving anywhere overshoots a few px and turns back, before and after this change.)
+func encounter(night: bool, c_at: Vector2, c_aim: Vector2, c_activity: String, t_from: Vector2, t_to: Vector2, abreast: bool) -> Dictionary:
+	var w:=StreamWorld.new(42,1000)
+	w.state.light_hour=1.0 if night else 12.0
+	var c: Dictionary=of(w,"green_chromis")[0]
+	var t: Dictionary=of(w,"yellow_tang")[0]
+	only(w,func(x): return x==c or x==t)
+	# No ecology minute inside the scene (no arrivals; the hour stays).
+	w.state.ecology_remainder=-1.0e9
+	var way: float=signf(t_to.x-t_from.x)
+	c.merge({"x":c_at.x,"y":c_at.y,"tx":c_aim.x,"ty":c_aim.y,"vx":0.0,"vy":0.0,"activity":c_activity,"decision_at":w.state.elapsed+1.0e6,"direction":-way,"heading":0.0 if way<0.0 else PI,"pitch":0.0,"speed":0.0,"thrust":0.0,"turn":0.0,"avoid_x":0.0,"avoid_y":0.0},true)
+	t.merge({"x":t_from.x,"y":t_from.y,"tx":t_to.x,"ty":t_to.y,"vx":20.0*way,"vy":0.0,"activity":"Cruising","decision_at":w.state.elapsed+1.0e6,"direction":way,"heading":0.0 if way>0.0 else PI,"pitch":0.0,"speed":20.0,"thrust":0.3,"turn":0.0,"avoid_x":0.0,"avoid_y":0.0},true)
+	var half: float=(body(w,c).x+body(w,t).x)*0.5
+	var step_limit: float=0.2*SWIM.yellow_tang.cruise*1.18*2.4*1.35
+	var r: Dictionary={"chromis_off_px":0.0,"chromis_up_down_px":0.0,"overlap_max":0.0,"pass_s":-1.0,"vy_sign_changes":0,"tang_max_dv":0.0,"tang_max_step":0.0,"tang_detour_px":0.0,"relocated":false,"chromis_left_band":false}
+	var sign: float=0.0
+	var last:=Vector2(t.vx,t.vy)
+	var at:=Vector2(t.x,t.y)
+	var band: Array=StreamWorld.DEPTH.green_chromis
+	for i in 300:
+		w.advance_live(0.2)
+		r.chromis_off_px=maxf(r.chromis_off_px,Vector2(c.x,c.y).distance_to(c_at))
+		r.chromis_up_down_px=maxf(r.chromis_up_down_px,absf(c.y-c_at.y))
+		r.overlap_max=maxf(r.overlap_max,overlap(w,c,t))
+		r.tang_detour_px=maxf(r.tang_detour_px,absf(t.y-t_from.y))
+		var v:=Vector2(t.vx,t.vy)
+		if absf(at.x-t_to.x)>=50.0:
+			r.tang_max_dv=maxf(r.tang_max_dv,maxf(absf(v.x-last.x),absf(v.y-last.y)))
+			r.tang_max_step=maxf(r.tang_max_step,Vector2(t.x,t.y).distance_to(at))
+		last=v
+		at=Vector2(t.x,t.y)
+		r.relocated=r.relocated or c.has("relocated_at") or t.has("relocated_at")
+		r.chromis_left_band=r.chromis_left_band or c.y<band[0] or c.y>band[1] or c.x<100.0 or c.x>1180.0
+		if r.pass_s<0.0:
+			if absf(t.vy)>=0.1:
+				if sign!=0.0 and signf(t.vy)!=sign:
+					r.vy_sign_changes+=1
+				sign=signf(t.vy)
+			if (absf(t.x-c.x)<=half) if abreast else ((t.x-c.x)*way>=half):
+				r.pass_s=(i+1)*0.2
+	r.ok=r.chromis_off_px<=StreamWorld.CHROMIS.hold and r.chromis_up_down_px<0.5 and r.overlap_max<=0.25 and r.pass_s>=0.0 and r.pass_s<=40.0 and r.vy_sign_changes<=2 and r.tang_max_dv<2.5 and r.tang_max_step<=step_limit and not r.relocated
+	for k: String in r:
+		if r[k] is float: r[k]=snappedf(r[k],0.001)
+	return r
+
+func encounter_checks() -> void:
+	var rest:=Vector2(640,320)
+	var scenes: Dictionary={
+		# (A) head-on: the tang cruises at the resting chromis's depth.
+		"A_head_on":encounter(true,rest,rest,"Resting",Vector2(300,320),Vector2(1060,320),false),
+		# (B) oblique: its course runs 50 px above the chromis.
+		"B_oblique_50_above":encounter(true,rest,rest,"Resting",Vector2(300,270),Vector2(1060,270),false),
+		# (C) by a wall: the chromis rests 25 px off it and the tang cruises at its depth to the wall.
+		"C_left_wall":encounter(true,Vector2(125,320),Vector2(125,320),"Resting",Vector2(500,320),Vector2(110,320),true),
+		"C_right_wall":encounter(true,Vector2(1155,320),Vector2(1155,320),"Resting",Vector2(780,320),Vector2(1170,320),true),
+		# (C) by a band edge: 25 px under the top of the chromis band, the tang along it both ways
+		# (no room above it inside the tang band, so it must pass below).
+		"C_band_edge_going_right":encounter(true,Vector2(640,205),Vector2(640,205),"Resting",Vector2(300,205),Vector2(1060,205),false),
+		"C_band_edge_going_left":encounter(true,Vector2(640,205),Vector2(640,205),"Resting",Vector2(980,205),Vector2(220,205),false)}
+	var bad: Array=scenes.keys().filter(func(k): return not scenes[k].ok)
+	numbers.encounter=scenes
+	check(bad.is_empty(),"The tang goes around a resting chromis in one smooth arc and the chromis stays put (failing: %s)" % ", ".join(bad))
+	# Daytime, pinned: a schooling chromis pressed into the top-left corner of its band (aiming
+	# beyond it, so it never settles to rest) and a tang cruising to a point right next to it.
+	var pinned: Dictionary=encounter(false,Vector2(104,184),Vector2(100,150),"Schooling",Vector2(450,300),Vector2(160,200),true)
+	pinned.erase("ok")
+	numbers.encounter_pinned=pinned
+	check(pinned.overlap_max<=0.25 and not pinned.chromis_left_band and not pinned.relocated,"A tang yields to a schooling chromis pinned in a band corner (max overlap %.3f, chromis left its band: %s)" % [pinned.overlap_max,pinned.chromis_left_band])
 
 func determinism_checks() -> void:
 	var a:=StreamWorld.new(812,1000)
