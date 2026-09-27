@@ -402,8 +402,9 @@ func _seek_food(a: Dictionary) -> bool:
 	var tang: bool=a.species=="yellow_tang"
 	if SPECIES[a.species].reserve-a.energy>=FOOD.mass*0.8 and state.elapsed>=a.get("chew_until",-1.0):
 		var gap: float=FOOD.notice
-		var rivals: Array=state.animals.filter(func(o): return tang and o.id!=a.id and o.species=="yellow_tang" and o.activity=="Feeding") if tang else []
-		for f: Dictionary in state.get("food",[]):
+		var food: Array=state.get("food",[])
+		var rivals: Array=state.animals.filter(func(o): return tang and o.id!=a.id and o.species=="yellow_tang" and o.activity=="Feeding") if tang and not food.is_empty() else []
+		for f: Dictionary in food:
 			if f.settled or f.y>band[1]+FOOD.eat:
 				continue
 			if rivals.any(func(o): return absf(f.x-o.x)<BODY.yellow_tang[0] and absf(f.y-o.y)<BODY.yellow_tang[1]):
@@ -450,7 +451,8 @@ const _BLENNY_TOP: Dictionary = {"Hopping":BLENNY.hop_speed,"Feeding":BLENNY.hop
 func _move(delta: float) -> void:
 	if not state.get("food",[]).is_empty():
 		_sink_food(delta)
-	var lead: Dictionary=_lead()
+	# The lowest-id chromis leads the school (it decides; the others follow). Empty if none.
+	var lead: Dictionary={}
 	_swimmers.clear()
 	_not_chromis.clear()
 	_bodies.clear()
@@ -460,6 +462,8 @@ func _move(delta: float) -> void:
 			_bodies[o.id]=_body(o)
 			if o.species!="green_chromis":
 				_not_chromis.append(o)
+			elif lead.is_empty() or o.id<lead.id:
+				lead=o
 	for a: Dictionary in state.animals:
 		if a.species in HOMES:
 			_burrower(a)
@@ -510,13 +514,14 @@ func _move(delta: float) -> void:
 			desired.y+=bend*speed*cfg.drift*minf(1,gap/100)
 		# School members keep their spacing; bodies keep apart across the pool (_avoid).
 		if not tang:
+			var spacing: float=CHROMIS.spacing
 			for other: Dictionary in _swimmers:
 				if other.id==a.id or other.species!=species:
 					continue
 				var apart: Vector2=p-Vector2(other.x,other.y)
 				var dist: float=apart.length()
-				if dist<CHROMIS.spacing and dist>0.01:
-					var room: Vector2=apart.normalized()*(CHROMIS.spacing-dist)*0.16
+				if dist<spacing and dist>0.01:
+					var room: Vector2=apart.normalized()*(spacing-dist)*0.16
 					# At rest the leader holds its place and the others make room sideways only,
 					# so spacing never bobs a resting school up and down (2026-09-26).
 					if a.activity=="Resting":
@@ -578,9 +583,9 @@ func _move(delta: float) -> void:
 # with pectoral braking and, only at low speed, a little sculling that lets the fish settle
 # exactly. Returns the screen velocity (px/s); stores heading, pitch, speed, thrust and turn.
 func _swim(a: Dictionary, desired: Vector2, cap: float, cruise: float, cfg: Dictionary, delta: float, quick: bool, face: float) -> Vector2:
-	var psi: float=a.get("heading",0.0 if a.direction>0 else PI)
+	var psi: float=a.heading if a.has("heading") else (0.0 if a.direction>0 else PI)
 	var theta: float=a.get("pitch",0.0)
-	var s: float=a.get("speed",Vector2(a.get("vx",0.0),a.get("vy",0.0)).length())
+	var s: float=a.speed if a.has("speed") else Vector2(a.get("vx",0.0),a.get("vy",0.0)).length()
 	var turn: float=a.get("turn",0.0)
 	var want: float=desired.length()
 	var facing: float=face
@@ -604,10 +609,11 @@ func _swim(a: Dictionary, desired: Vector2, cap: float, cruise: float, cfg: Dict
 	var along: float=maxf(0.0,desired.x*cos(psi))+absf(desired.y)*0.6
 	along=minf(along,cruise*SWIM.startle_speed)
 	var full: float=cfg.push*cfg.drag*maxf(cruise,1.0)
+	var thrust: float=a.get("thrust",0.0)
 	var accel: float
 	if cfg.gap>0.0:
 		# Burst and glide: stroke hard up to (1+gap) x the wanted speed, coast down to (1-gap) x.
-		var bursting: bool=a.get("thrust",0.0)>0.0
+		var bursting: bool=thrust>0.0
 		if s<along*(1.0-cfg.gap):
 			bursting=true
 		elif s>along*(1.0+cfg.gap):
@@ -618,7 +624,7 @@ func _swim(a: Dictionary, desired: Vector2, cap: float, cruise: float, cfg: Dict
 		accel=clampf(cfg.drag*along+cfg.respond*(along-s),0.0,cfg.push*cfg.drag*maxf(cap,cruise))
 		accel*=1.0+cfg.row*sin(state.elapsed*TAU/cfg.stroke+a.id)
 	# A stroke builds up over a moment (SWIM.ramp); gliding starts at once.
-	accel=minf(accel,(a.get("thrust",0.0)+SWIM.ramp*delta)*full)
+	accel=minf(accel,(thrust+SWIM.ramp*delta)*full)
 	s=maxf(0.0,s+(accel-cfg.drag*s)*delta)
 	if accel==0.0 and s>along*(1.0+cfg.gap)+0.5:
 		# Flare the pectorals to brake.
@@ -668,15 +674,18 @@ func _avoid(a: Dictionary, p: Vector2, desired: Vector2, speed: float) -> Vector
 	var v:=Vector2(a.get("vx",0.0),a.get("vy",0.0))
 	var push:=Vector2.ZERO
 	var yielding: float=0.0
+	var margin: float=SEPARATE.margin
+	var tangs: float=SEPARATE.tangs
+	var look: float=SEPARATE.look
 	# Only other swimmers count, and for a chromis no other chromis (the school spaces itself).
 	for o: Dictionary in (_not_chromis if a.species=="green_chromis" else _swimmers):
 		if o.id==a.id:
 			continue
 		var mixed: bool=o.species!=a.species
-		var r: Vector2=(own+_bodies[o.id])*0.5*SEPARATE.margin*(1.17 if mixed else SEPARATE.tangs)
+		var r: Vector2=(own+_bodies[o.id])*0.5*margin*(1.17 if mixed else tangs)
 		var rel: Vector2=p-Vector2(o.x,o.y)
 		var relv: Vector2=v-Vector2(o.get("vx",0.0),o.get("vy",0.0))
-		var t: float=clampf(-rel.dot(relv)/maxf(relv.length_squared(),0.0001),0.0,SEPARATE.look)
+		var t: float=clampf(-rel.dot(relv)/maxf(relv.length_squared(),0.0001),0.0,look)
 		var ahead: Vector2=rel+relv*t
 		var now: float=Vector2(rel.x/r.x,rel.y/r.y).length()
 		var q: float=minf(now,Vector2(ahead.x/r.x,ahead.y/r.y).length())
@@ -973,14 +982,6 @@ func _peck(a: Dictionary) -> bool:
 	a.tx=clampf(best.x,130,1150)
 	a.ty=floor_y(a.tx)
 	return true
-
-# The lowest-id chromis leads the school (it decides; the others follow). Empty if none.
-func _lead() -> Dictionary:
-	var lead: Dictionary={}
-	for a: Dictionary in state.animals:
-		if a.species=="green_chromis" and (lead.is_empty() or a.id<lead.id):
-			lead=a
-	return lead
 
 # A school member holds its own slot beside the leader, mirrored with the leader's heading.
 func _follow(a: Dictionary, lead: Dictionary) -> void:
