@@ -212,7 +212,7 @@ process is not a substitute for hardware sleep. A ready-to-run procedure is left
 
 ```sh
 cd stream
-/opt/homebrew/bin/godot --headless --path . --export-release macOS "$PWD/builds/Stillwater Stream.app"
+/opt/homebrew/bin/godot --headless --path . --export-release macOS "$PWD/builds/Stillwater Reef.app"
 python3 tools/persistence_acceptance.py --modes hidden_resume --trigger external \
         --hidden-seconds 300 --external-timeout 3600
 ```
