@@ -1,15 +1,15 @@
 class_name ReefRig
 extends SwimmerRig
 # GPU-articulated soft-pixel actor. Snapshot positions and ecology stay untouched.
-const ATLAS: Texture2D=preload("res://assets/reef/fish-atlas-v1.png")
+const ATLAS: Texture2D=preload("res://assets/reef/fish-atlas-low-pixel-v1.png")
 const EEL: Texture2D=preload("res://assets/reef/garden-eel-v1.png")
 const REEF_SHADER: Shader=preload("res://scripts/reef_motion.gdshader")
 const REEF_SPECIES: Array[String]=["garden_eel","lawnmower_blenny","purple_firefish","green_chromis","yellow_tang"]
 const LOOK: Dictionary={
-	"yellow_tang":{"region":Rect2(138,104,551,394),"width":122.0,"line":0.66},
-	"purple_firefish":{"region":Rect2(802,82,670,404),"width":91.0,"line":0.65},
-	"lawnmower_blenny":{"region":Rect2(64,621,673,285),"width":100.0,"line":0.47},
-	"green_chromis":{"region":Rect2(856,609,584,336),"width":68.0,"line":0.49},
+	"yellow_tang":{"region":Rect2(134,104,537,413),"width":122.0,"line":0.62},
+	"purple_firefish":{"region":Rect2(820,91,639,414),"width":91.0,"line":0.64},
+	"lawnmower_blenny":{"region":Rect2(84,614,649,290),"width":100.0,"line":0.50},
+	"green_chromis":{"region":Rect2(859,607,579,344),"width":68.0,"line":0.49},
 	"garden_eel":{"region":Rect2(411,100,275,1360),"width":25.0,"line":1.0}}
 var actor: Dictionary={}
 var extent: Vector2
