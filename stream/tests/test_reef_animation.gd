@@ -72,6 +72,25 @@ func run() -> void:
 	blenny.activity="Perching"
 	for i in 30: blenny.animate(1.0/30)
 	check(blenny.hop_height==0,"Perching settles precisely onto the substrate")
+	var hop_probe: Dictionary=blenny.actor.duplicate(true)
+	hop_probe.activity="Hopping"
+	hop_probe.speed=30.0
+	hop_probe.thrust=0.5
+	blenny.last_thrust=0
+	blenny.apply_actor(hop_probe)
+	for i in 8: blenny.animate(1.0/30)
+	var airborne_age: float=blenny.hop_age
+	hop_probe.thrust=1.0
+	blenny.apply_actor(hop_probe)
+	check(blenny.hop_age==airborne_age,"A stronger thrust snapshot cannot restart an airborne hop at the ground")
+	hop_probe.speed=0.0
+	hop_probe.thrust=0.0
+	hop_probe.activity="Perching"
+	blenny.apply_actor(hop_probe)
+	for i in 6: blenny.animate(1.0/30)
+	check(blenny.hop_height>0,"Stopping movement completes the landing arc instead of snapping the body to the sand")
+	for i in 15: blenny.animate(1.0/30)
+	check(blenny.hop_height==0,"An interrupted hop lands within its original bounded duration")
 	var turning: Dictionary=chromis.actor.duplicate(true)
 	turning.heading=PI
 	turning.direction=-1

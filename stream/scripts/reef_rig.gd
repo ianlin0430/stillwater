@@ -109,7 +109,7 @@ func apply_actor(value: Dictionary, _pellets: Array=[]) -> void:
 	var flick: float=float(value.get("flick",0))
 	if flick>last_flick: ray_velocity=3.2
 	last_flick=flick
-	if species=="lawnmower_blenny" and pose_to.thrust>last_thrust+0.15:
+	if species=="lawnmower_blenny" and hop_age>=0.65 and pose_to.thrust>last_thrust+0.15:
 		hop_age=0
 		hop_power=clampf(pose_to.thrust,0,1)
 	last_thrust=pose_to.thrust
@@ -202,7 +202,8 @@ func animate(delta: float) -> void:
 	contact_projection=1
 	if species=="lawnmower_blenny":
 		hop_age+=delta
-		hop_height=pow(sin(clampf(hop_age/0.65,0,1)*PI),2)*hop_power*7.0 if pose.speed>1 and hop_age<0.65 else 0.0
+		# Once airborne, finish the bounded landing arc even if thrust/speed changes.
+		hop_height=pow(sin(clampf(hop_age/0.65,0,1)*PI),2)*hop_power*7.0 if hop_age<0.65 else 0.0
 		visual_offset.y=-extent.y*(1-float(LOOK[species].line))-hop_height
 		if activity=="Grazing":
 			visual_pitch=lerp_angle(visual_pitch,0.31*face_target,1-exp(-delta*7))
