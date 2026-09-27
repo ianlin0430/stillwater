@@ -199,6 +199,18 @@ func run() -> void:
 	check(chromis.effort>0.7 and chromis.effort<1,"Stopping thrust eases out rather than snapping fins shut")
 	for i in 90: chromis.animate(1.0/30)
 	check(chromis.effort<.001,"Coasting reaches a quiet resting stroke")
+	var side_step: Dictionary={"species":"green_chromis","activity":"Resting","direction":1,"heading":0.0,"speed":0.0,"thrust":0.0,"vx":-6.0,"vy":0.0}
+	chromis.apply_actor(side_step)
+	for i in 30: chromis.animate(1.0/30)
+	check(chromis.pectoral_effort>.6 and chromis.facing>.99,"Resting chromis uses pectorals while moving opposite its unchanged heading")
+	check(chromis.fish_material.get_shader_parameter("tail_drive")==0.0,"Resting side-slip does not recruit tail propulsion")
+	var held_fin: float=chromis.pectoral_phase
+	chromis.animate(0)
+	check(chromis.pectoral_phase==held_fin,"Pause freezes the independent pectoral stroke")
+	side_step.vx=0.0
+	chromis.apply_actor(side_step)
+	for i in 60: chromis.animate(1.0/30)
+	check(chromis.pectoral_effort<.001,"Pectoral side-slip stroke eases to rest when displacement stops")
 	var flick_pose: Dictionary=fire.actor.duplicate(true)
 	flick_pose.flick=1
 	fire.apply_actor(flick_pose)

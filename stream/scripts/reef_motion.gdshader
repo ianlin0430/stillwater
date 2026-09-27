@@ -18,6 +18,7 @@ uniform float sleep_amount = 0.;
 uniform vec2 pectoral_root = vec2(.74,.58);
 uniform vec2 pectoral_span = vec2(.2,.25);
 uniform float pectoral_drive = 1.;
+uniform float pectoral_phase = 0.;
 uniform float breath_phase = 0.;
 uniform float tail_drive = 0.;
 uniform float roll = 0.;
@@ -56,8 +57,8 @@ void vertex() {
         p.y=mix(p.y,min(p.y,extent.y*.08),planted_fin*grounded_graze*.8);
         vec2 fin_delta=(atlas_point-pectoral_root)/pectoral_span;
         float pectoral=(1.-smoothstep(.5,1.,length(fin_delta)))*max(0.,-fin_delta.x);
-        p.y+=sin(phase*1.6)*pectoral*2.2*pectoral_drive;
-        p.x+=cos(phase*1.6)*pectoral*.8*pectoral_drive;
+        p.y+=sin(pectoral_phase)*pectoral*2.2*pectoral_drive;
+        p.x+=cos(pectoral_phase)*pectoral*.8*pectoral_drive;
         // Local operculum breathing; the eye and body silhouette remain quiet.
         float gill=exp(-pow((atlas_point.x-.80)/.055,2.)-pow((atlas_point.y-body_line)/.15,2.));
         p.x+=sin(breath_phase)*gill*.28;

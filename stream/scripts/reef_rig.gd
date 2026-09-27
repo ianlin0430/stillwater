@@ -45,6 +45,8 @@ var hop_age: float=1
 var hop_power: float=0
 var blenny_graze: float=0
 var blenny_pitch: float=0
+var pectoral_effort: float=0
+var pectoral_phase: float=0
 var last_thrust: float=0
 var follow_offset:=Vector2.ZERO
 var contact_offset:=Vector2.ZERO
@@ -59,6 +61,7 @@ func _ready() -> void:
 	previous=position
 	phase=individual_id*0.79
 	water_phase=phase
+	pectoral_phase=phase*1.6
 	tail_facing=facing
 	var cfg: Dictionary=LOOK[species]
 	var rect: Rect2=cfg.region
@@ -176,6 +179,13 @@ func animate(delta: float) -> void:
 	effort=lerpf(effort,clampf(pose.thrust,0,1),1-exp(-delta/(0.14 if pose.thrust>effort else 0.24)))
 	# Integrate propulsive effort, not a wall-clock swim loop. Coasting stops strokes.
 	water_phase+=delta*TAU*effort*(2.6 if species=="green_chromis" else 1.8)
+	var pectoral_goal: float=effort
+	if species=="green_chromis" and activity=="Resting":
+		pectoral_goal=clampf(Vector2(float(actor.get("vx",0)),float(actor.get("vy",0))).length()/6.0,0,1)*0.65
+	elif species=="lawnmower_blenny" and activity in ["Grazing","Perching","Sleeping"]:
+		pectoral_goal=0
+	pectoral_effort=lerpf(pectoral_effort,pectoral_goal,1-exp(-delta*8))
+	pectoral_phase+=delta*TAU*pectoral_effort*(4.16 if species=="green_chromis" else 2.88)
 	facing=cos(pose.heading)
 	var trailing: float=clampf(pose.heading-pose.turn*0.08,0,PI)
 	tail_heading=lerpf(tail_heading,trailing,1-exp(-delta*8))
@@ -254,7 +264,7 @@ func animate(delta: float) -> void:
 	fish_material.set_shader_parameter("phase",water_phase)
 	fish_material.set_shader_parameter("breath_phase",phase*TAU*(0.65 if sleeping else 1.1))
 	fish_material.set_shader_parameter("effort",effort)
-	fish_material.set_shader_parameter("tail_drive",clampf(pose.speed/45,0,1)*(0.2+effort*0.8))
+	fish_material.set_shader_parameter("tail_drive",0.0 if species=="green_chromis" and activity=="Resting" else clampf(pose.speed/45,0,1)*(0.2+effort*0.8))
 	fish_material.set_shader_parameter("roll",pose.roll)
 	fish_material.set_shader_parameter("ray_flick",ray_flick)
 	fish_material.set_shader_parameter("eye_scan",0.0)
@@ -264,7 +274,8 @@ func animate(delta: float) -> void:
 	fish_material.set_shader_parameter("extension",extension)
 	fish_material.set_shader_parameter("fin_open",fin_spread)
 	fish_material.set_shader_parameter("sleep_amount",1.0 if sleeping else 0.0)
-	fish_material.set_shader_parameter("pectoral_drive",0.0 if species=="lawnmower_blenny" and activity in ["Grazing","Perching","Sleeping"] else effort)
+	fish_material.set_shader_parameter("pectoral_drive",pectoral_effort)
+	fish_material.set_shader_parameter("pectoral_phase",pectoral_phase)
 	fish_material.set_shader_parameter("bite",feeding*(0.5+sin(phase*9)*0.5)+sin(bite_timer/0.35*PI))
 	fish_material.set_shader_parameter("pose_offset",visual_offset)
 	fish_material.set_shader_parameter("pitch",visual_pitch)
