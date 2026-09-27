@@ -347,15 +347,38 @@ func tang_grazing_checks() -> void:
 	var worst: float=0.0
 	var facing_min: float=1.0
 	var grazes: Dictionary={"adult":0,"juvenile":0}
-	for seed_value: int in seeds([42,812,240921]):
+	# Approach to a hold (2026-09-27, user: smooth, no abrupt switches): over the last 30 px of a
+	# cruise to a rock hold, |v| change between two ticks (the velocity vector) <= 3.0 px/s, with
+	# at least 10 approaches measured. Spec thresholds, set before measuring.
+	var approach: Dictionary={"max_dv":0.0,"ticks":0,"approaches":0,"dv_gt3":0,"worst":""}
+	# Seeds 7 and 77 (2026-09-27): the tang reached its hold still swimming at up to 20 px/s and
+	# coasted up to 6.9 px past it; the three original seeds happened to stay under the gate.
+	for seed_value: int in seeds([42,812,240921,7,77]):
 		var w:=StreamWorld.new(seed_value,1000)
 		w.state.light_hour=12.0
 		var tg: Array=of(w,"yellow_tang")
 		# One juvenile (half size) per world: it holds half as far out.
 		tg[1].age=10.0
+		var last: Dictionary={}
 		for i in 6000:
 			w.advance_live(0.2)
 			for t: Dictionary in tg:
+				var aim:=Vector2(t.tx,t.ty)
+				var to_hold: bool=false
+				for s: Array in StreamWorld.TANG.spots:
+					to_hold=to_hold or aim==StreamWorld._tang_hold(s,w.animal_scale(t))
+				var near: bool=to_hold and t.activity=="Cruising" and Vector2(t.x,t.y).distance_to(aim)<=30.0
+				var was: Dictionary=last.get(t.id,{})
+				if near and was.get("near",false) and was.aim==aim:
+					var dv: float=Vector2(t.vx,t.vy).distance_to(was.v)
+					approach.ticks+=1
+					approach.dv_gt3+=int(dv>3.0)
+					if dv>approach.max_dv:
+						approach.max_dv=dv
+						approach.worst="seed %d id %d t %.1f gap %.1f" % [seed_value,t.id,w.state.elapsed,Vector2(t.x,t.y).distance_to(aim)]
+				elif near:
+					approach.approaches+=1
+				last[t.id]={"near":near,"aim":aim,"v":Vector2(t.vx,t.vy)}
 				if t.activity!="Grazing":
 					continue
 				var side: float=0.0
@@ -373,6 +396,9 @@ func tang_grazing_checks() -> void:
 	check(grazes.adult>100 and grazes.juvenile>100,"Adult and juvenile tangs both graze (%d / %d ticks)" % [grazes.adult,grazes.juvenile])
 	check(worst<6.0,"Grazing body centre sits half a body length x scale out from the contact, within the 5 px arrival plus coasting (worst %.2f px off)" % worst)
 	check(facing_min>=0.9,"A grazing tang faces its rock (min cos %.3f)" % facing_min)
+	approach.max_dv=snappedf(approach.max_dv,0.01)
+	numbers.tang_approach=approach
+	check(approach.approaches>=10 and approach.max_dv<=3.0,"A tang eases onto its rock hold: over the last 30 px no tick changes its velocity by more than 3 px/s (max %.2f over %d approaches, %s)" % [approach.max_dv,approach.approaches,approach.worst])
 	# Every hold (adult and juvenile) is inside the tang band and the swimming x range.
 	var inside: bool=true
 	for s: Array in StreamWorld.TANG.spots:

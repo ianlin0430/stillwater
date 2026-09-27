@@ -145,7 +145,8 @@ const SEPARATE: Dictionary = {"margin":1.2,"look":5.0,"gain":1.6,"close":1.05,"c
 # While grazing the body rolls up to `roll` rad toward the rock with each peck (every `peck` s).
 # `clear` [w, h]: a spot is skipped while another tang holds or heads to a point closer than this on
 # both axes, so two grazing adults (122 x 87 px art) never overlap (spots 3/4, the right outcrop, are exclusive).
-const TANG: Dictionary = {"spots":[[170.0,318.0,1.0],[310.0,400.0,1.0],[962.0,532.0,-1.0],[1048.0,496.0,-1.0]],"reach":61.0,"cruise":[150.0,360.0],"graze":0.4,"graze_time":[8.0,20.0],"rest":[30.0,90.0],"night_rest":0.7,"speed":20.0,"trip":[80.0,360.0],"roll":0.35,"peck":1.6,"clear":[130.0,92.0]}
+# Swimming to a rock hold it eases in at no more than `settle` (/s) x the distance left (_move).
+const TANG: Dictionary = {"spots":[[170.0,318.0,1.0],[310.0,400.0,1.0],[962.0,532.0,-1.0],[1048.0,496.0,-1.0]],"reach":61.0,"cruise":[150.0,360.0],"graze":0.4,"graze_time":[8.0,20.0],"rest":[30.0,90.0],"night_rest":0.7,"speed":20.0,"trip":[80.0,360.0],"roll":0.35,"peck":1.6,"clear":[130.0,92.0],"settle":0.3}
 const NAMES: Dictionary = {"green_chromis":["Jade","Mint","Lagoon","Kelp","Glass","Pearl"],"lawnmower_blenny":["Moss","Pebble"],"purple_firefish":["Ember","Flicker"],"yellow_tang":["Saffron","Lemon"]}
 var rng := RandomNumberGenerator.new()
 var motion_rng := RandomNumberGenerator.new()
@@ -527,7 +528,20 @@ func _move(delta: float) -> void:
 			speed*=CHROMIS.catch_up if gap>CHROMIS.regroup else 1.15
 		# Arrive: never faster than the fish can brake to a stop at the target.
 		# (Chasing a sinking pellet it keeps closing in: no slower than twice the sink speed.)
-		var arrive: Vector2=offset/gap*minf(speed,maxf(sqrt(2.0*cfg.brake*gap),2.0*FOOD.sink if a.activity=="Feeding" else 0.0)) if gap>0.01 else Vector2.ZERO
+		var top: float=minf(speed,maxf(sqrt(2.0*cfg.brake*gap),2.0*FOOD.sink if a.activity=="Feeding" else 0.0))
+		# A tang swimming to a rock hold eases in: no faster than TANG.settle x the px still to go,
+		# so it glides onto the hold nearly still (2026-09-27: the cap above assumes it brakes at
+		# `brake` 8 px/s2, but its rowing slows only ~2.75; with just the velocity limit below it
+		# coasted up to 6.2 px past the hold).
+		var landing: bool=false
+		if tang and a.activity=="Cruising":
+			for sp: Array in TANG.spots:
+				var hold: Vector2=_tang_hold(sp,animal_scale(a))
+				if target==hold:
+					top=minf(top,gap*TANG.settle)
+				# (Its last 30 px to the hold, for the velocity limit below.)
+				landing=landing or Vector2(a.tx,a.ty)==hold and p.distance_to(hold)<=30.0
+		var arrive: Vector2=offset/gap*top if gap>0.01 else Vector2.ZERO
 		# A tang never aims to cover more than half the remaining gap in one tick: settled on a
 		# spot it used to overshoot it every tick and scull back, a 2.6 px/s shiver (2026-09-27
 		# review).
@@ -623,8 +637,10 @@ func _move(delta: float) -> void:
 			face=lead.direction
 		var velocity: Vector2=_swim(a,desired,speed,cruise,cfg,delta,a.activity=="Startled",face)
 		# A resting tang's velocity changes by at most 1.2 `jolt` px/s2 (2026-09-27 review: moving
-		# off a chromis and arriving, it sculled back from an overshoot 2.6 px/s faster in a tick).
-		if tang and a.activity=="Resting":
+		# off a chromis and arriving, it sculled back from an overshoot 2.6 px/s faster in a tick);
+		# so does one over its last 30 px to a rock hold, unless it dodges the other tang
+		# (2026-09-27: there its velocity changed up to 6.0 px/s in a tick, 99 of 2461 ticks over 3).
+		if tang and (a.activity=="Resting" or landing and not _kin):
 			var was_v:=Vector2(a.get("vx",0.0),a.get("vy",0.0))
 			velocity=was_v+(velocity-was_v).limit_length(SEPARATE.jolt*1.2*delta)
 		var free: Vector2=p+velocity*delta
