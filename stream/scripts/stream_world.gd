@@ -52,7 +52,8 @@ const DEPTH: Dictionary = {"green_chromis":[180.0,430.0],"yellow_tang":[120.0,54
 # leader's heading) and hurries (`catch_up` x speed) when more than `regroup` px from it.
 # Members keep `spacing` px apart. A resting chromis within `hold` px of its spot stops steering
 # toward it and keeps its facing: it glides to a stop and hovers (2026-09-26, user: resting
-# chromis bobbed up and down at night from small repeated corrections).
+# chromis bobbed up and down at night from small repeated corrections); within `hold` px of the
+# spot's depth it never corrects its depth.
 const CHROMIS: Dictionary = {"spread":[34.0,80.0],"regroup":120.0,"catch_up":1.8,"spacing":36.0,"breathe":0.12,"hold":10.0}
 # A species is rescued from upstream only when it can no longer breed here: one or none left
 # (2026-09-24; was two, when each species had six places and two was a third of them).
@@ -108,7 +109,8 @@ const BODY: Dictionary = {"green_chromis":[68.0,39.0],"yellow_tang":[122.0,87.0]
 # Body separation between swimmers (2026-09-25, Codex recording: two tangs merged into one blob and
 # chromis swam straight through tangs). Each pair is measured in the ellipse of their combined
 # half bodies times `margin`; a fish reacts to where the pair will be up to `look` s ahead,
-# dodging mostly up or down (the upper fish rises), and never closes in once inside `close`.
+# dodging mostly up or down (the upper fish rises; a resting chromis slides sideways instead), and
+# never closes in once inside `close`.
 # A chromis gives way to a tang; a grazing tang holds its rock; chromis space themselves (CHROMIS).
 # A tang that just ate chews for `chew` s before chasing food again and skips pellets inside
 # another feeding tang's body, so two tangs take turns at a pinch instead of piling onto it.
@@ -490,6 +492,11 @@ func _move(delta: float) -> void:
 			target=_off_grazing_tangs(a,target,band)
 		# (Targets are always in the band; an edited one is aimed at the band edge.)
 		var offset: Vector2=Vector2(target.x,clampf(target.y,band[0],band[1]))-p
+		# A resting chromis already within `hold` px of its spot's depth never corrects its depth:
+		# having slid aside for a tang it glides straight back, level (2026-09-26).
+		var resting: bool=not tang and a.activity=="Resting"
+		if resting and absf(offset.y)<CHROMIS.hold:
+			offset.y=0.0
 		var gap: float=offset.length()
 		var cfg: Dictionary=SWIM[species]
 		var cruise: float=cfg.cruise*(0.82+0.36*float((int(a.id)*37)%101)/100.0)
@@ -503,7 +510,7 @@ func _move(delta: float) -> void:
 		# Arrive: never faster than the fish can brake to a stop at the target.
 		# (Chasing a sinking pellet it keeps closing in: no slower than twice the sink speed.)
 		var arrive: Vector2=offset/gap*minf(speed,maxf(sqrt(2.0*cfg.brake*gap),2.0*FOOD.sink if a.activity=="Feeding" else 0.0)) if gap>0.01 else Vector2.ZERO
-		var hovering: bool=not tang and a.activity=="Resting" and gap<CHROMIS.hold
+		var hovering: bool=resting and gap<CHROMIS.hold
 		if hovering:
 			arrive=Vector2.ZERO
 		# Everything else steering adds on top of arriving: rise and fall, spacing, dodging.
@@ -530,7 +537,12 @@ func _move(delta: float) -> void:
 		# Give way smoothly: the steering _avoid() adds is eased over about three ticks (0.3 a
 		# tick; 0.5 still let a chromis meeting a cruising tang flip up and down every tick,
 		# 2026-09-26), so a meeting reads as one sweeping dodge, not a twitch each tick.
-		var steer: Vector2=Vector2(a.get("avoid_x",0.0),a.get("avoid_y",0.0)).lerp(_avoid(a,p,arrive+desired,cruise)-arrive-desired,0.3)
+		var change: Vector2=_avoid(a,p,arrive+desired,cruise)-arrive-desired
+		# A resting chromis gives way only sideways (_avoid pushes it sideways; this drops the
+		# vertical part of holding back), so it never bobs for a passing tang (2026-09-26).
+		if resting:
+			change.y=0.0
+		var steer: Vector2=Vector2(a.get("avoid_x",0.0),a.get("avoid_y",0.0)).lerp(change,0.3)
 		# A grazing tang holds its rock: the eased give-way steering of its approach stops when it
 		# starts grazing (2026-09-27: it carried the tang up to 7 px off its hold).
 		if a.activity=="Grazing":
@@ -538,6 +550,8 @@ func _move(delta: float) -> void:
 		a.avoid_x=steer.x
 		a.avoid_y=steer.y
 		_dodge=minf(1.0,steer.length()/cruise)
+		# A resting chromis giving way slides on its pectorals, keeping its facing (_swim).
+		var slide: bool=resting and steer.length()>0.2
 		desired+=steer
 		# Soft edges: what steering adds toward a band edge or a side wall eases off over the last
 		# `edge` px (arriving already stops at its in-band target).
@@ -551,11 +565,11 @@ func _move(delta: float) -> void:
 			for sp: Array in TANG.spots:
 				if target==_tang_hold(sp,animal_scale(a)):
 					face=-sp[2]
-		elif hovering:
+		elif hovering or slide:
 			face=a.direction
 		elif follower and gap<40:
 			face=lead.direction
-		var velocity: Vector2=_swim(a,desired,speed,cruise,cfg,delta,a.activity=="Startled",face)
+		var velocity: Vector2=_swim(a,desired,speed,cruise,cfg,delta,a.activity=="Startled",face,slide)
 		var free: Vector2=p+velocity*delta
 		# Keep each fish in its own layer (the shoaling push once carried hatchetfish down).
 		var next: Vector2=free.clamp(Vector2(100,band[0]),Vector2(1180,band[1]))
@@ -586,7 +600,7 @@ func _move(delta: float) -> void:
 # the body follows burst-and-glide strokes (chromis) or smooth rowing (tang) against water drag,
 # with pectoral braking and, only at low speed, a little sculling that lets the fish settle
 # exactly. Returns the screen velocity (px/s); stores heading, pitch, speed, thrust and turn.
-func _swim(a: Dictionary, desired: Vector2, cap: float, cruise: float, cfg: Dictionary, delta: float, quick: bool, face: float) -> Vector2:
+func _swim(a: Dictionary, desired: Vector2, cap: float, cruise: float, cfg: Dictionary, delta: float, quick: bool, face: float, slide: bool = false) -> Vector2:
 	var psi: float=a.heading if a.has("heading") else (0.0 if a.direction>0 else PI)
 	var theta: float=a.get("pitch",0.0)
 	var s: float=a.speed if a.has("speed") else Vector2(a.get("vx",0.0),a.get("vy",0.0)).length()
@@ -611,7 +625,7 @@ func _swim(a: Dictionary, desired: Vector2, cap: float, cruise: float, cfg: Dict
 	# Headway: less while turning, hardly any while still facing away from the way to go.
 	# Headway: what lies ahead of the body (none while still facing away), and some to climb or dive.
 	var along: float=maxf(0.0,desired.x*cos(psi))+absf(desired.y)*0.6
-	along=minf(along,cruise*SWIM.startle_speed)
+	along=0.0 if slide else minf(along,cruise*SWIM.startle_speed)
 	var full: float=cfg.push*cfg.drag*maxf(cruise,1.0)
 	var thrust: float=a.get("thrust",0.0)
 	var accel: float
@@ -645,6 +659,10 @@ func _swim(a: Dictionary, desired: Vector2, cap: float, cruise: float, cfg: Dict
 	var miss: Vector2=desired-body
 	var ahead: Vector2=axis*miss.dot(axis)
 	var settle: float=slow if want<cfg.scull else 0.0
+	if slide:
+		# Sliding aside (a resting chromis giving way): no strokes, only the pectorals, now also
+		# along the body, as urgently as the dodge.
+		settle=maxf(settle,slow*_dodge)
 	var velocity: Vector2=body+ahead.limit_length(cfg.scull*settle)+(miss-ahead).limit_length(cfg.scull*maxf(urgent,slow))
 	a.heading=psi
 	a.pitch=theta
@@ -701,7 +719,16 @@ func _avoid(a: Dictionary, p: Vector2, desired: Vector2, speed: float) -> Vector
 		# A chromis darts clear of a tang (twice the push, dropping its own aim); a tang only
 		# eases around chromis (a third).
 		var gain: float=SEPARATE.gain*(_GIVE[a.species] if o.species!=a.species else 1.0)
-		push+=Vector2(side*0.5,up).normalized()*speed*gain*(1.0-q)
+		var away: Vector2=Vector2(side*0.5,up).normalized()
+		# A resting chromis slides sideways instead, away from the tang (ids break a tie), or
+		# toward the open side when the wall leaves it no room to clear the tang's space
+		# (2026-09-26, user: it bobbed up and down each time a tang passed its resting spot).
+		if a.species=="green_chromis" and a.activity=="Resting":
+			var way: float=side if side!=0.0 else (1.0 if a.id>o.id else -1.0)
+			if ((p.x-100.0) if way<0.0 else (1180.0-p.x))<r.x-absf(rel.x)+SWIM.edge:
+				way=-way
+			away=Vector2(way,0.0)
+		push+=away*speed*gain*(1.0-q)
 		_dodge=maxf(_dodge,(1.0-q)*minf(gain,1.0))
 		if a.species=="green_chromis" and o.species=="yellow_tang":
 			yielding=maxf(yielding,1.0-q)

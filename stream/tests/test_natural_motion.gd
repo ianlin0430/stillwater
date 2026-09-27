@@ -55,6 +55,7 @@ func _initialize() -> void:
 	firefish_checks()
 	tang_grazing_checks()
 	night_rest_checks()
+	wall_give_way_checks()
 	determinism_checks()
 	numbers.ms=Time.get_ticks_msec()-started
 	print(JSON.stringify({"checks":checks,"failures":failures,"numbers":numbers}))
@@ -367,12 +368,18 @@ func tang_grazing_checks() -> void:
 # resting fish turns back by at least 0.5 px from its last vertical extreme. Before the fix: worst
 # 4.06, mean 1.92 per minute (a resting leader crept to new spots, the slots breathed vertically,
 # and spacing and small arrival corrections fought each other).
+# Giving way (user 2026-09-26): a resting chromis yields to a passing tang by sliding sideways, not
+# up or down. A give-way episode is a run of ticks in which a resting fish is giving way (the same
+# avoid > 0.2 px/s as below) that starts while it rests (not the tail of a dodge it began while
+# swimming, which may still be up or down); over every episode that moves it at least 1 px, its
+# horizontal travel must exceed its vertical travel (thresholds from that spec, set before measuring).
 func night_rest_checks() -> void:
 	var worst: float=0.0
 	var total_rev: int=0
 	var own_rev: int=0
 	var total_min: float=0.0
 	var fast: float=0.0
+	var episodes: Array=[]
 	for seed_value: int in [42,812,240921]:
 		var w:=StreamWorld.new(seed_value,1000)
 		w.state.light_hour=1.0
@@ -382,12 +389,27 @@ func night_rest_checks() -> void:
 		var way: Dictionary={}
 		var revs: Dictionary={}
 		var rest: Dictionary={}
+		var at: Dictionary={}
+		var episode: Dictionary={}
+		var calm: Dictionary={}
 		for i in 3000:
 			w.advance_live(0.2)
 			for a: Dictionary in of(w,"green_chromis"):
+				var giving: bool=Vector2(a.get("avoid_x",0.0),a.get("avoid_y",0.0)).length()>0.2
 				# Last time it was giving way to a body (a tang swimming past).
-				if Vector2(a.get("avoid_x",0.0),a.get("avoid_y",0.0)).length()>0.2:
+				if giving:
 					dodged[a.id]=w.state.elapsed
+				var was: Vector2=at.get(a.id,Vector2(a.x,a.y))
+				at[a.id]=Vector2(a.x,a.y)
+				var settled: bool=calm.get(a.id,false)
+				calm[a.id]=a.activity=="Resting" and not giving
+				if giving and a.activity=="Resting":
+					if settled or episode.has(a.id):
+						var e: Vector2=episode.get(a.id,Vector2.ZERO)
+						episode[a.id]=e+Vector2(absf(a.x-was.x),absf(a.y-was.y))
+				elif episode.has(a.id):
+					episodes.append(episode[a.id])
+					episode.erase(a.id)
 				if a.activity!="Resting":
 					ext.erase(a.id)
 					continue
@@ -411,6 +433,7 @@ func night_rest_checks() -> void:
 						own_rev+=1
 					way[a.id]=-d
 					ext[a.id]=a.y
+		episodes.append_array(episode.values())
 		for id in rest:
 			if rest[id]>=60.0:
 				worst=maxf(worst,revs.get(id,0)/(rest[id]/60.0))
@@ -418,12 +441,43 @@ func night_rest_checks() -> void:
 			total_min+=rest[id]/60.0
 	var mean: float=total_rev/maxf(total_min,0.001)
 	var own: float=own_rev/maxf(total_min,0.001)
+	var moved: Array=episodes.filter(func(e: Vector2): return e.x+e.y>=1.0)
+	var upright: Array=moved.filter(func(e: Vector2): return e.x<=e.y)
+	var travel:=Vector2.ZERO
+	for e: Vector2 in moved: travel+=e
+	numbers.give_way={"episodes":moved.size(),"not_sideways":upright.size(),"horizontal_px":snappedf(travel.x,0.1),"vertical_px":snappedf(travel.y,0.1)}
 	numbers.night_rest={"worst_reversals_per_min":snappedf(worst,0.01),"mean_reversals_per_min":snappedf(mean,0.01),"mean_without_a_passing_body_per_min":snappedf(own,0.01),"resting_fish_minutes":snappedf(total_min,0.1),"max_vy":snappedf(fast,0.01)}
 	check(total_min>60.0,"Chromis rest at night (%.1f fish-minutes)" % total_min)
-	# Unprovoked up/down corrections are gone; what is left is a fish giving way to a tang
-	# swimming past and gliding back (within 5 s of that dodge), about once per pass.
+	# Unprovoked up/down corrections are gone. A resting fish now gives way to a tang sideways
+	# (2026-09-26: dodging up or down and gliding back left 0.94 worst / 0.24 mean per minute);
+	# what is left is the odd reversal within 5 s of a give-way.
 	check(own<=0.05,"Resting chromis never bob on their own (%.2f vertical reversals per minute away from a passing tang; was 1.92 in all)" % own)
-	check(worst<=1.0 and mean<=0.3,"Resting chromis reverse at most about once a minute even with tangs passing (worst %.2f, mean %.2f per minute; was 4.06 / 1.92)" % [worst,mean])
+	check(worst<=1.0 and mean<=0.2,"Resting chromis reverse at most about once a minute even with tangs passing (worst %.2f, mean %.2f per minute; was 4.06 / 1.92, then 0.94 / 0.24 dodging tangs up and down)" % [worst,mean])
+	check(not moved.is_empty() and upright.is_empty(),"A resting chromis gives way to a passing tang sideways, not up or down (%d of %d give-way episodes not mostly horizontal)" % [upright.size(),moved.size()])
+
+# A resting chromis beside a side wall, with a resting tang inside its space on the open side,
+# slides toward the open side (spec: the wall leaves it no room), level: over 20 s it moves at
+# least 1 px toward open water and never 0.5 px (one counted vertical move) up or down.
+func wall_give_way_checks() -> void:
+	var ok: bool=true
+	var shown: Array=[]
+	for side: float in [1.0,-1.0]:
+		var w:=StreamWorld.new(42,1000)
+		w.state.light_hour=1.0
+		var c: Dictionary=of(w,"green_chromis")[0]
+		var t: Dictionary=of(w,"yellow_tang")[0]
+		only(w,func(x): return x==c or x==t)
+		var cx: float=125.0 if side>0.0 else 1155.0
+		for k: Array in [[c,cx],[t,cx+side*80.0]]:
+			var a: Dictionary=k[0]
+			a.merge({"x":k[1],"y":300.0,"tx":k[1],"ty":300.0,"vx":0.0,"vy":0.0,"activity":"Resting","decision_at":w.state.elapsed+1000.0},true)
+		var drift: float=0.0
+		for i in 100:
+			w.advance_live(0.2)
+			drift=maxf(drift,absf(c.y-300.0))
+		ok=ok and (c.x-cx)*side>=1.0 and drift<0.5
+		shown.append("%.1f px, %.2f px" % [(c.x-cx)*side,drift])
+	check(ok,"A resting chromis by a wall slides toward the open side, level (toward open water, up/down: %s)" % ", ".join(shown))
 
 func determinism_checks() -> void:
 	var a:=StreamWorld.new(812,1000)
