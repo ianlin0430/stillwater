@@ -322,7 +322,7 @@ func _reef_interactions() -> void:
 	var app=load("res://scripts/main.gd").new()
 	app.world=StreamWorld.new(42,1000)
 	app.stage=stage
-	app.display=TextureRect.new()
+	app.display=PixelDisplay.new()
 	app.display.size=Vector2(1280,720)
 	var click:=InputEventMouseButton.new()
 	click.button_index=MOUSE_BUTTON_LEFT

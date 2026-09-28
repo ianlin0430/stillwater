@@ -1,6 +1,6 @@
 class_name ReefAquascape
 extends Node2D
-const BACKGROUND=preload("res://assets/aquascape/shipwreck-background-v1.png")
+const BACKGROUND=preload("res://assets/aquascape/shipwreck-background-v2.png")
 var clock: float=0
 var current: float=0
 var plants: Array[AquascapePlant]=[]

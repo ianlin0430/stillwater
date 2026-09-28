@@ -49,20 +49,20 @@ func _draw() -> void:
   for branch in 7:
    var base:=Vector2((branch-3)*5,0)
    var tip:=Vector2((branch-3)*12,-height*(.6+float(branch%3)*.18))
-   _ribbon(base,tip,8,Color("80466b") if branch%2 else Color("a95d79"))
+   _ribbon(base,tip,14,Color("795e77") if branch%2 else Color("a5788c"))
    for j in 4:
     var t: float=.28+j*.15
     var root: Vector2=base.lerp(tip,t)
     var direction: float=-1 if (j+branch)%2 else 1
-    _ribbon(root,root+Vector2(direction*(14+j*2),-20),6,Color("bb758c"))
+    _ribbon(root,root+Vector2(direction*(14+j*2),-24),12,Color("be91a0"))
  else:
-  var palette: Array[Color]=[Color("236b65"),Color("368975"),Color("58a482"),Color("89ba8b")]
+  var palette: Array[Color]=[Color("386f70"),Color("578c80"),Color("7aa58f"),Color("9ab7a0")]
   for blade in (7 if kind=="grass" else 6):
    var h: float=height*(.57+float((blade*3)%7)*.07)
    var lean: float=(blade-2.5)*(12 if kind=="ribbon" else 7)
-   _ribbon(Vector2((blade-2.5)*4,0),Vector2(lean,-h),19 if kind=="ribbon" else 8,palette[blade%3])
+   _ribbon(Vector2((blade-2.5)*4,0),Vector2(lean,-h),28 if kind=="ribbon" else 12,palette[blade%3])
    if kind=="ribbon":
-    _ribbon(Vector2((blade-2.5)*4+2,-3),Vector2(lean+2,-h+8),4,palette[3]*Color(1,1,1,.65))
+    _ribbon(Vector2((blade-2.5)*4+2,-3),Vector2(lean+2,-h+8),6,palette[3]*Color(1,1,1,.65))
 
 func _ribbon(base: Vector2, tip: Vector2, width: float, tint: Color) -> void:
  var points:=PackedVector2Array()

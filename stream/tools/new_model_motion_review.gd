@@ -139,6 +139,7 @@ func record(species: String) -> void:
    rig.modulate.a=1.0
    rig.position=at
    rig.face_target=row.direction
+   if side==1: rig.curiosity_target=at+Vector2(70,-36) if row.activity=="Curious" else Vector2.INF
    if frame%6==0: rig.apply_actor(row)
    if bite:
     if side==0: rig.consume_food()

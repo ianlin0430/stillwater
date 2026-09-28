@@ -1,9 +1,22 @@
-class_name ReefRig
+# Retired 2026-09-28. Comparison recorder only; never instantiate in the app.
 extends SwimmerRig
 # GPU-articulated soft-pixel actor. Snapshot positions and ecology stay untouched.
 const ATLAS: Texture2D=preload("res://assets/reef/fish-atlas-low-pixel-v1.png")
+const TURN_ATLAS: Texture2D=preload("res://assets/reef/fish-turns-low-pixel-v2.png")
+const TURN_REGIONS={
+ "yellow_tang":[Rect2(407,17,307,270),Rect2(878,16,260,263)],
+ "purple_firefish":[Rect2(424,284,306,275),Rect2(910,288,201,271)],
+ "lawnmower_blenny":[Rect2(429,568,295,199),Rect2(858,571,299,188)],
+ "green_chromis":[Rect2(418,774,310,240),Rect2(885,778,244,231)]}
+const TURN_MOUTH={
+ "yellow_tang":[Vector2(.968,.611),Vector2(.50,.665)],
+ "purple_firefish":[Vector2(.958,.640),Vector2(.48,.64)],
+ "lawnmower_blenny":[Vector2(.946,.573),Vector2(.50,.53)],
+ "green_chromis":[Vector2(.94,.59),Vector2(.49,.60)]}
+var turn_sprite: Sprite2D
+var turn_view: int=0
 const EEL: Texture2D=preload("res://assets/reef/garden-eel-v1.png")
-const REEF_SHADER: Shader=preload("res://scripts/reef_motion.gdshader")
+const REEF_SHADER: Shader=preload("res://tools/review_fixtures/front_turn_motion.gdshader")
 const REEF_SPECIES: Array[String]=["garden_eel","lawnmower_blenny","purple_firefish","green_chromis","yellow_tang"]
 const LOOK: Dictionary={
 	"yellow_tang":{"region":Rect2(134,104,537,413),"width":122.0,"line":0.62},
@@ -116,6 +129,16 @@ func _ready() -> void:
 	fish_material.set_shader_parameter("blenny",species=="lawnmower_blenny")
 	fish.material=fish_material
 	add_child(fish)
+	if species!="garden_eel":
+		turn_sprite=Sprite2D.new()
+		turn_sprite.texture=TURN_ATLAS
+		turn_sprite.region_enabled=true
+		var cutout:=Shader.new()
+		cutout.code="shader_type canvas_item; void fragment(){vec4 t=texture(TEXTURE,UV);if(t.a<.86)discard;COLOR.a*=smoothstep(.86,.97,t.a)/max(t.a,.001);}"
+		turn_sprite.material=ShaderMaterial.new()
+		turn_sprite.material.shader=cutout
+		turn_sprite.visible=false
+		add_child(turn_sprite)
 	if species=="purple_firefish" and not detached:
 		portal=BurrowPortal.new()
 		add_child(portal)
@@ -245,12 +268,12 @@ func animate(delta: float) -> void:
 	var desired_follow: Vector2=Vector2(clampf(-velocity.x*.035,-1.8,1.8),clampf(-velocity.y*.025,-1.2,1.2)) if species in ["green_chromis","yellow_tang"] and activity!="Grazing" else Vector2.ZERO
 	follow_offset=follow_offset.lerp(desired_follow,1-exp(-delta*7))
 	if activity!="Grazing": visual_offset=follow_offset
-	visual_pitch=pose.pitch*facing
+	visual_pitch=pose.pitch*(1 if facing>=0 else -1)
 	contact_projection=1
 	var gaze_goal: float=0
 	if activity=="Curious" and species in ["green_chromis","yellow_tang"] and curiosity_target.is_finite() and not dying:
 		var gaze: Vector2=curiosity_target-position
-		gaze_goal=clampf(atan2(gaze.y,maxf(absf(gaze.x),24)),-.22,.22)*facing
+		gaze_goal=clampf(atan2(gaze.y,maxf(absf(gaze.x),24)),-.22,.22)*(1 if facing>=0 else -1)
 	curiosity_pitch=lerpf(curiosity_pitch,gaze_goal,1-exp(-delta*5))
 	visual_pitch+=curiosity_pitch
 	if species=="lawnmower_blenny":
@@ -311,6 +334,26 @@ func animate(delta: float) -> void:
 		else: arrival_age=-1
 	body_visible=not (species in ["garden_eel","purple_firefish"] and extension<=0.001 and arrival_age<0)
 	fish.visible=body_visible
+	if turn_sprite!=null:
+		# Exclusive registered poses: never crossfade two sets of eyes.
+		var angle_width: float=absf(facing)
+		if angle_width>.84: turn_view=0
+		elif angle_width<.27: turn_view=2
+		elif angle_width<.78 and angle_width>.33: turn_view=1
+		turn_sprite.visible=body_visible and turn_view>0
+		if turn_sprite.visible:
+			fish.visible=false
+			var region: Rect2=TURN_REGIONS[species][turn_view-1]
+			turn_sprite.region_rect=region
+			var h: float=extent.y/region.size.y
+			var projected_width: float=extent.x*maxf(.32,angle_width)
+			turn_sprite.scale=Vector2(projected_width/region.size.x*(1.0 if facing>=0 else -1.0),h)
+			turn_sprite.rotation=visual_pitch
+			# Register the mouth to the same projected head trajectory in every view.
+			var mouth: Vector2=(TURN_MOUTH[species][turn_view-1]-Vector2(.5,.5))*region.size*turn_sprite.scale
+			var head:=Vector2(extent.x*.46*facing,0)
+			turn_sprite.position=visual_offset+(head-mouth).rotated(visual_pitch)
+			turn_sprite.modulate=Color(dim,dim,dim,1)
 
 	selection_offset=Vector2(facing*6,-extent.y*extension*0.65) if species=="garden_eel" else visual_offset
 	fish_material.set_shader_parameter("phase",water_phase)

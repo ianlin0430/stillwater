@@ -24,6 +24,7 @@ var motes: Node2D
 var water_material: ShaderMaterial
 var habitat: Node2D
 var interaction_enabled: bool=true
+var curiosity_target:=Vector2.INF
 var interaction_layer: Node2D
 
 func _ready() -> void:
@@ -133,6 +134,7 @@ func animate(delta: float) -> void:
 	smoother.advance(delta)
 	for id: int in rigs.keys():
 		var rig: Node2D = rigs[id]
+		rig.curiosity_target=curiosity_target
 		if deaths.has(id):
 			var death: Dictionary=deaths[id]
 			death.age+=maxf(delta,0)

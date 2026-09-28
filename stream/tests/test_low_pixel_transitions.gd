@@ -29,6 +29,10 @@ func run() -> void:
   rig.apply_actor({"activity":"Cruising","heading":0.,"speed":40.,"thrust":1.,"extend":1.,"vx":20.,"vy":0.})
   for i in 30: rig.animate(1./30)
   rig.begin_death()
+  rig.animate(1./30)
+  var dying_effort: float=rig.effort
+  rig.animate(0)
+  check(rig.effort==dying_effort,species+" pause freezes active death slowdown")
   for i in 60: rig.animate(1./30)
   check(rig.effort<.002 and rig.pectoral_effort<.002 and float(rig.fish_material.get_shader_parameter("tail_drive"))<.002,species+" death stops propulsion")
   rig.free()
@@ -49,6 +53,11 @@ func run() -> void:
   fire.animate(1./30)
   rebound=rebound or fire.ray_flick<-.005
  check(rebound,"Dorsal spring rebounds after its peak")
+ fire.apply_actor({"activity":"Hovering","heading":0.,"extend":1.,"hover_y":45.})
+ for i in 60: fire.animate(1./30)
+ fire.apply_actor({"activity":"Hiding","heading":0.,"extend":0.,"hover_y":45.})
+ for i in 18: fire.animate(1./30)
+ check(fire.extension<.001,"Startled dive finishes within 0.6 seconds")
  fire.free()
  var tang=load("res://artifacts/new-model-motion-review/before_rig.gd").new() if "--before" in OS.get_cmdline_user_args() else ReefRig.new()
  tang.species="yellow_tang"
@@ -58,15 +67,37 @@ func run() -> void:
  tang.apply_actor({"activity":"Grazing","heading":0.,"pitch":0.,"contact_x":61.,"contact_y":6.,"roll":0.})
  tang.animate(1./30)
  check(tang.visual_pitch>0 and tang.visual_pitch<.05,"Tang contact pitch eases on first grazing frame")
+ tang.apply_actor({"activity":"Curious","heading":0.,"pitch":0.,"speed":0.,"thrust":0.})
+ if tang.get("curiosity_target")!=null: tang.set("curiosity_target",Vector2(100,-50))
+ for i in 30: tang.animate(1./30)
+ check(tang.visual_pitch<-.1,"Curious tang tilts toward the pointer above it")
+ var held_pitch: float=tang.visual_pitch
+ tang.animate(0)
+ check(tang.visual_pitch==held_pitch,"Pause freezes curious head tilt")
  tang.free()
+ var blenny:=ReefRig.new()
+ blenny.species="lawnmower_blenny"
+ root.add_child(blenny)
+ blenny.apply_actor({"activity":"Perching","heading":0.,"speed":0.,"thrust":0.})
+ blenny.animate(1./30)
+ check(blenny.shadow_alpha>0 and blenny.shadow_alpha<.18,"Contact shadow fades in on first grounded frame")
+ var shadow: float=blenny.shadow_alpha
+ blenny.animate(0)
+ check(blenny.shadow_alpha==shadow,"Pause freezes an active shadow fade")
+ blenny.free()
  var stage:=StreamStage.new()
  root.add_child(stage)
  var world:=StreamWorld.new(42,1000)
  stage.apply_snapshot(world.snapshot())
+ var phases: Array=[]
+ for rig: ReefRig in stage.rigs.values(): phases.append([rig.breath_clock,rig.eye_clock,rig.body_scale,rig.sleep_blend,rig.shadow_alpha,rig.effort])
  stage.hide()
  var held_clock: float=stage.water_clock
  stage.animate(1)
  check(stage.water_clock==held_clock,"Hidden stage stops all animation clocks")
+ var hidden_phases: Array=[]
+ for rig: ReefRig in stage.rigs.values(): hidden_phases.append([rig.breath_clock,rig.eye_clock,rig.body_scale,rig.sleep_blend,rig.shadow_alpha,rig.effort])
+ check(phases==hidden_phases,"Hidden stage freezes every rig transition")
  stage.free()
  print(JSON.stringify({"checks":checks,"failures":failures}))
  quit(0 if failures.is_empty() else 1)

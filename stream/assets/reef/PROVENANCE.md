@@ -1,5 +1,7 @@
 # Reef source artwork
 
+**2026-09-28 redesign:** production now uses the approved side atlas only. Both `fish-turns-low-pixel-v1.png` and `v2.png` are retired comparison sources, never loaded by `scripts/reef_rig.gd`. The v2 rig/shader snapshot lives only in `tools/review_fixtures/` for the before/after recording. The pending new cast board and full generation prompt are in `tools/art_candidates/REDESIGN_FISH.md`; no new fish is installed in the app.
+
 Generated with OpenAI imagegen on 2026-09-24. Atlas regions are animated by `reef_rig.gd`; no raster postprocessing was used. The shader clips generated translucent edge halos. Earlier numbered cast boards are concept references, not runtime assets.
 
 - `background-v1.png`: source `exec-c2a96458-47a1-4737-a5b2-69e809235922.png`.
@@ -36,3 +38,11 @@ Initial prompt (reference: approved `fish-atlas-low-pixel-v1.png`):
 The first result was still too close to profile. Final edit prompt (reference: initial output `exec-0aa6c766-92d6-4671-bd08-406a87fc71c2.png`):
 
 > Revise this sprite sheet. Keep all four RIGHT column front-facing sprites exactly. Change ONLY LEFT column fish into unmistakable 45-degree THREE QUARTER views turning toward camera: tails behind and to left, bodies strongly foreshortened to about 60 percent current width, noses pointing diagonally toward viewer/right, far eye partly visible on far side of snout, near eye dominant. Do not draw side/profile view. Keep same coarse chunky pixel style and same identities and colors, all four rows same layout. Transparent background without glow. Eight sprites total, same positions. This is animation turn reference side-to-front midpoint, must actually depict depth.
+
+## Turn atlas v2 — 2026-09-28
+
+Built-in imagegen edit, copied unchanged from `exec-b175eaec-2b11-4a0e-8cce-2641e7635b3d.png` to `fish-turns-low-pixel-v2.png`. References: turn atlas v1 (edit target), approved side atlas v1 (identity reference). Side atlas and LOOK stay unchanged. The previous turn candidate exaggerated eyes; v2 restores smaller pixel eyes and fish mouths. Crops and mouth anchors were remeasured. Transparency is preserved; runtime discards low-alpha halo pixels.
+
+Prompt:
+
+> Edit target image 1: correct the eight fish turn sprites to match approved fish identities in reference image 2. Preserve EXACT canvas size 1536x1024, each sprite position, silhouette extent, mouth location, row and column layout: four rows yellow tang / purple firefish / lawnmower blenny / green chromis, left column three-quarter right-facing view, right column frontal view. Change faces and internal pattern ONLY. The eyes in image 1 are much too large and make these look like baby cartoon fish. Make each eye approximately HALF its current diameter, small square dark eye with single coarse white highlight like image 2. Remove human-like wide red open mouths, replace with tiny closed fish mouths in the same locations. Keep true fish species anatomy and muted broad body blocks matching image 2, avoid chibi or baby proportions. No new fish, no lettering, no extra rows, no labels. Crisp coarse pixel artwork, fully transparent background, no halos, glow or shadows. Preserve overall sprite geometry so existing animation regions still apply.

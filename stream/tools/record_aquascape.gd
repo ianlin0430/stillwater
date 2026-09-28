@@ -1,7 +1,9 @@
 extends SceneTree
-const OUT="res://artifacts/aquascape-preview/"
+var OUT="res://artifacts/aquascape-preview/"
 func _initialize() -> void: call_deferred("run")
 func run() -> void:
+ for arg in OS.get_cmdline_user_args():
+  if arg.begins_with("--output="): OUT=arg.trim_prefix("--output=").trim_suffix("/")+"/"
  Engine.max_fps=0
  var view:=SubViewport.new()
  view.size=Vector2i(1280,720)

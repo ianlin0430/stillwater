@@ -8,7 +8,7 @@ const Absence=preload("res://scripts/absence.gd")
 var world: StreamWorld
 var viewport: SubViewport
 var stage: StreamStage
-var display: TextureRect
+var display: PixelDisplay
 var title: Label
 var status: Label
 var climate: Label
@@ -173,20 +173,20 @@ func _setup_ui() -> void:
 	header.add_child(pause_button)
 	header.add_child(_button("−",func() -> void: _zoom(-0.15),"Zoom out · minus"))
 	header.add_child(_button("+",func() -> void: _zoom(0.15),"Zoom in · plus"))
+	header.add_child(_button("⛶",_toggle_fullscreen,"F11 · toggle fullscreen"))
 	header.add_child(_button("?",func() -> void: help_panel.visible=not help_panel.visible,"Controls and this world"))
 	viewport=SubViewport.new()
-	viewport.size=Vector2i(960,540)
+	viewport.size=PixelDisplay.RESOLUTION
+	viewport.snap_2d_transforms_to_pixel=true
 	viewport.disable_3d=true
 	viewport.render_target_update_mode=SubViewport.UPDATE_ALWAYS
 	add_child(viewport)
-	viewport.canvas_transform=Transform2D(Vector2(0.75,0),Vector2(0,0.75),Vector2.ZERO)
+	viewport.canvas_transform=Transform2D(Vector2(0.5,0),Vector2(0,0.5),Vector2.ZERO)
 	stage=StreamStage.new()
 	viewport.add_child(stage)
-	display=TextureRect.new()
+	display=PixelDisplay.new()
 	display.texture_filter=CanvasItem.TEXTURE_FILTER_NEAREST
 	display.texture=viewport.get_texture()
-	display.expand_mode=TextureRect.EXPAND_IGNORE_SIZE
-	display.stretch_mode=TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	display.size_flags_vertical=Control.SIZE_EXPAND_FILL
 	display.gui_input.connect(_scene_input)
 	base.add_child(display)
@@ -215,7 +215,7 @@ func _setup_ui() -> void:
 	var help_box := VBoxContainer.new()
 	help_panel.add_child(help_box)
 	var help_text := Label.new()
-	help_text.text="A small reef beneath the surface\n\nClick an animal to read its story.\nDrag through water or plants to feel the current.\nR makes a ripple without the mouse.\nClick Feed, or press F, for a pinch of food (a few pinches a day).\nClick Tap, or press T, to tap the glass.\nRest the pointer in the water and curious fish may come to look.\nScroll or use + / − to look closer. Tab selects the next animal.\nSpace pauses; Escape returns to the whole pool.\nL switches the viewing light.\n\nNatural food, arrivals, births and departures need no care;\nfeeding is a treat, never required.\nThe world advances while you’re away, up to three days.\nNothing runs on your Mac after you quit.\n\nReal species, a fictional shared habitat.\nQuiet mode: 30 FPS. Saves are automatic."
+	help_text.text="A small reef beneath the surface\n\nClick an animal to read its story.\nDrag through water or plants to feel the current.\nR makes a ripple without the mouse.\nClick Feed, or press F, for a pinch of food (a few pinches a day).\nClick Tap, or press T, to tap the glass.\nRest the pointer in the water and curious fish may come to look.\nScroll or use + / − for 1× / 2× zoom. Tab selects the next animal.\nSpace pauses; Escape returns to the whole pool.\nL switches the viewing light. F11 toggles fullscreen.\n\nNatural food, arrivals, births and departures need no care;\nfeeding is a treat, never required.\nThe world advances while you’re away, up to three days.\nNothing runs on your Mac after you quit.\n\nReal species, a fictional shared habitat.\nQuiet mode: 30 FPS. Saves are automatic."
 	help_text.add_theme_font_size_override("font_size",13)
 	help_box.add_child(help_text)
 	help_box.add_child(_button("Back to the reef",func() -> void: help_panel.hide()))
@@ -254,12 +254,10 @@ func _panel(at: Vector2, minimum: Vector2) -> PanelContainer:
 
 func _scene_input(event: InputEvent) -> void:
 	# Frontend-only interactions. Mouse coordinates account for letterboxing and zoom.
-	var fit: float=minf(display.size.x/1280,display.size.y/720)
-	if fit<=0: return
-	var offset: Vector2=(display.size-Vector2(1280,720)*fit)/2
 	if event is InputEventMouse:
-		var point: Vector2=(event.position-offset)/fit
+		var point: Vector2=display.world_point(event.position)
 		_world_pointer(event,point)
+		stage.curiosity_target=(point-stage.position)/stage.zoom if Rect2(0,0,1280,720).has_point(point) and stage.control_at(point).is_empty() else Vector2.INF
 		if not Rect2(0,0,1280,720).has_point(point): return
 		if event is InputEventMouseMotion:
 			display.tooltip_text=stage.describe_environment(point)
@@ -322,11 +320,15 @@ func _select(id: int) -> void:
 	_refresh_info()
 
 func _zoom(amount: float) -> void:
-	stage.zoom=clampf(stage.zoom+amount,1,1.65)
+	stage.zoom=clampf(stage.zoom+signf(amount),1,2)
 	if selected>=0 and stage.rigs.has(selected):
 		stage.center=stage.rigs[selected].position
 	if stage.zoom<=1:
 		stage.center=Vector2(640,360)
+
+func _toggle_fullscreen() -> void:
+	var full: bool=DisplayServer.window_get_mode() in [DisplayServer.WINDOW_MODE_FULLSCREEN,DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN]
+	DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED if full else DisplayServer.WINDOW_MODE_FULLSCREEN)
 
 func _toggle_light() -> void:
 	viewing_light=not viewing_light
@@ -344,6 +346,9 @@ func _toggle_pause() -> void:
 func _input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
 		match event.keycode:
+			KEY_F11:
+				_toggle_fullscreen()
+				get_viewport().set_input_as_handled()
 			KEY_SPACE:
 				_toggle_pause()
 				get_viewport().set_input_as_handled()

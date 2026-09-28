@@ -89,7 +89,7 @@ func run() -> void:
 	blenny.apply_actor(hop_probe)
 	for i in 6: blenny.animate(1.0/30)
 	check(blenny.hop_height>0,"Stopping movement completes the landing arc instead of snapping the body to the sand")
-	for i in 6: blenny.animate(1.0/30)
+	for i in 3: blenny.animate(1.0/30)
 	check(blenny.hop_height==0,"First hop lands before queued stronger thrust begins")
 	for i in 8: blenny.animate(1.0/30)
 	check(blenny.hop_height>0,"Stronger airborne thrust is queued for the next complete hop")
