@@ -1,0 +1,80 @@
+{
+ "name": "mf1.2-8/3/4/3",
+ "active": [
+  "green_chromis",
+  "clownfish",
+  "seahorse",
+  "royal_gramma"
+ ],
+ "cap": {
+  "green_chromis": 8,
+  "clownfish": 3,
+  "seahorse": 4,
+  "royal_gramma": 3
+ },
+ "species": {
+  "clownfish": {
+   "label": "Clownfish",
+   "latin": "Amphiprion ocellaris",
+   "initial": 2,
+   "mature": 45.0,
+   "lifespan": 300.0,
+   "body": 0.6,
+   "reserve": 4.0,
+   "cost": 0.2,
+   "bite": 0.5,
+   "brood": 2,
+   "breed": 0.06,
+   "cooldown": 12.0,
+   "pool": "microfauna",
+   "k_food": 10.0
+  },
+  "seahorse": {
+   "label": "Seahorse",
+   "latin": "Hippocampus kuda",
+   "initial": 2,
+   "mature": 60.0,
+   "lifespan": 300.0,
+   "body": 0.5,
+   "reserve": 3.5,
+   "cost": 0.16,
+   "bite": 0.4,
+   "brood": 2,
+   "breed": 0.05,
+   "cooldown": 14.0,
+   "pool": "microfauna",
+   "k_food": 10.0
+  },
+  "royal_gramma": {
+   "label": "Royal gramma",
+   "latin": "Gramma loreto",
+   "initial": 2,
+   "mature": 40.0,
+   "lifespan": 240.0,
+   "body": 0.4,
+   "reserve": 3.0,
+   "cost": 0.16,
+   "bite": 0.4,
+   "brood": 2,
+   "breed": 0.07,
+   "cooldown": 10.0,
+   "pool": "microfauna",
+   "k_food": 10.0
+  }
+ },
+ "initial": {
+  "green_chromis": 6
+ },
+ "stream_in": {
+  "nutrients": 0.7,
+  "microfauna": 1.2
+ },
+ "opening_age": {
+  "fish": [
+   40.0,
+   150.0
+  ]
+ },
+ "rescue_at": 1,
+ "floor": 0.1
+}

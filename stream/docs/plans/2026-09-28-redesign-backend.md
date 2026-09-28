@@ -477,7 +477,7 @@
 - 完成：`test_scene_data` 綠；`test_world` 綠（證明沒動到世界）；`tools/scene_overlay.gd` 輸出兩張對照 PNG 到 `artifacts/scene-overlay/`；**匯出一次 macOS 包**確認 `data/*.json` 在 pck 裡（例如用 `--export-pack` 後列出內容）。
 - Codex：**H1**——請 Codex 看 overlay、確認格式與座標系，之後由 Codex 填正式座標。
 
-**S2 新陣容生態探測（只量不改世界）**
+**S2 新陣容生態探測（只量不改世界）**　〔進度：2026-09-28 完成。判準 `68b9fc6` 先 commit；結果在 `docs/ecology.md`「Reef v3 cast sizing」：`STREAM_IN.microfauna`=1.2、上限 8/3/4/3=18、開場 6/2/2/2、繁殖照原設計；32 seed × 180 天與 365 天全過（最差 seed 13，microfauna 最低 10.89）。1.35 在 seed 23 不過 C3，沒有更高的備援。工具：`tools/probes/s2_sweep.py`、`tools/probes/2026-09-28-s2-chosen.json`〕
 - 目標：定出 `STREAM_IN.microfauna`、三種新魚的 `SPECIES` 數值、`CAP`、開場、`OPENING_AGE`；判準先寫。
 - 檔案：`tools/probes/2026-09-28-*.json`（探測設定）、`docs/ecology.md`（新章節：判準、表格、選擇理由）。
 - 先寫的「失敗測試」：判準章節先 commit（不含結果），之後才跑探測；表格只填跑出來的數字。

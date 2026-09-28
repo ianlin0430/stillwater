@@ -45,15 +45,21 @@ def run(args):
         json.dump(cfg, f)
     cmd = ["godot", "--headless", "--path", STREAM, "--script", "tools/cast_probe.gd", "--", "--config=" + f.name,
            "--seeds=" + opt(args, "seeds"), "--days=" + opt(args, "days", "180"), "--mid=" + opt(args, "mid", "0")]
-    out = subprocess.run(cmd, capture_output=True, text=True, timeout=int(opt(args, "timeout", "3000")))
-    os.unlink(f.name)
-    lines = [l for l in out.stdout.splitlines() if l.startswith("{")]
-    bad = [l for l in (out.stdout + out.stderr).splitlines() if "SCRIPT ERROR" in l or "Parse Error" in l]
-    if out.returncode != 0 or bad or not lines:
-        sys.exit("probe failed (%d): %s" % (out.returncode, (bad or [out.stderr[-500:]])[0]))
+    # Each seed's JSON line is appended as soon as it is printed, so a stopped batch keeps its finished seeds.
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    lines, bad = 0, []
     with open(opt(args, "log"), "a") as log:
-        for l in lines:
-            log.write(l + "\n")
+        for l in proc.stdout:
+            if l.startswith("{"):
+                log.write(l)
+                log.flush()
+                lines += 1
+            elif "SCRIPT ERROR" in l or "Parse Error" in l:
+                bad.append(l.strip())
+    proc.wait()
+    os.unlink(f.name)
+    if proc.returncode != 0 or bad or not lines:
+        sys.exit("probe failed (%d): %s" % (proc.returncode, (bad or ["no output"])[0]))
 
 
 # --- criteria (docs/ecology.md, C1-C6) ---
