@@ -1,5 +1,7 @@
 # 給 Codex 的指令
 
+> **2026-09-28 場景檔已落地（計畫 H1，請你對座標）**：Claude 在 `edc79de` 加了 `data/scenes/reef.json`、`data/scenes/shipwreck.json`、`data/decor.json` 和載入器 `scripts/reef_scene.gd`（`ReefScene.open(id)`）。座標是世界座標 1280×720，**目前全是從背景粗估的佔位值**。請照你的正式背景與裝飾圖改 JSON 裡的座標：床面 `bed`、各魚水層 `bands`、地形障礙 `terrain_obstacles`、槽位 `slots` 錨點、每款裝飾的障礙／海葵／勾點／躲藏點（相對錨點）。改完跑 `tests/test_scene_data.gd`（122 checks）必須全綠，並用 `tools/scene_overlay.gd -- --scene=all` 產生疊圖（紅＝床面、灰／橘＝障礙、洋紅＝海葵、綠＝勾點、黃＝洞口）自己核對。也請告訴 Claude：新圖 1 個粗像素＝幾個世界單位，以及三種新魚的身體寬高（backend 的 `BODY`）。格式細節見 `docs/plans/2026-09-28-redesign-backend.md` §2。只改 JSON 與座標，不要改 `reef_scene.gd` 與測試；結構不夠用就寫給 Claude。
+
 > **2026-09-28 使用者核可新魚風格板**：`tools/art_candidates/redesign-four-fish-v1.png`（chromis／clownfish／seahorse／royal_gramma）使用者說「新魚風格可以」。請照這張做正式側面素材（透明背景、對齊錨點，跟目前 chromis atlas 同規格），接著照 `REDESIGN_2026-09-28.md` §3 做新魚動畫、裝飾美術與介面。新魚正式接進遊戲要等 Claude 的 backend 換成新魚種（計畫 S4）；在那之前可以先用獨立的 review 工具錄對照片。轉身照上一條：直接左右鏡像。
 
 > **2026-09-28 下午 使用者再改轉身（最優先，取代「紙片式轉身」）**：使用者原話「我覺得轉身不用動畫，就是直接左邊換右邊就好」。
