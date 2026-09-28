@@ -1,24 +1,17 @@
 class_name StreamWorld
 extends RefCounted
 
-const VERSION: int = 2
+# World v3 (2026-09-28): Stillwater Reef starts a new world; older formats are not read (StreamStore).
+const VERSION: int = 3
 const MAX_ANIMALS: int = 24
 const MAX_AWAY: float = 259200.0
 const DAY: float = 86400.0
 const ACTIVE_SPECIES: Array[String] = ["lawnmower_blenny","purple_firefish","green_chromis","yellow_tang"]
 const SPECIES: Dictionary = {
-	# Legacy entries: garden eel (2026-09-25), threadfin (2026-09-24), hatchetfish and shrimp (2026-09-23) and
-	# crayfish (2026-09-22) were removed from the cast; kept only so older saves validate, upgrade and still show their history.
-	"shrimp": {"label":"Cherry shrimp","latin":"Neocaridina davidi","initial":0,"mature":21.0,"lifespan":120.0,"body":0.3,"reserve":3.0,"cost":0.22,"bite":0.5,"brood":2,"breed":0.12,"cooldown":7.0,"pool":"biofilm"},
-	"crayfish": {"label":"Blue crayfish","latin":"Procambarus alleni","initial":0,"mature":35.0,"lifespan":540.0,"body":3.0,"reserve":12.0,"cost":0.65,"bite":1.2,"brood":2,"breed":0.035,"cooldown":21.0,"pool":"detritus"},
-	"threadfin": {"label":"Threadfin rainbowfish","latin":"Iriatherina werneri","initial":0,"mature":28.0,"lifespan":180.0,"body":0.7,"reserve":4.0,"cost":0.3,"bite":0.7,"brood":2,"breed":0.06,"cooldown":10.0,"pool":"microfauna","k_food":10.0},
-	"hatchet": {"label":"Marbled hatchetfish","latin":"Carnegiella strigata","initial":0,"mature":28.0,"lifespan":180.0,"body":0.8,"reserve":4.0,"cost":0.32,"bite":0.75,"brood":2,"breed":0.04,"cooldown":14.0,"pool":"microfauna","k_food":10.0},
-	# Added 2026-09-23, removed 2026-09-25 (user decision: no garden eels). Legacy entry.
-	"garden_eel": {"label":"Spotted garden eel","latin":"Heteroconger hassi","initial":0,"mature":90.0,"lifespan":365.0,"body":0.9,"reserve":5.0,"cost":0.22,"bite":0.55,"brood":2,"breed":0.04,"cooldown":20.0,"pool":"microfauna","k_food":10.0},
 	# Stillwater Reef cast (user decision 2026-09-24). Authored rates; sizing in docs/ecology.md.
 	"lawnmower_blenny": {"label":"Lawnmower blenny","latin":"Salarias fasciatus","initial":2,"mature":45.0,"lifespan":240.0,"body":0.8,"reserve":4.5,"cost":0.24,"bite":0.6,"brood":2,"breed":0.07,"cooldown":12.0,"pool":"biofilm","k_food":10.0},
 	# Purple firefish replaced the red firefish (N. magnifica, key "firefish") on 2026-09-24, before any
-	# user save held one, so the red key was dropped rather than kept as a legacy entry.
+	# user save held one, so the red key was dropped.
 	"purple_firefish": {"label":"Purple firefish","latin":"Nemateleotris decora","initial":2,"mature":35.0,"lifespan":200.0,"body":0.5,"reserve":3.5,"cost":0.18,"bite":0.45,"brood":2,"breed":0.08,"cooldown":10.0,"pool":"microfauna","k_food":10.0},
 	"green_chromis": {"label":"Green chromis","latin":"Chromis viridis","initial":6,"mature":30.0,"lifespan":180.0,"body":0.5,"reserve":3.5,"cost":0.2,"bite":0.5,"brood":2,"breed":0.1,"cooldown":8.0,"pool":"microfauna","k_food":10.0},
 	# Added 2026-09-24 (user decision): the largest fish of the pool, a biofilm grazer beside the
@@ -31,10 +24,8 @@ const SPECIES: Dictionary = {
 # two are the only places the cast sizes live; the arrival limit (habitat_cap) and the
 # long-run band follow from them.
 const CAP: Dictionary = {"lawnmower_blenny":3,"purple_firefish":4,"green_chromis":8,"yellow_tang":2}
-# Species that arrive once, not live, in a save from before the reef (see restore()).
-const REEF_CAST: Array[String] = ["lawnmower_blenny","purple_firefish","green_chromis","yellow_tang"]
 const POOLS: Array[String] = ["nutrients","stem","floating","biofilm","microfauna","detritus"]
-# Opening pools (R11, set with the earlier shrimp cast); also the v1 upgrade fill (R12).
+# Opening pools (R11, set with the earlier shrimp cast).
 const OPENING: Dictionary = {"nutrients":0.4,"stem":45.0,"floating":24.0,"biofilm":32.0,"microfauna":24.0,"detritus":8.0}
 const PLANTS: Dictionary = {
 	"floating": {"r":1.3,"m":0.025,"max":40.0,"seed":0.4},
@@ -173,7 +164,7 @@ var _bodies: Dictionary = {}
 func _init(world_seed: int = 240921, wall_time: float = 0) -> void:
 	rng.seed = world_seed
 	motion_rng.seed = world_seed + 7919
-	state = {"version":VERSION,"seed":world_seed,"elapsed":0.0,"ecology_remainder":0.0,"motion_remainder":0.0,"motion_ticks":0,"ecology_ticks":0,"next_id":1,"next_event":1,"wall_checkpoint":wall_time,"animals":[],"archive":[],"events":[],"history":[],"resources":OPENING.duplicate(),"ledger":{"initial":0.0,"in":0.0,"out":0.0},"totals":{"birth":0,"death":0,"arrival":0,"departure":0,"dispersal":0,"molt":0,"predation":0},"causes":{},"light_hour":12.0,"reef_cast":true}
+	state = {"version":VERSION,"seed":world_seed,"elapsed":0.0,"ecology_remainder":0.0,"motion_remainder":0.0,"motion_ticks":0,"ecology_ticks":0,"next_id":1,"next_event":1,"wall_checkpoint":wall_time,"animals":[],"archive":[],"events":[],"history":[],"resources":OPENING.duplicate(),"ledger":{"initial":0.0,"in":0.0,"out":0.0},"totals":{"birth":0,"death":0,"arrival":0,"departure":0,"dispersal":0},"causes":{},"light_hour":12.0}
 	for species: String in ACTIVE_SPECIES:
 		var n: int = int(SPECIES[species].initial)
 		var lo: float = OPENING_AGE.get(species,OPENING_AGE.fish)[0]
@@ -228,9 +219,7 @@ func spawn(species: String, age: float = 0, parent: int = 0) -> Dictionary:
 		return {}
 	var cfg: Dictionary = SPECIES[species]
 	var p: Vector2 = _burrow(parent,species) if species in HOMES else _place(species)
-	# next_molt, molting_until and shelter are legacy fields validate() still requires;
-	# nothing molts or shelters since the shrimp left (2026-09-23).
-	var a: Dictionary = {"id":state.next_id,"species":species,"name":cfg.label+" "+str(state.next_id),"sex":"female" if rng.randf()<0.5 else "male","age":age,"parent":parent,"born":state.elapsed,"body":cfg.body*(0.45 if age<cfg.mature else 1.0),"energy":cfg.reserve*(0.35 if age<cfg.mature else 0.67),"x":p.x,"y":p.y,"tx":p.x,"ty":p.y,"direction":1.0 if p.x<640 else -1.0,"activity":"Resting","decision_at":0.0,"last_breed":-cfg.cooldown,"next_molt":age+99999.0,"molting_until":-1.0,"shelter":240.0 if state.next_id%2==1 else 1030.0,"recent":[],"hunger":0.0}
+	var a: Dictionary = {"id":state.next_id,"species":species,"name":cfg.label+" "+str(state.next_id),"sex":"female" if rng.randf()<0.5 else "male","age":age,"parent":parent,"born":state.elapsed,"body":cfg.body*(0.45 if age<cfg.mature else 1.0),"energy":cfg.reserve*(0.35 if age<cfg.mature else 0.67),"x":p.x,"y":p.y,"tx":p.x,"ty":p.y,"direction":1.0 if p.x<640 else -1.0,"activity":"Resting","decision_at":0.0,"last_breed":-cfg.cooldown,"recent":[],"hunger":0.0}
 	a.lifespan=cfg.lifespan*rng.randf_range(0.85,1.15)
 	if species in HOMES:
 		a.burrow_x=p.x
@@ -1532,48 +1521,11 @@ func restore(saved: Dictionary) -> bool:
 	state.erase("rng")
 	state.erase("motion_rng")
 	lure={}
-	# Saves from before event ids start numbering at 1 (validate forbids ids without it).
-	if not state.has("next_event"):
-		state.next_event=1
-	if state.version==1:
-		_upgrade_v1()
-	# The user explicitly removed crayfish (2026-09-22), shrimp and hatchetfish (2026-09-23), threadfin (2026-09-24)
-	# and garden eels (2026-09-25) from this pool. Preserve every other identity, archive each departure and account
-	# for its exported material. An unhatched shrimp brood leaves with its mother:
-	# its cost was never taken, so no young and no extra material.
-	for a: Dictionary in state.animals.duplicate():
-		if a.species not in ACTIVE_SPECIES:
-			a.erase("brood_until")
-			_remove(a,"departure")
-	# (Saves from before the garden eels once received a pair here, flagged `eel_colony`; since
-	# the eels left, 2026-09-25, nothing arrives and the flag is only validated.)
-	# Saves from before the reef (2026-09-24): its opening cast arrives once, not live,
-	# alternating female/male, after the threadfin (and older species) departed above.
-	if not state.get("reef_cast",false):
-		for species: String in REEF_CAST:
-			for i in int(SPECIES[species].initial):
-				var a: Dictionary = _arrive(species)
-				if not a.is_empty():
-					a.sex="female" if i%2==0 else "male"
-		state.reef_cast=true
 	return true
-
-# R12: add the new pools from the stream (ledger.in) and give every animal a lifespan.
-# Identities, names and lineage are untouched.
-func _upgrade_v1() -> void:
-	state.version=VERSION
-	for pool: String in POOLS:
-		if not state.resources.has(pool):
-			state.resources[pool]=OPENING[pool]
-			state.ledger["in"]+=OPENING[pool]
-	state.causes={}
-	for a: Dictionary in state.animals:
-		# Older animals keep a short remaining life rather than all dying on upgrade.
-		a.lifespan=maxf(SPECIES[a.species].lifespan*rng.randf_range(0.85,1.15),a.age+rng.randf_range(5,40))
 
 static func validate(saved: Dictionary) -> bool:
 	var version: Variant = saved.get("version",-1)
-	if not version is int or version not in [1,VERSION]:
+	if not version is int or version!=VERSION:
 		return false
 	for key: String in ["seed","next_id","motion_ticks","ecology_ticks"]:
 		if not saved.get(key) is int or saved[key]<0:
@@ -1583,14 +1535,11 @@ static func validate(saved: Dictionary) -> bool:
 			return false
 	if saved.ecology_remainder>=60 or saved.motion_remainder>=0.201:
 		return false
-	if saved.has("next_event") and (not saved.next_event is int or saved.next_event<1):
+	if not saved.get("next_event") is int or saved.next_event<1:
 		return false
-	for key: String in ["eel_colony","reef_cast"]:
-		if saved.has(key) and not saved[key] is bool:
-			return false
 	if not _valid_food(saved):
 		return false
-	var next_event: int = saved.get("next_event",0)
+	var next_event: int = saved.next_event
 	for key: String in ["rng","motion_rng"]:
 		if not saved.get(key) is String or not saved[key].is_valid_int():
 			return false
@@ -1602,8 +1551,7 @@ static func validate(saved: Dictionary) -> bool:
 	for group: String in ["resources","ledger","totals"]:
 		if not saved.get(group) is Dictionary:
 			return false
-		# totals.predation stays for older saves; predation was removed on 2026-09-23 and it never grows.
-		var keys: Array = {"resources":["biofilm","detritus","microfauna"] if version==1 else POOLS,"ledger":["initial","in","out"],"totals":["birth","death","arrival","departure","dispersal","molt","predation"]}[group]
+		var keys: Array = {"resources":POOLS,"ledger":["initial","in","out"],"totals":["birth","death","arrival","departure","dispersal"]}[group]
 		for key: String in keys:
 			if not _number(saved[group].get(key)) or saved[group][key]<0:
 				return false
@@ -1615,21 +1563,21 @@ static func validate(saved: Dictionary) -> bool:
 		for key: String in ["name","sex","activity"]:
 			if not a.get(key) is String:
 				return false
-		for key: String in ["age","born","body","energy","x","y","tx","ty","direction","decision_at","last_breed","next_molt","molting_until","shelter","hunger","parent"]:
+		for key: String in ["age","born","body","energy","x","y","tx","ty","direction","decision_at","last_breed","hunger","parent"]:
 			if not _number(a.get(key)):
 				return false
 		if a.has("food_id") and not a.food_id is int:
 			return false
-		for key: String in ["vx","vy","relocated_at","brood_until","tint","extend","contact_x","contact_y","chew_until","avoid_x","avoid_y","around_x","around_y","heading","pitch","speed","thrust","turn","roll","flick"]:
+		for key: String in ["vx","vy","relocated_at","extend","contact_x","contact_y","chew_until","avoid_x","avoid_y","around_x","around_y","heading","pitch","speed","thrust","turn","roll","flick"]:
 			if a.has(key) and not _number(a[key]):
 				return false
-		if a.get("brood_until",0)<0 or a.get("tint",0)<0 or a.get("tint",0)>1 or a.get("extend",0)<0 or a.get("extend",0)>1:
+		if a.get("extend",0)<0 or a.get("extend",0)>1:
 			return false
-		if a.species in ["garden_eel","purple_firefish"] and (not _number(a.get("burrow_x")) or not _number(a.get("burrow_y"))):
+		if a.species=="purple_firefish" and (not _number(a.get("burrow_x")) or not _number(a.get("burrow_y"))):
 			return false
 		if a.species=="purple_firefish" and (not _number(a.get("hover_y")) or a.hover_y<0):
 			return false
-		if version>1 and a in saved.animals and (not _number(a.get("lifespan")) or a.lifespan<=0):
+		if a in saved.animals and (not _number(a.get("lifespan")) or a.lifespan<=0):
 			return false
 		if a.age<0 or a.body<0 or a.energy<0 or not a.get("recent") is Array or a.recent.size()>6:
 			return false
@@ -1639,12 +1587,11 @@ static func validate(saved: Dictionary) -> bool:
 	for e: Variant in saved.events:
 		if not _valid_event(e,next_event):
 			return false
-	if version>1:
-		if not saved.get("causes") is Dictionary:
+	if not saved.get("causes") is Dictionary:
+		return false
+	for count: Variant in saved.causes.values():
+		if not _number(count) or count<0:
 			return false
-		for count: Variant in saved.causes.values():
-			if not _number(count) or count<0:
-				return false
 	return true
 
 # Optional since 2026-09-23 (feeding); saves without them have no food.

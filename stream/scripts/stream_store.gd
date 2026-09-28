@@ -1,6 +1,10 @@
 class_name StreamStore
 extends RefCounted
-const DEFAULT_PATH: String = "user://stream.world"
+const DEFAULT_PATH: String = "user://reef.world"
+# World v3 (Stillwater Reef, 2026-09-28): a new world in a new file. Stillwater Stream saves
+# (world v1/v2) used LEGACY_FORMAT; they are never loaded, converted, rewritten or deleted.
+const FORMAT: String = "stillwater-reef-3"
+const LEGACY_FORMAT: String = "stillwater-stream-1"
 
 static func _digest(bytes: PackedByteArray) -> String:
 	var context := HashingContext.new()
@@ -16,7 +20,7 @@ static func save(path: String, world: StreamWorld) -> Error:
 	var f := FileAccess.open(path+".tmp",FileAccess.WRITE)
 	if f==null:
 		return FileAccess.get_open_error()
-	f.store_var({"format":"stillwater-stream-1","payload":bytes,"hash":_digest(bytes)})
+	f.store_var({"format":FORMAT,"payload":bytes,"hash":_digest(bytes)})
 	f.flush()
 	f.close()
 	if read(path+".tmp").is_empty():
@@ -39,7 +43,7 @@ static func read(path: String) -> Dictionary:
 	if f==null or f.get_length()>4000000:
 		return {}
 	var envelope: Variant = f.get_var(false)
-	if not envelope is Dictionary or envelope.get("format")!="stillwater-stream-1":
+	if not envelope is Dictionary or envelope.get("format")!=FORMAT:
 		return {}
 	var bytes: Variant = envelope.get("payload")
 	if not bytes is PackedByteArray or envelope.get("hash")!=_digest(bytes):
@@ -47,7 +51,26 @@ static func read(path: String) -> Dictionary:
 	var saved: Variant = bytes_to_var(bytes)
 	return saved if saved is Dictionary and StreamWorld.validate(saved) else {}
 
+# Only the envelope label is looked at; the old world inside is never decoded.
+static func _legacy(path: String) -> bool:
+	for candidate: String in [path,path+".bak"]:
+		if not FileAccess.file_exists(candidate):
+			continue
+		var f := FileAccess.open(candidate,FileAccess.READ)
+		if f==null or f.get_length()>4000000:
+			continue
+		var envelope: Variant = f.get_var(false)
+		if envelope is Dictionary and envelope.get("format")==LEGACY_FORMAT:
+			return true
+	return false
+
+# `path` may still name a Stillwater Stream save (preferences.cfg keeps the path of the last
+# launch). Then the world lives in reef.world beside it instead, and the returned "path" says so:
+# the old files stay as they are and no recovery world is made for them.
 static func load_or_create(path: String, now: float, seed_value: int=240921) -> Dictionary:
+	var legacy: bool = _legacy(path)
+	if legacy:
+		path=path.get_base_dir().path_join(DEFAULT_PATH.get_file())
 	var saved: Dictionary = read(path)
 	var backup: bool = false
 	if saved.is_empty():
@@ -70,4 +93,4 @@ static func load_or_create(path: String, now: float, seed_value: int=240921) -> 
 	# The progressed state and checkpoint commit in a single atomic replacement.
 	# A crash before commit replays from the old state, not an already progressed one.
 	var err: Error = save(destination,world)
-	return {"world":world,"path":destination,"backup":backup,"preserved":preserved,"away":report,"error":err}
+	return {"world":world,"path":destination,"backup":backup,"preserved":preserved,"legacy":legacy,"away":report,"error":err}

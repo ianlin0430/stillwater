@@ -26,7 +26,7 @@ func seqs_ok(events: Array, next_event: int) -> bool:
 		last=e.seq
 	return true
 
-# A save as written before event ids existed.
+# A save as written before event ids existed (no longer readable since world v3).
 func strip(saved: Dictionary) -> Dictionary:
 	var old: Dictionary=saved.duplicate(true)
 	old.erase("next_event")
@@ -117,19 +117,8 @@ func _initialize() -> void:
 	check(back.state.events.back().seq==w.state.next_event,"Next id after load is not reused")
 	DirAccess.remove_absolute(path)
 	DirAccess.remove_absolute(path+".bak")
-	# Saves written before this change, and v1 saves, still load.
-	var legacy: Dictionary=strip(w.export_state())
-	check(StreamWorld.validate(legacy),"Pre-event-id save validates")
-	var from_legacy:=StreamWorld.new()
-	check(from_legacy.restore(legacy) and from_legacy.state.next_event==1,"Pre-event-id save restores and starts ids at 1")
-	from_legacy.advance_offline(StreamWorld.DAY)
-	check(StreamWorld.validate(from_legacy.export_state()),"Legacy world keeps validating after new events")
-	var f:=FileAccess.open("res://tests/fixtures/v1-world.var",FileAccess.READ)
-	var v1: Dictionary=f.get_var()
-	f.close()
-	var up:=StreamWorld.new()
-	check(up.restore(v1) and seqs_ok(StreamWorld.events_after(up.state.events,0),up.state.next_event) and up.state.next_event>1,"v1 upgrade numbers its departure events")
-	check(StreamWorld.validate(up.export_state()),"Upgraded v1 save validates")
+	# World v3 (2026-09-28) reads no older saves: one written before event ids is rejected.
+	check(not StreamWorld.validate(strip(w.export_state())),"Pre-event-id save rejected")
 	# Corrupt ids are rejected.
 	var bad: Dictionary=w.export_state()
 	bad.next_event="7"

@@ -14,28 +14,6 @@ func same(a: StreamWorld, b: StreamWorld) -> bool:
 func reset_material(w: StreamWorld) -> void:
 	w.state.ledger={"initial":w.material(),"in":0.0,"out":0.0}
 
-# A shrimp as older saves carried it (the species left the cast on 2026-09-23),
-# built from a fish record so it has every field validate() requires.
-func legacy_shrimp(w: StreamWorld, age: float, parent: int = 0) -> Dictionary:
-	var s: Dictionary=chromis(w)[0].duplicate(true)
-	s.merge({"id":w.state.next_id,"species":"shrimp","name":"Cherry shrimp "+str(w.state.next_id),"age":age,"parent":parent,"body":0.3,"energy":2.0,"recent":[],"y":StreamWorld.floor_y(s.x),"activity":"Grazing","next_molt":age+12.0},true)
-	w.state.next_id+=1
-	w.state.animals.append(s)
-	return s
-
-# A save from before 2026-09-23: three juvenile shrimp were taken by fish.
-func legacy_predation_save() -> Dictionary:
-	var w:=StreamWorld.new(21,1000)
-	w.advance_offline(3600)
-	var fish: Dictionary=chromis(w)[0]
-	for i in 3:
-		var young: Dictionary=legacy_shrimp(w,4)
-		w._event("feeding",fish,fish.name+" caught a young shrimp.",{"target":young.id})
-		w._remove(young,"predation")
-		w.state.events[-1].target=fish.id
-	w.state.totals.predation=3
-	return w.export_state()
-
 # Hungry fish right beside newborn fish on a bare bed (the old worst case had shrimplets).
 func no_predation() -> bool:
 	for offline: bool in [false,true]:
@@ -53,7 +31,7 @@ func no_predation() -> bool:
 			w.advance_offline(StreamWorld.DAY*3)
 		else:
 			w.advance_live(1800)
-		if w.state.totals.predation!=0 or w.state.causes.has("predation") or w.state.events.any(func(e): return e.kind=="feeding"):
+		if w.state.causes.has("predation") or w.state.events.any(func(e): return e.kind=="feeding"):
 			return false
 	return not StreamWorld.new().has_method("exposure")
 
@@ -171,17 +149,6 @@ func _initialize() -> void:
 	check(a.state.totals.death==deaths,"An individual is never removed twice")
 	check(absf(a.residual())<0.00001,"Death returns material as detritus")
 	check(a.state.archive[-1].cause=="old age","Cause of death remains inspectable")
-	# Predation was removed on 2026-09-23; saves made before still load.
-	var legacy: Dictionary=legacy_predation_save()
-	check(StreamWorld.validate(legacy),"Save with past predation deaths and feeding events validates")
-	var old_world:=StreamWorld.new()
-	check(old_world.restore(legacy),"Save with past predation restores")
-	check(StreamStore.save(path,old_world)==OK and old_world.restore(StreamStore.read(path)),"Save with past predation round-trips through the store")
-	check(old_world.state.archive.filter(func(x): return x.get("cause")=="predation").size()==3 and old_world.state.events.filter(func(e): return e.kind=="feeding").size()==3,"Past predation records remain inspectable")
-	old_world.advance_offline(StreamWorld.DAY)
-	old_world.advance_live(60)
-	check(old_world.state.totals.predation==3 and old_world.state.causes.predation==3,"Past predation totals stay as saved")
-	check(StreamWorld.validate(old_world.export_state()),"Advanced legacy save still validates")
 	check(no_predation(),"No animal eats another, live or offline")
 	a=StreamWorld.new(3)
 	while a.counts().green_chromis<StreamWorld.CAP.green_chromis:
@@ -202,34 +169,6 @@ func _initialize() -> void:
 	check(a.state.totals.birth==2,"Vacant habitat admits offspring")
 	check(a.state.animals[-1].parent==mother.id,"Newborn lineage retained")
 	check(absf(a.residual())<0.00001,"Birth transfers parental material")
-	# Molting left with the shrimp: a due next_molt on a fish does nothing.
-	a=StreamWorld.new(15)
-	a.state.animals[0].next_molt=a.state.animals[0].age
-	a.advance_offline(60)
-	check(a.state.totals.molt==0 and a.state.animals.all(func(x): return x.activity!="Molting"),"Nothing molts any more")
-	# Existing stream saves retain fish; removed crayfish get recorded departures.
-	a=StreamWorld.new(31)
-	var retained_ids: Array=[]
-	for animal: Dictionary in a.state.animals:
-		retained_ids.append(animal.id)
-	var old_cray: Dictionary=a.state.animals[0].duplicate(true)
-	old_cray.id=100
-	old_cray.species="crayfish"
-	old_cray.name="Cobalt"
-	a.state.animals.append(old_cray)
-	a.state.next_id=101
-	reset_material(a)
-	b=StreamWorld.new()
-	check(b.restore(a.export_state()),"Earlier stream save remains readable")
-	check(b.state.animals.all(func(x): return x.species!="crayfish") and b.state.totals.departure==1,"Removed crayfish recorded as departure")
-	var restored_ids: Array=[]
-	for animal: Dictionary in b.state.animals:
-		restored_ids.append(animal.id)
-	check(retained_ids==restored_ids,"Cast update preserves fish and eel identities")
-	check(absf(b.residual())<0.00001,"Cast update accounts for departing material")
-	c=StreamWorld.new()
-	c.restore(b.export_state())
-	check(c.state.totals.departure==1,"Cast update is idempotent")
 	a=StreamWorld.new(9)
 	var swimmer: Dictionary=chromis(a)[0]
 	swimmer.activity="Schooling"
@@ -240,9 +179,7 @@ func _initialize() -> void:
 	a.advance_live(0.2)
 	check(swimmer.vx<=3.0001 and swimmer.x>old_x,"Fish accelerate gradually from rest")
 	ecosystem_checks()
-	shrimp_departure_checks()
-	hatchet_departure_checks()
-	eel_checks()
+	fish_only_checks()
 	feeding_checks()
 	startle_checks()
 	lure_checks()
@@ -250,7 +187,6 @@ func _initialize() -> void:
 	firefish_checks()
 	chromis_checks()
 	tang_checks()
-	reef_cast_checks()
 	var acceptance=preload("res://tests/ecology_acceptance.gd")
 	# Gates derived from the configured cast (docs/ecology.md "Acceptance gates"), 180 days:
 	# 7 openers must reach old age (6 chromis, the older firefish), the earliest by day 76,
@@ -381,7 +317,7 @@ func ecosystem_checks() -> void:
 				ages_ok=ages_ok and animal.age>=lo and animal.age<=hi and animal.age<animal.lifespan
 	check(spans_ok,"Lifespans within 0.85-1.15 of species lifespan")
 	check(ages_ok,"Opening ages staggered within R11 ranges")
-	check(StreamWorld.SPECIES.green_chromis.lifespan==180.0 and StreamWorld.SPECIES.garden_eel.lifespan==365.0,"Species lifespans 180/365")
+	check(StreamWorld.SPECIES.green_chromis.lifespan==180.0,"Chromis lifespan 180")
 	# R10: a nearly vanished species is rescued from upstream; adults never wander off.
 	w=StreamWorld.new(11)
 	for animal: Dictionary in w.state.animals.duplicate():
@@ -394,35 +330,6 @@ func ecosystem_checks() -> void:
 			w.advance_offline(StreamWorld.MAX_AWAY)
 	check(w.counts().green_chromis>0,"Rescue arrival restores a missing species")
 	check(w.state.totals.departure==0,"No random adult departures")
-	# R12: a genuine v1 save upgrades with identities, names and lineage intact.
-	var f:=FileAccess.open("res://tests/fixtures/v1-world.var",FileAccess.READ)
-	var v1: Dictionary=f.get_var()
-	f.close()
-	check(v1.version==1 and StreamWorld.validate(v1),"v1 save still validates")
-	var up:=StreamWorld.new()
-	check(up.restore(v1),"v1 save restores")
-	check(up.state.version==StreamWorld.VERSION and StreamWorld.VERSION==2,"Upgraded save is version 2")
-	var kept: Array=[]
-	var leaving: int=0
-	for animal: Dictionary in v1.animals:
-		if animal.species in StreamWorld.ACTIVE_SPECIES:
-			kept.append([animal.id,animal.name,animal.parent,animal.sex])
-		else:
-			leaving+=1
-	var now_ids: Array=[]
-	var lifespans_ok: bool=true
-	for animal: Dictionary in up.state.animals.filter(func(x): return x.id<v1.next_id):
-		now_ids.append([animal.id,animal.name,animal.parent,animal.sex])
-		lifespans_ok=lifespans_ok and animal.has("lifespan") and animal.lifespan>animal.age
-	check(kept==now_ids,"Upgrade keeps ids, names and lineage")
-	check(lifespans_ok,"Upgrade assigns lifespans")
-	check(leaving==18 and up.state.totals.departure==v1.totals.departure+leaving and up.counts().keys().all(func(k): return k in StreamWorld.ACTIVE_SPECIES),"Upgrade records the crayfish, 8 shrimp, 5 hatchetfish and 4 threadfin as departures")
-	check(up.state.archive.filter(func(x): return x.cause=="departure").map(func(x): return x.id)==v1.animals.filter(func(x): return x.species not in StreamWorld.ACTIVE_SPECIES).map(func(x): return x.id),"Departed v1 shrimp, hatchetfish, threadfin and crayfish are archived with their ids")
-	check(StreamWorld.POOLS.all(func(k): return up.state.resources.has(k)),"Upgrade adds every material pool")
-	check(absf(up.residual())<0.00001,"Upgrade conserves material")
-	check(StreamWorld.validate(up.export_state()),"Upgraded state validates as v2")
-	up.advance_offline(StreamWorld.DAY)
-	check(absf(up.residual())<0.00001,"Upgraded world keeps conserving")
 	# Reproducibility within a mode, and a pool-bearing snapshot.
 	var r1:=StreamWorld.new(19)
 	var r2:=StreamWorld.new(19)
@@ -449,139 +356,17 @@ func by_id(w: StreamWorld, id: int) -> Dictionary:
 func ids(list: Array) -> Array:
 	return list.map(func(x): return x.id)
 
-# 2026-09-23 user decision: no shrimp. Shrimp in a loaded save leave once, as recorded
-# departures (like the crayfish before them); their history stays readable.
-func shrimp_departure_checks() -> void:
-	var w:=StreamWorld.new(42,1000)
-	w.advance_offline(3600)
-	var fish_before: Array=w.state.animals.map(func(x): return [x.id,x.name,x.parent,x.sex,x.species])
-	var mom: Dictionary=legacy_shrimp(w,40)
-	mom.sex="female"
-	mom.tint=0.6
-	mom.last_breed=mom.age
-	mom.brood_until=w.state.elapsed+2*StreamWorld.DAY
-	var kid: Dictionary=legacy_shrimp(w,5,mom.id)
-	kid.tint=0.62
-	var male: Dictionary=legacy_shrimp(w,30)
-	male.sex="male"
-	male.tint=0.4
-	male.activity="Molting"
-	male.molting_until=w.state.elapsed/StreamWorld.DAY+0.1
-	var dead: Dictionary=legacy_shrimp(w,118)
-	dead.tint=0.5
-	w._event("berried",mom,mom.name+" is carrying eggs.",{"until":mom.brood_until})
-	w._event("molt",male,male.name+" molted and is sheltering while its shell hardens.",{"until":male.molting_until*StreamWorld.DAY})
-	w._event("birth",kid,"A young cherry shrimp was born to "+mom.name+".",{"target":mom.id})
-	w._remove(dead,"old age")
-	reset_material(w)
-	var saved: Dictionary=w.export_state()
-	var leaving: Array=[mom.duplicate(true),kid.duplicate(true),male.duplicate(true)]
-	var mass: float=0.0
-	for x: Dictionary in leaving:
-		mass+=x.body+x.energy
-	check(StreamWorld.validate(saved),"Save with shrimp mid-brood, tints and a molt validates")
-	var r:=StreamWorld.new()
-	check(r.restore(saved),"Save with shrimp restores")
-	var fresh: Array=StreamWorld.events_after(r.state.events,saved.next_event-1)
-	check(r.counts().keys()==StreamWorld.ACTIVE_SPECIES and r.state.animals.all(func(x): return x.species!="shrimp"),"No shrimp remain after loading")
-	check(r.state.totals.departure==saved.totals.departure+3 and fresh.size()==3 and fresh.all(func(e): return e.kind=="departure" and e.live==false) and ids(fresh)==ids(leaving),"Each shrimp leaves once as a departure event that does not play")
-	check(r.state.animals.map(func(x): return [x.id,x.name,x.parent,x.sex,x.species])==fish_before,"Fish and eels keep their ids, names, lineage and sex")
-	var records: Array=r.state.archive.slice(-3)
-	var same_records: bool=records.size()==3
-	for i in mini(3,records.size()):
-		var x: Dictionary=records[i]
-		var was: Dictionary=leaving[i]
-		same_records=same_records and x.cause=="departure" and x.id==was.id and x.name==was.name and x.parent==was.parent and x.sex==was.sex and x.tint==was.tint and x.recent.size()>=1
-	check(same_records,"Departed shrimp are archived with id, name, parent, sex and tint")
-	check(records.size()==3 and records[1].parent==mom.id and not records[0].has("brood_until"),"Lineage (young to mother) survives; the unhatched brood is cancelled")
-	check(r.state.archive.filter(func(x): return x.id==dead.id and x.cause=="old age").size()==1,"A shrimp that died earlier stays in the archive")
-	check(["berried","molt","birth"].all(func(k): return r.state.events.any(func(e): return e.kind==k and e.id in ids(leaving))),"Past shrimp events stay in the journal")
-	check(absf(r.state.ledger.out-saved.ledger.out-mass)<0.000001 and absf(r.residual())<0.00001,"Departing shrimp material leaves through the ledger")
-	check(StreamWorld.validate(r.export_state()),"Save after the departures validates")
-	check(eels(r).is_empty() and r.state.totals.arrival==saved.totals.arrival,"Loading a reef save adds no arrivals")
-	offline(r,StreamWorld.DAY*3)
-	check(StreamWorld.events_after(r.state.events,saved.next_event-1).all(func(e): return not (e.kind in ["birth","dispersal"] and (e.get("target")==mom.id or e.id==mom.id))) and absf(r.residual())<0.00001,"The cancelled brood never hatches")
-	var again:=StreamWorld.new()
-	var archived: int=r.state.archive.size()
-	var departures: int=r.state.totals.departure
-	check(again.restore(r.export_state()) and again.state.totals.departure==departures and again.state.archive.size()==archived and absf(again.residual())<0.00001,"Loading again records no second departure")
-	var path: String="user://qa-shrimp.world"
-	var from_disk:=StreamWorld.new()
-	check(StreamStore.save(path,w)==OK and from_disk.restore(StreamStore.read(path)) and from_disk.counts().keys()==StreamWorld.ACTIVE_SPECIES and from_disk.state.totals.departure==saved.totals.departure+3,"Shrimp departure also happens through the store")
-	for suffix: String in ["",".bak",".tmp"]:
-		DirAccess.remove_absolute(path+suffix)
-	# The real pre-eel fixture: six tinted shrimp, one carrying eggs.
-	var f:=FileAccess.open("res://tests/fixtures/v2-pre-eel.var",FileAccess.READ)
-	var old: Dictionary=f.get_var()
-	f.close()
-	var shrimp: Array=old.animals.filter(func(x): return x.species=="shrimp")
-	check(shrimp.size()==6 and shrimp.all(func(x): return x.has("tint")) and shrimp.filter(func(x): return x.has("brood_until")).size()==1,"Fixture has six tinted shrimp, one mid-brood")
-	var up:=StreamWorld.new()
-	check(up.restore(old),"Pre-eel save restores")
-	var gone: Array=StreamWorld.events_after(up.state.events,old.next_event-1).filter(func(e): return e.kind=="departure")
-	var leavers: Array=old.animals.filter(func(x): return x.species not in StreamWorld.ACTIVE_SPECIES)
-	check(up.counts().keys()==StreamWorld.ACTIVE_SPECIES and leavers.size()==15 and up.state.totals.departure==old.totals.departure+15 and ids(gone)==ids(leavers),"All six fixture shrimp, four hatchetfish and five threadfin depart, once each")
-	check(up.state.archive.filter(func(x): return x.species=="shrimp" and x.cause=="departure" and x.has("tint") and not x.has("brood_until")).size()==6,"Fixture shrimp are archived with tints, the brood cancelled")
-	check(up.state.totals.birth==old.totals.birth and absf(up.residual())<0.00001 and StreamWorld.validate(up.export_state()),"No young from the cancelled brood; material balances")
+# Fish only: nothing molts, broods or carries shrimp-era fields; firefish fields are still checked.
+func fish_only_checks() -> void:
 	# New animals carry no shrimp-only fields and nothing molts or broods.
 	var n:=StreamWorld.new(42,1000)
 	var cursor: int=n.state.next_event-1
 	offline(n,StreamWorld.DAY*20)
 	var seen: Array=StreamWorld.events_after(n.state.events,cursor)
 	check(n.state.animals.all(func(x): return not x.has("tint") and not x.has("brood_until")) and not seen.any(func(e): return e.kind in ["berried","molt"]) and seen.any(func(e): return e.kind in ["birth","dispersal"]),"Fish breed; no tint, brood or molt appears")
-	# Legacy fields are still checked when present.
-	old=legacy_predation_save()
-	old.animals[0].brood_until="soon"
-	check(not StreamWorld.validate(old),"Non-numeric brood_until rejected")
-	old.animals[0].brood_until=-1.0
-	check(not StreamWorld.validate(old),"Negative brood_until rejected")
-	old.animals[0].brood_until=NAN
-	check(not StreamWorld.validate(old),"Non-finite brood_until rejected")
-	old.animals[0].erase("brood_until")
-	old.animals[0].tint=1.5
-	check(not StreamWorld.validate(old),"Tint above 1 rejected")
-	old.animals[0].tint=-0.1
-	check(not StreamWorld.validate(old),"Tint below 0 rejected")
-	old.animals[0].tint="red"
-	check(not StreamWorld.validate(old),"Non-numeric tint rejected")
-
-# 2026-09-23 user decision: no marbled hatchetfish. Live hatchetfish in a loaded save leave
-# once, exactly like the shrimp and crayfish; their history stays readable.
-func hatchet_departure_checks() -> void:
-	var w:=StreamWorld.new(42,1000)
-	w.advance_offline(3600)
-	var kept: Array=w.state.animals.map(func(x): return [x.id,x.name,x.parent,x.sex,x.species])
-	var leaving: Array=[]
-	for i in 3:
-		var h: Dictionary=chromis(w)[0].duplicate(true)
-		h.merge({"id":w.state.next_id,"species":"hatchet","name":["Marble","Mica","Dapple"][i],"age":60.0-i*25,"parent":leaving[0].id if i==2 else 0,"sex":["female","male","female"][i],"y":150.0,"ty":150.0,"activity":"Surface feeding","recent":[]},true)
-		w.state.next_id+=1
-		w.state.animals.append(h)
-		leaving.append(h)
-	w._event("birth",leaving[2],"A young marbled hatchetfish was born to Marble.",{"target":leaving[0].id})
-	reset_material(w)
-	var saved: Dictionary=w.export_state()
-	var mass: float=0.0
-	for x: Dictionary in leaving:
-		mass+=x.body+x.energy
-	check(StreamWorld.validate(saved),"Save with live hatchetfish validates")
-	var r:=StreamWorld.new()
-	check(r.restore(saved),"Save with live hatchetfish restores")
-	var fresh: Array=StreamWorld.events_after(r.state.events,saved.next_event-1)
-	check(r.counts().keys()==StreamWorld.ACTIVE_SPECIES and r.state.animals.all(func(x): return x.species!="hatchet"),"No hatchetfish remain after loading")
-	check(r.state.totals.departure==saved.totals.departure+3 and fresh.size()==3 and fresh.all(func(e): return e.kind=="departure" and e.live==false) and ids(fresh)==ids(leaving),"Each hatchetfish leaves once as a departure event that does not play")
-	check(r.state.animals.map(func(x): return [x.id,x.name,x.parent,x.sex,x.species])==kept,"Threadfin and eels keep their ids, names, lineage and sex")
-	var records: Array=r.state.archive.slice(-3)
-	check(records.map(func(x): return [x.id,x.name,x.parent,x.sex,x.species,x.cause])==leaving.map(func(x): return [x.id,x.name,x.parent,x.sex,"hatchet","departure"]),"Departed hatchetfish are archived with id, name, parent and sex")
-	check(r.state.events.any(func(e): return e.kind=="birth" and e.id==leaving[2].id and e.target==leaving[0].id),"Past hatchetfish events stay in the journal")
-	check(absf(r.state.ledger.out-saved.ledger.out-mass)<0.000001 and absf(r.residual())<0.00001 and StreamWorld.validate(r.export_state()),"Departing hatchetfish material leaves through the ledger")
-	var again:=StreamWorld.new()
-	check(again.restore(r.export_state()) and again.state.totals.departure==r.state.totals.departure and again.state.archive.size()==r.state.archive.size(),"Loading again records no second hatchetfish departure")
-	offline(again,StreamWorld.DAY*3)
-	check(again.state.animals.all(func(x): return x.species!="hatchet") and absf(again.residual())<0.00001,"Hatchetfish never return (no birth or arrival)")
-
-func eels(w: StreamWorld) -> Array:
-	return w.state.animals.filter(func(x): return x.species=="garden_eel")
+	var bad: Dictionary=StreamWorld.new(5).export_state()
+	bad.animals.filter(func(x): return x.species=="purple_firefish")[0].extend=1.5
+	check(not StreamWorld.validate(bad),"Extend above 1 rejected")
 
 func at_burrow(e: Dictionary) -> bool:
 	return e.has("burrow_x") and e.x==e.burrow_x and e.y==e.burrow_y and absf(e.burrow_y-StreamWorld.floor_y(e.burrow_x))<0.0001 and e.get("vx",0.0)==0.0 and e.get("vy",0.0)==0.0
@@ -592,71 +377,6 @@ func apart(list: Array) -> bool:
 			if absf(list[i].burrow_x-list[j].burrow_x)<30:
 				return false
 	return true
-
-# A garden eel as reef saves from 2026-09-23..25 carried it (the species left the cast on
-# 2026-09-25), built from a firefish record so it has every field validate() requires.
-func legacy_eel(w: StreamWorld, x: float, sex: String) -> Dictionary:
-	var e: Dictionary=firefish(w)[0].duplicate(true)
-	e.erase("hover_y")
-	e.merge({"id":w.state.next_id,"species":"garden_eel","name":"Dune" if sex=="female" else "Sprig","sex":sex,"age":180.0,"lifespan":365.0,"body":0.9,"energy":3.0,"x":x,"y":StreamWorld.floor_y(x),"tx":x,"ty":StreamWorld.floor_y(x),"burrow_x":x,"burrow_y":StreamWorld.floor_y(x),"activity":"Swaying","extend":1.0,"recent":[]},true)
-	w.state.next_id+=1
-	w.state.animals.append(e)
-	return e
-
-# 2026-09-25 user decision: no garden eels. Live eels in a loaded save leave once, as recorded
-# departures (like the threadfin, hatchetfish and shrimp before them); their history stays readable.
-func eel_checks() -> void:
-	var cfg: Dictionary=StreamWorld.SPECIES.get("garden_eel",{})
-	check(cfg.get("label")=="Spotted garden eel" and cfg.get("initial")==0 and "garden_eel" not in StreamWorld.ACTIVE_SPECIES and not StreamWorld.CAP.has("garden_eel") and "garden_eel" not in StreamWorld.HOMES and "garden_eel" not in StreamWorld.REEF_CAST,"Garden eel is a legacy entry only: not active, no habitat, no opening")
-	var fresh_world:=StreamWorld.new(42,1000)
-	check(eels(fresh_world).is_empty() and not fresh_world.counts().has("garden_eel"),"A new world has no garden eels")
-	var w:=StreamWorld.new(42,1000)
-	w.advance_offline(3600)
-	var kept: Array=w.state.animals.map(func(x): return [x.id,x.name,x.parent,x.sex,x.species])
-	var mom: Dictionary=legacy_eel(w,650.0,"female")
-	var dad: Dictionary=legacy_eel(w,684.0,"male")
-	w._event("arrival",mom,"A spotted garden eel arrived from upstream.")
-	w._event("birth",dad,"A young spotted garden eel was born to Dune.",{"target":mom.id})
-	reset_material(w)
-	var saved: Dictionary=w.export_state()
-	saved.eel_colony=true
-	var leaving: Array=[mom.duplicate(true),dad.duplicate(true)]
-	var mass: float=0.0
-	for x: Dictionary in leaving:
-		mass+=x.body+x.energy
-	check(StreamWorld.validate(saved),"Save with live garden eels validates")
-	var r:=StreamWorld.new()
-	check(r.restore(saved),"Save with live garden eels restores")
-	var fresh: Array=StreamWorld.events_after(r.state.events,saved.next_event-1)
-	check(eels(r).is_empty() and r.counts().keys()==StreamWorld.ACTIVE_SPECIES,"No garden eels remain after loading")
-	check(r.state.totals.departure==saved.totals.departure+2 and fresh.size()==2 and fresh.all(func(e): return e.kind=="departure" and e.live==false) and ids(fresh)==ids(leaving) and fresh.all(func(e): return leaving.any(func(l): return l.id==e.id and l.burrow_x==e.x and l.burrow_y==e.y)),"Each eel leaves once, from its burrow, as a departure event that does not play")
-	check(r.state.animals.map(func(x): return [x.id,x.name,x.parent,x.sex,x.species])==kept and r.state.totals.arrival==saved.totals.arrival,"The reef cast keeps its ids, names, lineage and sex; nothing arrives in the eels' place")
-	var records: Array=r.state.archive.slice(-2)
-	check(records.map(func(x): return [x.id,x.name,x.sex,x.species,x.cause,x.burrow_x,x.burrow_y])==leaving.map(func(x): return [x.id,x.name,x.sex,"garden_eel","departure",x.burrow_x,x.burrow_y]),"Departed eels are archived with id, name, sex and burrow")
-	check(["arrival","birth"].all(func(k): return r.state.events.any(func(e): return e.kind==k and e.id in ids(leaving))),"Past eel events stay in the journal")
-	check(absf(r.state.ledger.out-saved.ledger.out-mass)<0.000001 and absf(r.residual())<0.00001 and StreamWorld.validate(r.export_state()),"Departing eel material leaves through the ledger; the save validates")
-	var again:=StreamWorld.new()
-	check(again.restore(r.export_state()) and again.state.totals.departure==r.state.totals.departure and again.state.archive.size()==r.state.archive.size() and again.state.totals.arrival==r.state.totals.arrival,"Loading again records no second eel departure and no arrival")
-	offline(again,StreamWorld.DAY*3)
-	again.advance_live(600)
-	check(eels(again).is_empty() and absf(again.residual())<0.00001 and StreamWorld.validate(again.export_state()),"Garden eels never return (no birth, arrival or rescue)")
-	# Saves from before the eels no longer receive a pair.
-	var old: Dictionary=fixture("v2-pre-eel.var")
-	var up:=StreamWorld.new()
-	var reef: int=StreamWorld.REEF_CAST.map(func(k): return StreamWorld.SPECIES[k].initial).reduce(func(x,y): return x+y)
-	check(up.restore(old) and eels(up).is_empty() and up.state.totals.arrival==old.totals.arrival+reef,"A pre-eel save gets the reef cast and no garden eels")
-	var v1w:=StreamWorld.new()
-	check(v1w.restore(fixture("v1-world.var")) and eels(v1w).is_empty() and absf(v1w.residual())<0.00001,"A v1 save gets no garden eels either")
-	# Validation still checks eel fields in older saves.
-	var bad: Dictionary=saved.duplicate(true)
-	bad.animals.filter(func(x): return x.species=="garden_eel")[0].erase("burrow_x")
-	check(not StreamWorld.validate(bad),"Eel without a burrow rejected")
-	bad=saved.duplicate(true)
-	bad.animals.filter(func(x): return x.species=="garden_eel")[0].extend=1.5
-	check(not StreamWorld.validate(bad),"Extend above 1 rejected")
-	bad=saved.duplicate(true)
-	bad.eel_colony="yes"
-	check(not StreamWorld.validate(bad),"Non-boolean eel_colony rejected")
 
 func chromis(w: StreamWorld) -> Array:
 	return w.state.animals.filter(func(x): return x.species=="green_chromis")
@@ -1256,7 +976,7 @@ func in_tang_band(a: Dictionary) -> bool:
 # blenny; a small group cruising the upper midwater and reef face, pecking at rock surfaces.
 func tang_checks() -> void:
 	var cfg: Dictionary=StreamWorld.SPECIES.get("yellow_tang",{})
-	check(cfg.get("label")=="Yellow tang" and cfg.get("latin")=="Zebrasoma flavescens" and cfg.get("pool")=="biofilm" and "yellow_tang" in StreamWorld.ACTIVE_SPECIES and "yellow_tang" in StreamWorld.REEF_CAST,"Yellow tang: biofilm grazer in the reef cast")
+	check(cfg.get("label")=="Yellow tang" and cfg.get("latin")=="Zebrasoma flavescens" and cfg.get("pool")=="biofilm" and "yellow_tang" in StreamWorld.ACTIVE_SPECIES,"Yellow tang: biofilm grazer in the reef cast")
 	var others: Array=StreamWorld.ACTIVE_SPECIES.filter(func(k): return k!="yellow_tang")
 	check(others.all(func(k): return cfg.get("body",0.0)>StreamWorld.SPECIES[k].body),"Yellow tang is the largest fish of the pool")
 	var ch: Dictionary=StreamWorld.SPECIES.green_chromis
@@ -1396,43 +1116,3 @@ func tang_checks() -> void:
 	var bad: Dictionary=StreamWorld.new(5).export_state()
 	bad.animals.filter(func(x): return x.species=="yellow_tang")[0].contact_x="rock"
 	check(not StreamWorld.validate(bad),"Non-numeric contact_x rejected")
-
-func fixture(name: String) -> Dictionary:
-	var f:=FileAccess.open("res://tests/fixtures/"+name,FileAccess.READ)
-	var v: Dictionary=f.get_var()
-	f.close()
-	return v
-
-# Older saves (2026-09-24, Stillwater Reef): threadfin (and since 2026-09-25 garden eels) depart once
-# like the hatchetfish and shrimp before them; the reef cast arrives once, not live.
-func reef_cast_checks() -> void:
-	for name: String in ["v2-threadfin-era.var","v2-hatchet-era.var","v2-pre-eel.var","v1-world.var"]:
-		var old: Dictionary=fixture(name)
-		check(StreamWorld.validate(old),name+" validates")
-		var up:=StreamWorld.new()
-		check(up.restore(old),name+" restores")
-		var fresh: Array=StreamWorld.events_after(up.state.events,old.get("next_event",1)-1)
-		var leavers: Array=old.animals.filter(func(x): return x.species not in StreamWorld.ACTIVE_SPECIES)
-		var gone: Array=fresh.filter(func(e): return e.kind=="departure")
-		check(leavers.size()>0 and ids(gone)==ids(leavers) and up.state.totals.departure==old.totals.departure+leavers.size() and gone.all(func(e): return e.live==false),name+": every threadfin (and older removed species) departs once")
-		check(up.state.animals.all(func(x): return x.species in StreamWorld.ACTIVE_SPECIES),name+": no removed species remain")
-		var came: Array=fresh.filter(func(e): return e.kind=="arrival" and by_id(up,e.id).species in StreamWorld.REEF_CAST)
-		var arrived_ok: bool=came.all(func(e): return e.live==false)
-		for species: String in StreamWorld.REEF_CAST:
-			var kin: Array=up.state.animals.filter(func(x): return x.species==species)
-			arrived_ok=arrived_ok and kin.size()==StreamWorld.SPECIES[species].initial and kin.any(func(x): return x.sex=="female") and kin.any(func(x): return x.sex=="male")
-		check(arrived_ok and up.state.reef_cast==true,name+": the reef cast arrives once, not live")
-		check(old.animals.filter(func(x): return x.species=="garden_eel").all(func(x): return by_id(up,x.id).is_empty() and up.state.archive.any(func(y): return y.id==x.id and y.cause=="departure" and y.burrow_x==x.burrow_x)),name+": resident garden eels depart once, archived with their burrows")
-		check(absf(up.residual())<0.00001 and StreamWorld.validate(up.export_state()),name+": material balances and the upgraded save validates")
-		var again:=StreamWorld.new()
-		check(again.restore(up.export_state()) and again.state.totals.arrival==up.state.totals.arrival and again.state.totals.departure==up.state.totals.departure,name+": a second load adds and removes nothing")
-		offline(again,StreamWorld.DAY*3)
-		again.advance_live(600)
-		check(StreamWorld.validate(again.export_state()) and absf(again.residual())<0.00001 and again.state.animals.all(func(x): return x.species in StreamWorld.ACTIVE_SPECIES),name+": the upgraded reef keeps running")
-	var fed: Dictionary=fixture("v2-threadfin-era.var")
-	var r:=StreamWorld.new()
-	check(fed.food.size()>0 and r.restore(fed) and r.state.food.size()==fed.food.size() and r.state.animals.all(func(x): return not x.has("food_id") or x.species in StreamWorld.ACTIVE_SPECIES),"Food in flight in a threadfin-era save survives the upgrade")
-	check(StreamWorld.new(42,1000).state.reef_cast==true,"A new world already has the reef cast")
-	var bad: Dictionary=StreamWorld.new(5).export_state()
-	bad.reef_cast="yes"
-	check(not StreamWorld.validate(bad),"Non-boolean reef_cast rejected")

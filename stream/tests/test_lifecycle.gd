@@ -1,9 +1,10 @@
 extends SceneTree
 # Lifecycle and time boundaries against the real StreamStore/StreamWorld paths.
-# Every file this touches lives under user://lifecycle-test/; the real save is only hashed.
+# Every file this touches lives under user://lifecycle-test/; the real saves (reef.world, and the
+# old Stillwater Stream stream.world) are only hashed.
 const Absence=preload("res://scripts/absence.gd")
 const DIR: String="user://lifecycle-test/"
-const REAL: Array[String]=["user://stream.world","user://stream.world.bak","user://preferences.cfg"]
+const REAL: Array[String]=["user://reef.world","user://reef.world.bak","user://stream.world","user://stream.world.bak","user://preferences.cfg"]
 var checks: int=0
 var failures: Array[String]=[]
 
@@ -177,6 +178,6 @@ func _initialize() -> void:
 
 	clean()
 	DirAccess.remove_absolute(DIR)
-	check(real_before==real_hashes(),"The real stream.world/.bak/preferences.cfg are unchanged")
+	check(real_before==real_hashes(),"The real reef.world, stream.world (and .bak) and preferences.cfg are unchanged")
 	print(JSON.stringify({"checks":checks,"failures":failures.size(),"real_hashes":real_hashes()}))
 	quit(0 if failures.is_empty() else 1)

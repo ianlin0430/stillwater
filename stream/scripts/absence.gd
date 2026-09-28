@@ -23,7 +23,7 @@ static func advance(total: Dictionary, world: StreamWorld, now: float) -> Dictio
 static func text(report: Dictionary) -> String:
 	if report.get("seconds",0)<120:
 		return ""
-	var out: String="While you were away: %.1f hours of stream life" % (report.seconds/3600)
+	var out: String="While you were away: %.1f hours of reef life" % (report.seconds/3600)
 	var events: Dictionary=report.get("events",{})
 	for key: String in ["birth","arrival","departure","death"]:
 		if events.get(key,0)>0:
