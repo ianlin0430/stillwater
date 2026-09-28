@@ -1,5 +1,12 @@
 # 給 Codex 的指令
 
+> **2026-09-28 換陣容前置（計畫 H3，請先做）**：Claude 接下來做 S4，backend 會改成送 `green_chromis`、`clownfish`、`seahorse`、`royal_gramma`，不再送 tang／firefish／blenny。請先讓舞台接上你的 `reef_new_cast_rig.gd`：
+> 1. `stream_stage.gd` 遇到這三種新魚時用新 rig 畫；遇到不認得的物種不崩潰（跳過或佔位）。`SPECIES` 相關的 key（`main.gd:392`、`stream_stage.gd:86,:213`）要能接受新魚。
+> 2. `floor_y` 會從 static 改成跟場景有關（`ReefScene.open(id).floor_y(x)`）；`main.gd:295`、`stream_events.gd:61` 請改成向世界或場景取。
+> 3. 請把三種新魚的身體寬高（世界單位，給 backend `BODY`）和「1 個粗像素＝幾個世界單位」寫在 `assets/reef/PROVENANCE.md` 或回覆給 Claude。
+> 4. 前端測試要能同時處理新舊魚種，直到 S4 落地；S4 落地後再移除 tang／firefish／blenny 的前端與測試，並更新 `.github/workflows/ecology-batch.yml` core job 的前端測試清單（這一行你可以改）。
+> 驗收：前端測試全綠；用 `-- --qa` 錄一段四種新魚在舞台上游的短片給使用者。
+
 > **2026-09-28 場景檔已落地（計畫 H1，請你對座標）**：Claude 在 `edc79de` 加了 `data/scenes/reef.json`、`data/scenes/shipwreck.json`、`data/decor.json` 和載入器 `scripts/reef_scene.gd`（`ReefScene.open(id)`）。座標是世界座標 1280×720，**目前全是從背景粗估的佔位值**。請照你的正式背景與裝飾圖改 JSON 裡的座標：床面 `bed`、各魚水層 `bands`、地形障礙 `terrain_obstacles`、槽位 `slots` 錨點、每款裝飾的障礙／海葵／勾點／躲藏點（相對錨點）。改完跑 `tests/test_scene_data.gd`（122 checks）必須全綠，並用 `tools/scene_overlay.gd -- --scene=all` 產生疊圖（紅＝床面、灰／橘＝障礙、洋紅＝海葵、綠＝勾點、黃＝洞口）自己核對。也請告訴 Claude：新圖 1 個粗像素＝幾個世界單位，以及三種新魚的身體寬高（backend 的 `BODY`）。格式細節見 `docs/plans/2026-09-28-redesign-backend.md` §2。只改 JSON 與座標，不要改 `reef_scene.gd` 與測試；結構不夠用就寫給 Claude。
 
 > **2026-09-28 使用者核可新魚風格板**：`tools/art_candidates/redesign-four-fish-v1.png`（chromis／clownfish／seahorse／royal_gramma）使用者說「新魚風格可以」。請照這張做正式側面素材（透明背景、對齊錨點，跟目前 chromis atlas 同規格），接著照 `REDESIGN_2026-09-28.md` §3 做新魚動畫、裝飾美術與介面。新魚正式接進遊戲要等 Claude 的 backend 換成新魚種（計畫 S4）；在那之前可以先用獨立的 review 工具錄對照片。轉身照上一條：直接左右鏡像。
