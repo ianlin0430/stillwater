@@ -31,6 +31,23 @@ func _initialize() -> void:
 		var world: RefCounted=script.new(42)
 		var result: Dictionary=Probe.run(world,1,"probe-self-test",42)
 		check(result.get("seed",-1)==42 and result.has("end"),"patched world runs one day through Probe.run")
+	# floor (S2): measurement only. A floor above every animal's energy counts every animal-minute;
+	# the patched world otherwise runs exactly like the unpatched one (same seed, same counts).
+	var floored: String=Probe.patched_source({"floor":1.01})
+	check(floored.contains("probe_floor_hits[a.species]") and floored.contains("if probe_left<1.01"),"floor instrumentation reaches the patched source")
+	var fscript: GDScript=Probe.compile(floored)
+	check(fscript!=null,"instrumented world compiles")
+	if fscript!=null:
+		var fr: Dictionary=Probe.run(fscript.new(42),2,"floor-self-test",42,1)
+		var plain: Dictionary=Probe.run(load("res://scripts/stream_world.gd").new(42),2,"plain",42)
+		var hits: int=0
+		for sp: String in fr.get("floor_hits",{}):
+			hits+=int(fr.floor_hits[sp])
+		check(hits>=12*2*1440,"floor 1.01 counts every animal-minute (%d)"%hits)
+		check(fr.get("min_energy",{}).size()>0,"min_energy is reported")
+		check(fr.sizes_by_day==plain.sizes_by_day and fr.end==plain.end and fr.microfauna_min_mean==plain.microfauna_min_mean,"instrumented world runs like the plain one")
+		check(fr.has("at_1") and fr.at_1.days==1 and fr.days==2,"--mid adds the day-1 measures")
+		check(not plain.has("floor_hits"),"no floor option, no floor_hits")
 	# Unpatched source is the real world file, byte for byte (no config, no change).
 	check(Probe.patched_source({})==FileAccess.get_file_as_string("res://scripts/stream_world.gd").replace("class_name StreamWorld\n",""),"an empty config only drops class_name")
 	# Wide seed list: fixed contents, 32 distinct seeds, motion list is its first eight.
