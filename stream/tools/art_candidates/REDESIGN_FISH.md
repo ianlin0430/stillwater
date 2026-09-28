@@ -1,6 +1,6 @@
 # 2026-09-28 four-fish approval board
 
-Status: **awaiting user approval; not a runtime atlas**.
+Status: **style approved 2026-09-28** (「新魚風格可以」). Transparent production source: `assets/reef/fish-atlas-redesign-v1.png`; cropping resources and anchors are documented in `docs/NEW_FISH_PRODUCTION_ART.md`. Runtime species integration still waits for backend S4.
 
 `redesign-four-fish-v1.png` was generated with the built-in imagegen tool and copied unchanged from `exec-8c211e5b-acda-498d-8933-94c330bb73eb.png`. No raster postprocessing. Reference: `assets/reef/fish-atlas-low-pixel-v1.png`, bottom-right approved chromis only. The board's chromis is an identity/style reference; the approved production chromis texture remains unchanged. New species are not registered in the production cast. The complete `tools/` directory is excluded from app exports.
 

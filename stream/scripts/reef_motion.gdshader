@@ -9,6 +9,9 @@ uniform float fin_open = 1.;
 uniform float pitch = 0.;
 uniform vec2 pose_offset = vec2(0.);
 uniform bool eel = false;
+uniform bool upright = false;
+uniform float clasp = 0.;
+uniform vec2 grip = vec2(0.);
 uniform float extension = 1.;
 uniform bool clip_sand = false;
 uniform float fin_ray = 0.;
@@ -42,6 +45,16 @@ void vertex() {
         p.x *= facing;
         p.x += (sin(phase * .42 - height * 1.6) * 6. + facing * 7.) * height * height;
         p.x += bite * 3. * height * height;
+    } else if (upright) {
+        // Upright seahorse: dorsal fan, with a quiet whole-body sway about its
+        // curled tail while clasped. Never run a horizontal fish tail wave.
+        float dorsal = (1.-smoothstep(.10,.32,rest_point.x)) *
+                       (1.-smoothstep(.10,.24,abs(rest_point.y-.49)));
+        p.x += sin(pectoral_phase*2.) * dorsal * .7 * pectoral_drive;
+        float sway = sin(breath_phase*.20)*.035*clasp;
+        p = grip + mat2(vec2(cos(sway),sin(sway)),vec2(-sin(sway),cos(sway))) * (p-grip);
+        p.x *= facing;
+        p=mat2(vec2(cos(pitch),sin(pitch)),vec2(-sin(pitch),cos(pitch)))*p;
     } else {
         float tail = clamp(.5 - p.x/extent.x, 0., 1.);
         float fin = smoothstep(0.08, 0.32, abs(p.y)/extent.y);

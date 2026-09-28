@@ -75,6 +75,12 @@ var last_hiding: bool=false
 enum PortalMotion { IDLE, ENTERING, EMERGING }
 var portal_motion: PortalMotion=PortalMotion.IDLE
 
+func art_spec() -> Dictionary:
+	return LOOK[species]
+
+func art_texture() -> Texture2D:
+	return EEL if species=="garden_eel" else ATLAS
+
 func _ready() -> void:
 	texture_filter=CanvasItem.TEXTURE_FILTER_NEAREST
 	previous=position
@@ -82,16 +88,16 @@ func _ready() -> void:
 	water_phase=phase
 	pectoral_phase=phase*1.6
 	tail_facing=facing
-	var cfg: Dictionary=LOOK[species]
+	var cfg: Dictionary=art_spec()
 	var rect: Rect2=cfg.region
 	extent=Vector2(cfg.width,cfg.width*rect.size.y/rect.size.x)
 	fish=Polygon2D.new()
-	fish.texture=EEL if species=="garden_eel" else ATLAS
+	fish.texture=art_texture()
 	var vertices:=PackedVector2Array()
 	var uv:=PackedVector2Array()
 	var quads: Array[PackedInt32Array]=[]
 	var columns: int=8 if species=="garden_eel" else 16
-	var rows: int=48 if species=="garden_eel" else 12
+	var rows: int=int(cfg.get("rows",48 if species=="garden_eel" else 12))
 	var anchor:=Vector2(0.22 if species=="garden_eel" else 0.5,cfg.line)
 	for x in columns+1:
 		for y in rows+1:
@@ -110,11 +116,12 @@ func _ready() -> void:
 	fish_material.set_shader_parameter("extent",extent)
 	fish_material.set_shader_parameter("body_line",cfg.line)
 	fish_material.set_shader_parameter("eel",species=="garden_eel")
+	fish_material.set_shader_parameter("upright",cfg.get("upright",false))
 	fish_material.set_shader_parameter("fin_ray",1.0 if species=="purple_firefish" else 0.0)
 	var fin_root: Vector2=Vector2(.66,.61) if species=="yellow_tang" else Vector2(.67,.60) if species=="green_chromis" else Vector2(.73,.68) if species=="purple_firefish" else Vector2(.70,.74)
-	fish_material.set_shader_parameter("pectoral_root",fin_root)
+	fish_material.set_shader_parameter("pectoral_root",cfg.get("fin_root",fin_root))
 	fish_material.set_shader_parameter("atlas_region",Vector4(rect.position.x,rect.position.y,rect.size.x,rect.size.y))
-	fish_material.set_shader_parameter("eye_anchor",Vector2(.90,.35) if species=="lawnmower_blenny" else Vector2(.83,.46) if species=="yellow_tang" else Vector2(.92,.60) if species=="purple_firefish" else Vector2(.91,.46))
+	fish_material.set_shader_parameter("eye_anchor",cfg.get("eye",Vector2(.90,.35) if species=="lawnmower_blenny" else Vector2(.83,.46) if species=="yellow_tang" else Vector2(.92,.60) if species=="purple_firefish" else Vector2(.91,.46)))
 	fish_material.set_shader_parameter("blenny",species=="lawnmower_blenny")
 	fish.material=fish_material
 	add_child(fish)

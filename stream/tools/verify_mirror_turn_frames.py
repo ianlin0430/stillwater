@@ -1,11 +1,15 @@
 """Read-only raster check of mirror_turn_review.gd's actual 60 FPS output."""
 import json
+import sys
 from pathlib import Path
 
 import numpy as np
 from PIL import Image
 
-folder = Path(__file__).resolve().parents[1] / "artifacts/mirror-turn-review"
+new_cast = "--new-cast" in sys.argv
+species_names = (["green_chromis", "clownfish", "seahorse", "royal_gramma"] if new_cast
+                 else ["green_chromis", "yellow_tang", "purple_firefish", "lawnmower_blenny"])
+folder = Path(__file__).resolve().parents[1] / ("artifacts/new-cast-turn-review" if new_cast else "artifacts/mirror-turn-review")
 paths = sorted((folder / "frames").glob("frame-*.png"))
 assert len(paths) == 480, f"Expected 480 captured frames, got {len(paths)}"
 minimum = [999999] * 4
@@ -29,7 +33,7 @@ report = {
     "frames": len(paths),
     "fps": 60,
     "minimum_visible_pixels_by_species": dict(
-        zip(["green_chromis", "yellow_tang", "purple_firefish", "lawnmower_blenny"], minimum)
+        zip(species_names, minimum)
     ),
     "blank_frames": blank,
     "width_ranges": [[min(w), max(w)] for w in widths],
