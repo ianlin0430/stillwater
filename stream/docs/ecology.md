@@ -30,6 +30,47 @@ Plant growth, microfauna, detritus, mineralisation, the ocean-current exchange a
 
 **Rescue** (changed 2026-09-24): a species is rescued from upstream only when one or none is left (`RESCUE_AT`=1), i.e. when it can no longer breed here. It was "two or fewer" when each species had six places; with caps of 3–4, two is half the habitat, and the opening pairs of three species would draw a rescue arrival within days of every opening, so arrivals would fill the places the local young should fill.
 
+## Reef v3 cast sizing (S2 of the 2026-09-28 redesign)
+
+Plan: [2026-09-28-redesign-backend.md](plans/2026-09-28-redesign-backend.md) §4.2 and slice S2. The new cast is **green chromis**, **clownfish**, **seahorse** and **royal gramma**, and all four eat `microfauna`. Nothing in `scripts/stream_world.gd` changes in this slice: the numbers below are measured with `tools/cast_probe.gd` on the current world source with the cast constants replaced in memory; S4 puts them into the world.
+
+### Criteria (written and committed 2026-09-28 before any S2 probe was run)
+
+**Fixed before probing (user decisions and design numbers, not results).**
+
+- Opening cast 6/2/2/2 = 12 (chromis/clownfish/seahorse/gramma; user-agreed). Cap sum 15–18 (user-agreed), clownfish cap ≤ 3.
+- Habitat limits from the S1 scene data (placeholder coordinates, capacities as committed in `edc79de`): clownfish cap ≤ anemone `capacity` (3 for both anemone styles); seahorse cap ≤ hitches of the smallest required-hitch style (4); gramma cap ≤ `rock_spots` (3 in both scenes). If Codex's alignment changes these capacities, the caps chosen here must still fit them.
+- New species (authored design numbers, the same guesses as the plan's pre-probe; every species breaks even at food 10, cost = 0.4 × bite; brood 2, `k_food` 10, pool `microfauna`):
+
+  | Species | Mature / lifespan (days) | Body, reserve | Cost, bite (per day) | Breed (per day), cooldown |
+  |---|---|---|---|---|
+  | Green chromis (unchanged) | 30 / 180 | 0.5, 3.5 | 0.20, 0.5 | 0.10, 8 d |
+  | Clownfish *Amphiprion ocellaris* | 45 / 300 | 0.6, 4.0 | 0.20, 0.5 | 0.06, 12 d |
+  | Seahorse *Hippocampus kuda* | 60 / 300 | 0.5, 3.5 | 0.16, 0.4 | 0.05, 14 d |
+  | Royal gramma *Gramma loreto* | 40 / 240 | 0.4, 3.0 | 0.16, 0.4 | 0.07, 10 d |
+
+- `OPENING_AGE` = `{"fish":[40,150]}` for all four (the tang entry goes). `RESCUE_AT` = 1, `RESCUE_RATE`, `ARRIVAL_RATE`, plants, `MICRO`, `STREAM_OUT` and `STREAM_IN.nutrients` = 0.7 unchanged. Only `STREAM_IN.microfauna` and the caps are swept. Breeding rates change only if no configuration passes C4/C6 because too few young are produced; then that species' `breed` is raised in steps of ×1.5 and the whole sweep for it is repeated (recorded here, criteria unchanged).
+
+**Measures** (offline, no feeding; `tools/cast_probe.gd`):
+
+- `floor_hits`: animal-minutes in which, after that minute's metabolism, intake and growth, an animal's energy is below 0.1 × its reserve — the floor at which the S4 "never starves" mechanism (plan §4.3) will stop paying metabolism and stop breeding. It is counted on today's ecology, which has no such floor: until the first hit, a world with the mechanism runs the identical trajectory, so `floor_hits` = 0 means the mechanism never engages in that run and the food alone kept every animal off the floor. It also implies no starvation.
+- Microfauna minimum over hourly samples; population size and per-species counts over daily samples (after each simulated day).
+
+**Pass criteria, per seed, 180 days** — a configuration passes only if **every one of the 32 `WIDE` seeds** (`tests/seed_lists.gd`) passes all of them:
+
+- **C1** `floor_hits` = 0 (hence starvation 0).
+- **C2** microfauna minimum ≥ 10 (the break-even food of every species).
+- **C3** population never above the cap sum, and inside [12, cap sum] on ≥ 80% of days.
+- **C4** retained births > arrivals.
+- **C5** every species present on ≥ 95% of daily samples, no absence longer than 30 days. (This is the pre-redesign presence gate, measured *without* the S4 "never dies out" mechanism; with the mechanism S4 raises it to 100%.)
+- **C6** the derived gates of `tests/ecology_acceptance.gd` applied to the candidate constants: old-age deaths ≥ the certain number, the first by its bound, offspring produced ≥ offspring needed. For the fixed opening above (180 days): certain old age = 6 (all six chromis openers: youngest possible ages 40…131.7, + 180 > 207; clownfish/seahorse 40, 95 + 180 < 345; gramma 95 + 180 = 275 < 276), first by day 76 (207 − 131.7), offspring needed = 6 + (cap sum − 12).
+
+**365 days** (chosen configuration only, all 32 seeds): C1, C2, C4 over the whole year, and every species present on day 365.
+
+**Sweep.** Coarse: `STREAM_IN.microfauna` ∈ {0.7, 0.85, 1.0, 1.2} × caps chromis 6–8, clownfish 2–3, seahorse 2–4, gramma 2–3 restricted to cap sum 15–18 (23 combinations), seeds 42/812/240921, 180 days. To save CPU the coarse grid is walked from the edges: every input is first run on the heaviest (8/3/4/3 = 18) and a lightest (sum 15) combination; the remaining combinations are run only where they could still become the choice (an input at which the heaviest passes all coarse seeds leaves the lighter ones as fallbacks only). Fine: the best 3–5 coarse candidates (ranked: all coarse seeds pass, then larger cap sum, then higher worst-seed microfauna minimum) × all 32 seeds × 180 days.
+
+**Choice rule.** Among configurations passing on all 32 seeds: the largest cap sum; among inputs for it, the smallest `STREAM_IN.microfauna` on the grid (the least change to the tuned material budget). The next grid input up is also run on all 32 seeds and recorded as the fallback, because S4 changes the world's RNG draw order and must re-run the 32 seeds itself. No criterion above is loosened after results are seen; if nothing passes, the closest configuration and its failing criteria are reported instead.
+
 ## Sizing (offline probe before committing numbers)
 
 `tools/cast_probe.gd` runs the real `stream_world.gd` offline with the cast constants replaced from a JSON file; 180 days × seeds 42/812/240921, no feeding. Totals are over the three seeds unless shown per seed (`a/b/c`). Pools are the minimum over the run (biofilm also the mean).
