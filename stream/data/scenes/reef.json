@@ -1,0 +1,104 @@
+{
+	"id": "reef",
+	"version": 1,
+	"note": "Placeholder coordinates (S1, 2026-09-28) estimated from background-v1.png scaled to 1280x720; Codex replaces them when the art is final. bed samples StreamWorld.floor_y every 40 px.",
+	"background": "res://assets/reef/background-v1.png",
+	"bounds": {
+		"swim_x": [100, 1180],
+		"roam_x": [130, 1150],
+		"feed_x": [130, 1150],
+		"surface_y": 56
+	},
+	"bed": [
+		[0, 597.0],
+		[40, 601.0],
+		[80, 604.1],
+		[120, 605.6],
+		[160, 605.6],
+		[200, 604.6],
+		[240, 603.5],
+		[280, 602.9],
+		[320, 603.2],
+		[360, 604.0],
+		[400, 604.6],
+		[440, 604.1],
+		[480, 602.2],
+		[520, 598.9],
+		[560, 594.8],
+		[600, 590.9],
+		[640, 588.2],
+		[680, 587.2],
+		[720, 587.7],
+		[760, 589.1],
+		[800, 590.6],
+		[840, 591.4],
+		[880, 591.5],
+		[920, 591.0],
+		[960, 590.8],
+		[1000, 591.6],
+		[1040, 593.8],
+		[1080, 597.3],
+		[1120, 601.4],
+		[1160, 604.9],
+		[1200, 607.1],
+		[1240, 607.6],
+		[1280, 606.6]
+	],
+	"bands": {
+		"green_chromis": [180, 430],
+		"clownfish": [300, 575],
+		"seahorse": [240, 580],
+		"royal_gramma": [380, 590]
+	},
+	"exits": [
+		[-40, 300],
+		[1320, 300]
+	],
+	"terrain_obstacles": [
+		{"cx": 210, "cy": 480, "rx": 200, "ry": 90},
+		{"cx": 330, "cy": 450, "rx": 140, "ry": 30},
+		{"cx": 1110, "cy": 548, "rx": 90, "ry": 45}
+	],
+	"rock_spots": [
+		{"x": 452, "y": 585, "side": 1},
+		{"x": 1015, "y": 575, "side": -1},
+		{"x": 1210, "y": 585, "side": -1}
+	],
+	"slots": [
+		{
+			"id": "anemone",
+			"anchor": [620, 589],
+			"required": "anemone",
+			"styles": ["anemone_green", "anemone_pink"],
+			"default": "anemone_green"
+		},
+		{
+			"id": "hitch_plant",
+			"anchor": [930, 591],
+			"required": "hitch",
+			"styles": ["seagrass_tall", "gorgonian"],
+			"default": "seagrass_tall"
+		},
+		{
+			"id": "s1",
+			"anchor": [520, 599],
+			"required": null,
+			"styles": ["cave_rock", "shell", "brain_coral"],
+			"default": "cave_rock"
+		},
+		{
+			"id": "s2",
+			"anchor": [780, 590],
+			"required": null,
+			"styles": ["cave_rock", "table_coral", "brain_coral"],
+			"default": ""
+		},
+		{
+			"id": "s3",
+			"anchor": [330, 603],
+			"required": null,
+			"styles": ["shell", "brain_coral"],
+			"default": ""
+		}
+	]
+}

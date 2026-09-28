@@ -1,0 +1,151 @@
+{
+	"anemone_green": {
+		"kind": "anemone",
+		"obstacles": [],
+		"anemone": {"cx": 0, "cy": -40, "rx": 46, "ry": 30, "capacity": 3},
+		"hitches": [],
+		"shelters": [],
+		"fade_spots": [
+			[0, -24]
+		]
+	},
+	"anemone_pink": {
+		"kind": "anemone",
+		"obstacles": [],
+		"anemone": {"cx": 0, "cy": -36, "rx": 40, "ry": 26, "capacity": 3},
+		"hitches": [],
+		"shelters": [],
+		"fade_spots": [
+			[0, -22]
+		]
+	},
+	"seagrass_tall": {
+		"kind": "hitch",
+		"obstacles": [],
+		"hitches": [
+			[-18, -120],
+			[6, -160],
+			[22, -95],
+			[-4, -70]
+		],
+		"shelters": [],
+		"fade_spots": [
+			[0, -60]
+		]
+	},
+	"gorgonian": {
+		"kind": "hitch",
+		"obstacles": [],
+		"hitches": [
+			[-30, -110],
+			[0, -150],
+			[28, -120],
+			[10, -80]
+		],
+		"shelters": [],
+		"fade_spots": [
+			[0, -70]
+		]
+	},
+	"kelp_short": {
+		"kind": "hitch",
+		"obstacles": [],
+		"hitches": [
+			[-10, -90],
+			[8, -120],
+			[16, -70],
+			[-14, -60]
+		],
+		"shelters": [],
+		"fade_spots": [
+			[0, -50]
+		]
+	},
+	"cave_rock": {
+		"kind": "shelter",
+		"obstacles": [
+			{"cx": 0, "cy": -40, "rx": 60, "ry": 40}
+		],
+		"hitches": [
+			[-40, -78]
+		],
+		"shelters": [
+			{
+				"x": 62,
+				"y": -24,
+				"side": 1,
+				"use": ["royal_gramma", "green_chromis_night"]
+			}
+		],
+		"fade_spots": [
+			[-10, -40]
+		]
+	},
+	"shell": {
+		"kind": "shelter",
+		"obstacles": [
+			{"cx": 0, "cy": -18, "rx": 34, "ry": 18}
+		],
+		"hitches": [],
+		"shelters": [
+			{
+				"x": 36,
+				"y": -14,
+				"side": 1,
+				"use": ["royal_gramma"]
+			}
+		],
+		"fade_spots": [
+			[0, -16]
+		]
+	},
+	"wreck_bow": {
+		"kind": "shelter",
+		"obstacles": [
+			{"cx": 0, "cy": -50, "rx": 80, "ry": 50}
+		],
+		"hitches": [
+			[40, -104]
+		],
+		"shelters": [
+			{
+				"x": 84,
+				"y": -20,
+				"side": 1,
+				"use": ["royal_gramma", "green_chromis_night"]
+			}
+		],
+		"fade_spots": [
+			[-20, -50]
+		]
+	},
+	"table_coral": {
+		"kind": "shelter",
+		"obstacles": [
+			{"cx": 0, "cy": -70, "rx": 70, "ry": 16}
+		],
+		"hitches": [],
+		"shelters": [
+			{
+				"x": 0,
+				"y": -30,
+				"side": -1,
+				"use": ["royal_gramma", "green_chromis_night"]
+			}
+		],
+		"fade_spots": [
+			[0, -72]
+		]
+	},
+	"brain_coral": {
+		"kind": "obstacle",
+		"obstacles": [
+			{"cx": 0, "cy": -28, "rx": 44, "ry": 28}
+		],
+		"hitches": [],
+		"shelters": [],
+		"fade_spots": [
+			[0, -24]
+		]
+	}
+}

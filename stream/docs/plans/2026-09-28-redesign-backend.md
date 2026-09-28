@@ -470,7 +470,7 @@
 - 完成：`test_probe_tool` 綠；`godot --headless --path stream --script tools/cast_probe.gd -- --config=<json> --seed=42 --days=5` 印出一行 JSON。
 - Codex：無。
 
-**S1 場景資料格式、載入器、佔位資料**
+**S1 場景資料格式、載入器、佔位資料**　〔進度：2026-09-28 完成，`tests/test_scene_data.gd` 綠；macOS 匯出確認 `data/*.json` 在 pck 內，`export_presets.cfg` 不用改。API 名稱與草案不同處：`ReefScene.open(id)`（不叫 `load`，避免蓋掉內建函式）、`bounds` 用 `swim_x/roam_x/feed_x/surface_y`〕
 - 目標：§2 全部；世界還不讀它（行為零改變）。
 - 檔案：`data/decor.json`、`data/scenes/reef.json`、`data/scenes/shipwreck.json`、`scripts/reef_scene.gd`、`tools/scene_overlay.gd`、`tests/test_scene_data.gd`。
 - 先寫的失敗測試：`test_scene_data.gd` 的「reef 場景能載入且 `floor_y(x)` 在 0–1280 每 10 px 與現行 `StreamWorld.floor_y` 差 < 1 px」。
