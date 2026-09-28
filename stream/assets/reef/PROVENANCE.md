@@ -1,6 +1,6 @@
 # Reef source artwork
 
-**2026-09-28 afternoon:** production directly mirrors the approved side atlas, with heading hysteresis and a short cooldown. No front poses, intermediate poses, or paper-width compression. Both `fish-turns-low-pixel-v1.png` and `v2.png` are retired comparison sources, never loaded by `scripts/reef_rig.gd`. The v2 rig/shader snapshot lives only in `tools/review_fixtures/` as a historical reference. The new cast style is now approved; see `tools/art_candidates/REDESIGN_FISH.md` and `docs/NEW_FISH_PRODUCTION_ART.md`. No new fish is installed in the app before backend S4.
+**2026-09-28 afternoon:** production directly mirrors the approved side atlas, with heading hysteresis and a short cooldown. No front poses, intermediate poses, or paper-width compression. Both `fish-turns-low-pixel-v1.png` and `v2.png` are retired comparison sources, never loaded by `scripts/reef_rig.gd`. The v2 rig/shader snapshot lives only in `tools/review_fixtures/` as a historical reference. The new cast style is now approved; see `tools/art_candidates/REDESIGN_FISH.md` and `docs/NEW_FISH_PRODUCTION_ART.md`. H3 now routes new snapshot species through the new rig while retaining all three retiring fish; backend population switching remains S4.
 
 Generated with OpenAI imagegen on 2026-09-24. Atlas regions are animated by `reef_rig.gd`; no raster postprocessing was used. The shader clips generated translucent edge halos. Earlier numbered cast boards are concept references, not runtime assets.
 
@@ -46,3 +46,36 @@ Built-in imagegen edit, copied unchanged from `exec-b175eaec-2b11-4a0e-8cce-2641
 Prompt:
 
 > Edit target image 1: correct the eight fish turn sprites to match approved fish identities in reference image 2. Preserve EXACT canvas size 1536x1024, each sprite position, silhouette extent, mouth location, row and column layout: four rows yellow tang / purple firefish / lawnmower blenny / green chromis, left column three-quarter right-facing view, right column frontal view. Change faces and internal pattern ONLY. The eyes in image 1 are much too large and make these look like baby cartoon fish. Make each eye approximately HALF its current diameter, small square dark eye with single coarse white highlight like image 2. Remove human-like wide red open mouths, replace with tiny closed fish mouths in the same locations. Keep true fish species anatomy and muted broad body blocks matching image 2, avoid chibi or baby proportions. No new fish, no lettering, no extra rows, no labels. Crisp coarse pixel artwork, fully transparent background, no halos, glow or shadows. Preserve overall sprite geometry so existing animation regions still apply.
+
+
+## H3 backend BODY handoff — 2026-09-28
+
+Adult, unrotated full sprite bounds in **1280×720 world units**, including fins and
+transparent crop padding. Authoritative values are `ReefFishArt.extent_for()`:
+height = width × source region height / source region width. These are full widths
+and heights (not half extents); apply the backend's juvenile scale once. The seahorse
+is upright: its narrow dimension is X, tall dimension is Y.
+
+| Species | Width | Height | Suggested conservative `BODY` pair |
+|---|---:|---:|---|
+| `clownfish` | 69.0000 | 43.9223 | `[69.0, 44.0]` |
+| `seahorse` | 36.7000 | 60.9249 | `[37.0, 61.0]` |
+| `royal_gramma` | 67.4000 | 36.0916 | `[68.0, 37.0]` |
+
+For reference, the unchanged chromis mesh is 68.0 × 40.4007; its existing backend
+BODY is 68.0 × 39.0. H3 does not change that backend choice. These conservative
+sprite envelopes are a handoff recommendation, not an automatically installed
+collision shape. Shader fin/sway motion can briefly extend beyond the static mesh.
+
+**Pixel/coordinate contract: 1 logical coarse render pixel = 2 world units at 1×
+scene zoom**, because the 1280×720 world is rendered to 640×360. Screen enlargement
+is integer nearest-neighbor and does not change BODY. Camera zoom scales the scene;
+at zoom Z one render pixel covers 2/Z world units. The 1.65× review is a camera zoom,
+not a body-size change. Production zoom controls use 1× / 2×.
+
+The imagegen source itself has uneven hand-drawn pixel clusters, **not a mathematically
+uniform coarse-pixel lattice**. Do not count its decorative clusters to derive
+collision distances. For exact source-coordinate conversion, one original PNG
+pixel is 69/476 = 0.144958 world units for clownfish, 36.7/253 = 0.145059 for seahorse,
+and 67.4/465 = 0.144946 for gramma. Scene geometry and obstacle coordinates use world
+units; use the logical render-pixel contract above when specifying pixel margins.

@@ -16,7 +16,7 @@ func run() -> void:
 		if species!="green_chromis":
 			var atlas: AtlasTexture=load("res://assets/reef/"+species+"-side-v1.tres")
 			check(atlas.atlas==texture and atlas.region==cfg.region and atlas.filter_clip,species+": reusable atlas resource matches catalog")
-			check(not species in StreamStage.PRESENTED_SPECIES,species+": not installed before backend S4")
+			check(species in StreamStage.PRESENTED_SPECIES,species+": stage accepts new cast during H3 migration")
 		else:
 			check(texture==ReefRig.ATLAS and cfg.region==ReefRig.LOOK[species].region,"Approved chromis source and region remain unchanged")
 		for anchor: String in ["mouth","eye","fin_root"]:

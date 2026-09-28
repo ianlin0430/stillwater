@@ -1,6 +1,7 @@
 extends Node2D
 # Presentation only. Never receives a world or its random generators.
 const LIMIT: int=24
+var scene: ReefScene=ReefScene.open("reef")
 var fades: Dictionary={}
 var ghosts: Array[Dictionary]=[]
 
@@ -21,8 +22,7 @@ func accept(event: Dictionary, snapshot: Dictionary) -> void:
 			fades[event.id]={"age":0.0,"duration":1.5 if event.kind=="birth" else 2.0,"kind":event.kind,"side":-1.0 if actor.x<640 else 1.0}
 	elif event.kind=="dispersal":
 		if ghosts.size()>=LIMIT: return
-		var rig:=ReefRig.new()
-		rig.species=actor.species
+		var rig: ReefRig=StreamStage.create_rig(actor.species)
 		rig.detached=true
 		rig.sex=actor.sex
 		rig.individual_id=actor.id
@@ -58,7 +58,7 @@ func advance(delta: float, _simulation_time: float, rigs: Dictionary) -> void:
 				var hop_t: float=fmod(segment,1.0)
 				var progress: float=(floor(segment)+smoothstep(0,1,hop_t))/3.0
 				rigs[id].position.x+=fade.side*130*(1-progress)
-				rigs[id].position.y=StreamWorld.floor_y(rigs[id].position.x)
+				rigs[id].position.y=scene.floor_y(rigs[id].position.x)
 				rigs[id].hop_age=hop_t*.65
 				rigs[id].hop_power=.8
 			else: rigs[id].position.x+=fade.side*130*pow(1-t,2)

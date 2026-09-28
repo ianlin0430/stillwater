@@ -10,7 +10,7 @@ func tick(stage: Node2D, seconds: float) -> void:
 func run() -> void:
 	var world:=StreamWorld.new(42,1000)
 	world.state.light_hour=12
-	var snapshot: Dictionary=world.snapshot()
+	var snapshot: Dictionary=preload("res://tools/review_fixtures/cast_snapshot.gd").snapshot(preload("res://tools/review_fixtures/cast_snapshot.gd").LEGACY)
 	for a: Dictionary in snapshot.animals:
 		if a.species in ["garden_eel","purple_firefish"]:
 			a.extend=1.0
@@ -19,14 +19,15 @@ func run() -> void:
 	var frozen: PackedByteArray=var_to_bytes(snapshot)
 	var stage:=StreamStage.new()
 	root.add_child(stage)
+	stage.apply_snapshot(world.snapshot())
+	check(stage.rigs.size()==world.state.animals.size(),"Every individual in the current backend has a visible rig")
 	stage.apply_snapshot(snapshot)
 	tick(stage,0.5)
-	check(stage.rigs.size()==world.state.animals.size(),"Every individual in the current four-species backend has a visible rig")
 	var by_species: Dictionary={}
 	for id: int in stage.rigs:
 		var rig: ReefRig=stage.rigs[id]
 		by_species[rig.species]=rig
-		check(rig.fish.texture==ReefRig.EEL if rig.species=="garden_eel" else rig.fish.texture==ReefRig.ATLAS,"Uses new reef textures")
+		check(rig.fish.texture==rig.art_texture(),"Uses new reef textures")
 	check(not by_species.has("garden_eel"),"Deferred garden eel has no rig or visible hole")
 	var fire: ReefRig=by_species.purple_firefish
 	var blenny: ReefRig=by_species.lawnmower_blenny

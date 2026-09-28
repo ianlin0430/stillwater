@@ -292,7 +292,7 @@ func _world_pointer(event: InputEventMouse, point: Vector2) -> void:
 	var at: Vector2=(point-stage.position)/stage.zoom
 	var inside: bool=Rect2(0,0,1280,720).has_point(point)
 	if event is InputEventMouseMotion:
-		pointer=at if inside and at.y>StreamWorld.FOOD.surface and at.y<StreamWorld.floor_y(at.x) else Vector2(-1,-1)
+		pointer=at if inside and at.y>float(stage.scene.bounds().surface_y) and at.y<world.floor_y(at.x) else Vector2(-1,-1)
 		pointer_rest=0
 	elif event is InputEventMouseButton and event.pressed and event.button_index==MOUSE_BUTTON_LEFT and not inside and not paused:
 		world.startle(clampf(at.x,0,1280),clampf(at.y,0,720),1.0)
@@ -389,9 +389,9 @@ func _refresh_info() -> void:
 	if found.is_empty():
 		notes.text="This animal’s detailed record has aged out of the journal."
 		return
-	var cfg: Dictionary=StreamWorld.SPECIES[found.species]
-	var text: String="[font_size=20]"+found.name+"[/font_size]\n[color=#a0b3aa]"+cfg.label+" · #"+str(found.id)+"[/color]\n\n"
-	text+=("Young" if found.age<cfg.mature else "Adult")+" · "+str(int(found.age))+" days old\n"
+	var cfg: Dictionary=StreamWorld.SPECIES.get(found.species,{})
+	var text: String="[font_size=20]"+found.name+"[/font_size]\n[color=#a0b3aa]"+StreamStage.species_label(found.species)+" · #"+str(found.id)+"[/color]\n\n"
+	text+=(("Young" if found.age<float(cfg.mature) else "Adult")+" · " if cfg.has("mature") else "")+str(int(found.age))+" days old\n"
 	text+=found.activity if not found.has("cause") else "Left the pool" if found.cause=="departure" else "Died: "+found.cause
 	if found.parent>0:
 		text+="\nParent #"+str(found.parent)

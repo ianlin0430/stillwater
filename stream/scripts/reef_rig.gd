@@ -219,6 +219,8 @@ func animate(delta: float) -> void:
 	pose_time=minf(.2,pose_time+delta*action_tempo)
 	for key: String in pose_to:
 		pose[key]=lerpf(float(pose_from[key]),float(pose_to[key]),pose_time/.2)
+	# Equivalent headings across +/-PI must not interpolate through the opposite side.
+	pose.heading=lerp_angle(float(pose_from.heading),float(pose_to.heading),pose_time/.2) if pose_time<.2 else pose_to.heading
 	effort=lerpf(effort,(0.0 if dying else clampf(pose.thrust,0,1)),1-exp(-delta/(0.14 if pose.thrust>effort else 0.24)))
 	# Integrate propulsive effort, not a wall-clock swim loop. Coasting stops strokes.
 	water_phase+=delta*TAU*effort*(2.6 if species=="green_chromis" else 1.8)

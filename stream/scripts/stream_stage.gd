@@ -8,8 +8,11 @@ var deaths: Dictionary = {}
 var events_layer: Node2D
 var base_opacity: Dictionary = {}
 const MAX_DEATHS: int = 24
-# Explicit reef cast; legacy species remain in saves but are never drawn as new fish.
-const PRESENTED_SPECIES: Array[String] = ["lawnmower_blenny","purple_firefish","green_chromis","yellow_tang"]
+# Transitional cast: retain old rigs until backend S4 replaces the population.
+const PRESENTED_SPECIES: Array[String] = ["lawnmower_blenny","purple_firefish","green_chromis","yellow_tang","clownfish","seahorse","royal_gramma"]
+const NEW_CAST_RIG=preload("res://scripts/reef_new_cast_rig.gd")
+const NEW_LABELS: Dictionary={"clownfish":"Clownfish","seahorse":"Seahorse","royal_gramma":"Royal gramma"}
+var scene: ReefScene=ReefScene.open("reef")
 var smoother=MotionSmoother.new()
 var selected: int = -1
 var zoom: float = 1.0
@@ -26,6 +29,20 @@ var habitat: Node2D
 var interaction_enabled: bool=true
 var curiosity_target:=Vector2.INF
 var interaction_layer: Node2D
+
+# Missing backend metadata during H3 must not invent ecological maturation rules.
+static func species_label(species: String) -> String:
+	return StreamWorld.SPECIES.get(species,{}).get("label",NEW_LABELS.get(species,species.replace("_"," ").capitalize()))
+
+static func body_scale_for(actor: Dictionary) -> float:
+	var cfg: Dictionary=StreamWorld.SPECIES.get(actor.species,{})
+	return 0.5 if actor.age<float(cfg.get("mature",0.0)) else 1.0
+
+static func create_rig(species: String) -> ReefRig:
+	if not species in PRESENTED_SPECIES: return null
+	var rig: ReefRig=NEW_CAST_RIG.new() if species in ReefFishArt.LOOK else ReefRig.new()
+	rig.species=species
+	return rig
 
 func _ready() -> void:
 	texture_filter=CanvasItem.TEXTURE_FILTER_NEAREST
@@ -55,8 +72,14 @@ func _ready() -> void:
 	add_child(dimmer)
 
 func apply_snapshot(value: Dictionary) -> void:
+	var scene_id: String=value.get("scene","reef")
+	var scene_changed: bool=not snapshot.is_empty() and scene_id!=snapshot.get("scene","reef")
+	if scene_id!=scene.id():
+		var next_scene:=ReefScene.open(scene_id)
+		scene=next_scene if next_scene!=null else ReefScene.open("reef")
+	events_layer.scene=scene
 	var latest: int=value.get("next_event",1)-1
-	var reset: bool=event_cursor<0 or latest<event_cursor or float(value.elapsed)<smoother.elapsed or (not snapshot.is_empty() and value.get("seed")!=snapshot.get("seed"))
+	var reset: bool=scene_changed or event_cursor<0 or latest<event_cursor or float(value.elapsed)<smoother.elapsed or (not snapshot.is_empty() and value.get("seed")!=snapshot.get("seed"))
 	if reset:
 		for id: int in rigs: rigs[id].queue_free()
 		rigs.clear()
@@ -83,15 +106,17 @@ func apply_snapshot(value: Dictionary) -> void:
 	var jumps: Array = []
 	for a: Dictionary in value.animals:
 		if not a.species in PRESENTED_SPECIES: continue
-		var cfg: Dictionary = StreamWorld.SPECIES[a.species]
-		var size_factor: float=0.5 if a.age<cfg.mature else 1.0
+		var size_factor: float=body_scale_for(a)
 		var p:=Vector2(a.x,a.y)
 		present[a.id]=p
 		if a.get("relocated_at",-1)>smoother.elapsed:
 			jumps.append(a.id)
+		if rigs.has(a.id) and rigs[a.id].species!=a.species:
+			rigs[a.id].queue_free()
+			rigs.erase(a.id)
+			deaths.erase(a.id)
 		if not rigs.has(a.id):
-			var new_rig: Node2D = ReefRig.new()
-			new_rig.species=a.species
+			var new_rig: ReefRig=create_rig(a.species)
 			new_rig.individual_id=a.id
 			new_rig.body_scale=size_factor
 			new_rig.position=p
@@ -111,7 +136,7 @@ func apply_snapshot(value: Dictionary) -> void:
 		rig.target_body_scale=size_factor
 		rig.dim=0.64 if a.activity in ["Sheltering","Molting"] else 1.0
 		# As an animal enters its dark crevice, retain only a faint silhouette.
-		var shelter_depth: float=clampf(1.0-absf(a.x-a.shelter)/75.0,0,1) if a.activity in ["Sheltering","Molting"] else 0.0
+		var shelter_depth: float=clampf(1.0-absf(a.x-float(a.get("shelter",a.x)))/75.0,0,1) if a.activity in ["Sheltering","Molting"] else 0.0
 		base_opacity[a.id]=1.0-shelter_depth*0.78
 		rig.modulate.a=base_opacity[a.id]
 	for id: int in rigs.keys():
@@ -206,11 +231,10 @@ func _begin_death(event: Dictionary, value: Dictionary) -> void:
 			break
 	if archived.is_empty() or not archived.species in PRESENTED_SPECIES: return
 	if not rigs.has(id):
-		var rig:=ReefRig.new()
-		rig.species=archived.species
+		var rig: ReefRig=create_rig(archived.species)
 		rig.individual_id=id
 		rig.sex=archived.sex
-		rig.body_scale=0.5 if archived.age<StreamWorld.SPECIES[archived.species].mature else 1.0
+		rig.body_scale=body_scale_for(archived)
 		rig.scale=Vector2.ONE*rig.body_scale
 		rig.facing=archived.direction
 		rig.face_target=archived.direction

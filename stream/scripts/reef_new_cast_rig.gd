@@ -1,5 +1,5 @@
 extends ReefRig
-# Prepared for backend S4; instantiated only by independent review tools today.
+# H3 stage routing accepts new species before backend S4 switches the population.
 # Review pose controls are presentation inputs, not a proposed snapshot schema.
 var clasp_target: float=0
 var clasp_blend: float=0

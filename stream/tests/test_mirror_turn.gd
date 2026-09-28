@@ -7,8 +7,7 @@ func check(ok: bool, message: String) -> void:
 func _initialize() -> void: call_deferred("run")
 func run() -> void:
 	for species: String in StreamStage.PRESENTED_SPECIES:
-		var rig:=ReefRig.new()
-		rig.species=species
+		var rig:=StreamStage.create_rig(species)
 		rig.detached=true
 		rig.position=Vector2(350.25,260.75)
 		root.add_child(rig)
@@ -27,7 +26,7 @@ func run() -> void:
 				changes+=1
 				confirmed=confirmed and cos(rig.pose.heading)*previous < -rig.MIRROR_THRESHOLD
 			previous=orientation
-			side_only=side_only and rig.fish.visible and rig.fish.texture==ReefRig.ATLAS and rig.get_child_count()==1
+			side_only=side_only and rig.fish.visible and rig.fish.texture==rig.art_texture() and rig.get_child_count()==1
 		check(side_only and full_width,species+": only full-width left/right side drawings, body and tail together")
 		check(changes==1 and confirmed and rig.facing==-1,species+": slow turn flips exactly once beyond threshold")
 		check(rig.position==Vector2(350.25,260.75),species+": flip never moves the actor pivot")
@@ -37,6 +36,15 @@ func run() -> void:
 			if rig.facing!=previous: changes+=1
 			previous=rig.facing
 		check(changes==1,species+": heading jitter around 90 degrees cannot flip back")
+		rig.apply_actor({"heading":PI-.03,"activity":"Cruising","extend":1.0})
+		rig.animate(.3)
+		var holds_left: bool=rig.facing==-1
+		for frame in 120:
+			if frame%12==0:
+				rig.apply_actor({"heading":-PI+.03 if frame%24==0 else PI-.03,"activity":"Cruising","extend":1.0})
+			rig.animate(1.0/60)
+			holds_left=holds_left and rig.facing==-1
+		check(holds_left,species+": crossing the angle wrap never flips to the opposite side")
 		rig.apply_actor({"heading":0.0,"activity":"Cruising","extend":1.0})
 		rig.animate(.3)
 		check(rig.facing==1,species+": confirmed return heading mirrors right")
