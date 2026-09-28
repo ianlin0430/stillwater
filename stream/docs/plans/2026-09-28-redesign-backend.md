@@ -463,7 +463,7 @@
 
 每片：先寫第一個失敗測試（確認它**因為對的原因**失敗）→ 實作 → 相關測試綠 → 真實 runtime 煙霧測試（開 `-- --qa` 幾秒，或 headless 跑幾秒即時）→ 一個 commit。每片都只 `git add` 自己改的路徑。
 
-**S0 寬 seed 清單與探測工具修正**
+**S0 寬 seed 清單與探測工具修正**　〔進度：2026-09-28 完成，`tests/test_probe_tool.gd` 綠〕
 - 目標：之後的探測與測試有固定的 seed 清單；探測工具能替換 `RESCUE_AT`、`STREAM_IN`、`OPENING_AGE`。
 - 檔案：`tests/seed_lists.gd`（新）、`tools/cast_probe.gd`。
 - 先寫的失敗測試：一個小的工具自測（放 `tests/test_probe_tool.gd`）：用 `rescue_at=0` 的設定跑 1 天，patched 原始碼裡必須找得到 `RESCUE_AT: int = 0`（現在會失敗：替換規則找的是 `<=2`，`cast_probe.gd:34`）。

@@ -4,7 +4,9 @@ extends SceneTree
 # file, so caps and opening counts can be checked against the food pools before they
 # are committed. Usage:
 #   godot --headless --path . --script tools/cast_probe.gd -- --config=probe.json --seed=42 --days=180
-# probe.json: {"name":"...","active":[...],"cap":{...},"initial":{...},"species":{key:{...}},"rescue_at":n}
+# probe.json: {"name":"...","active":[...],"cap":{...},"initial":{...},"species":{key:{...}},"rescue_at":n,
+#   "stream_in":{pool:rate,...},"opening_age":{"fish":[lo,hi],species:[lo,hi],...}}
+# stream_in and opening_age replace the whole constant, so give every key the world reads.
 
 func _initialize() -> void:
 	var o: Dictionary={"config":"","seed":42,"days":180,"feed":"none"}
@@ -22,6 +24,14 @@ func _initialize() -> void:
 func _world(cfg: Dictionary) -> GDScript:
 	if cfg.is_empty():
 		return load("res://scripts/stream_world.gd")
+	var script: GDScript=compile(patched_source(cfg))
+	if script==null:
+		printerr("probe: patched world does not compile")
+		quit(1)
+	return script
+
+# The world source with the cast constants replaced from cfg (static so tests can check it).
+static func patched_source(cfg: Dictionary) -> String:
 	var lines: PackedStringArray=FileAccess.get_file_as_string("res://scripts/stream_world.gd").split("\n")
 	var out: PackedStringArray=[]
 	for line: String in lines:
@@ -31,8 +41,14 @@ func _world(cfg: Dictionary) -> GDScript:
 			line="const ACTIVE_SPECIES: Array[String] = "+JSON.stringify(cfg.active)
 		elif line.begins_with("const CAP:") and cfg.has("cap"):
 			line="const CAP: Dictionary = "+JSON.stringify(cfg.cap)
-		elif line.contains("if c[species]<=2 and") and cfg.has("rescue_at"):
-			line=line.replace("<=2","<="+str(int(cfg.rescue_at)))
+		elif line.begins_with("const RESCUE_AT:") and cfg.has("rescue_at"):
+			# Was a replace on "if c[species]<=2 and", which stopped matching once the rule became
+			# the RESCUE_AT constant: the option silently did nothing until 2026-09-28 (S0).
+			line="const RESCUE_AT: int = "+str(int(cfg.rescue_at))
+		elif line.begins_with("const STREAM_IN:") and cfg.has("stream_in"):
+			line="const STREAM_IN: Dictionary = "+JSON.stringify(cfg.stream_in)
+		elif line.begins_with("const OPENING_AGE:") and cfg.has("opening_age"):
+			line="const OPENING_AGE: Dictionary = "+JSON.stringify(cfg.opening_age)
 		elif line.begins_with("const NAMES:") and cfg.has("active"):
 			var names: Dictionary={}
 			for k: String in cfg.active:
@@ -47,15 +63,16 @@ func _world(cfg: Dictionary) -> GDScript:
 		# SPECIES.initial of an existing entry, e.g. garden_eel.
 		var rx:=RegEx.create_from_string('("'+k+'": \\{[^\\n]*?"initial":)\\d+')
 		src=rx.sub(src,"${1}"+str(cfg.initial[k]))
+	return src
+
+static func compile(src: String) -> GDScript:
 	var script:=GDScript.new()
 	script.source_code=src
-	var err: Error=script.reload()
-	if err!=OK:
-		printerr("probe: patched world does not compile ",err)
-		quit(1)
+	if script.reload()!=OK:
+		return null
 	return script
 
-func run(world: RefCounted, days: int, name: String, seed_value: int) -> Dictionary:
+static func run(world: RefCounted, days: int, name: String, seed_value: int) -> Dictionary:
 	var start: int=Time.get_ticks_msec()
 	var species_of: Dictionary={}
 	var starve: Dictionary={}
