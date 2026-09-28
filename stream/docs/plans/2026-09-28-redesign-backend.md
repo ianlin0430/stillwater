@@ -484,7 +484,7 @@
 - 完成：粗篩＋細篩（32 seed × 180 天）＋選定設定 365 天的表格都在 ecology.md；選定設定在 32 個 seed 上 `floor_hits`＝0（用「保證已開」的探測版本量，見 S4 的機制；若 S4 還沒落地，先量「原本會餓死的次數」＝0）。
 - Codex：無（但數字決定後告知 Codex 上限與開場數，影響畫面擺位）。
 
-**S3 存檔 v3、全新世界（舊陣容暫時保留）**
+**S3 存檔 v3、全新世界（舊陣容暫時保留）**　〔進度：2026-09-28 完成，`8965125`。新存檔 `user://reef.world`、格式 `stillwater-reef-3`、world version 3；只收 v3；舊格式檔不解開、不改、不刪、不另建 recovery。`main.gd` 不必改即正確（`:107` 會把回傳路徑寫回偏好）；可選：`:92` persist-qa 檔名改用 `StreamStore.DEFAULT_PATH.get_file()`、`legacy` 時顯示一句說明。`recent` 暫留，`main.gd:399` 還在讀。〕
 - 目標：§5.2；拿掉所有 legacy 升級路徑與欄位。陣容還是現在的四種（讓前端不受影響）。
 - 檔案：`scripts/stream_world.gd`（`VERSION`、`restore`、`_upgrade_v1`、`validate`、`spawn` 的 legacy 欄位、`REEF_CAST`、legacy `SPECIES`）、`scripts/stream_store.gd`、`scripts/absence.gd`（文字）、`tests/test_world.gd`（刪 legacy 段落、加新檢查）、`tests/test_lifecycle.gd`、刪 `tests/fixtures/*.var`。
 - 先寫的失敗測試：`test_world`：「v2 存檔被 `validate` 拒絕」「`load_or_create(新路徑)` 在舊路徑有 v2 檔時開新世界，舊檔位元組不變」。

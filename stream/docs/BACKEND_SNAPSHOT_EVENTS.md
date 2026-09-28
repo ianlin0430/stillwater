@@ -1,6 +1,8 @@
 # Backend 快照與自然事件（backend 側契約）
 
 更新：2026-09-27（大魚繞小魚：休息中、或被夾在水層邊緣／牆邊的綠光鰓雀鯛不再讓黃金吊，由黃金吊從上方或下方繞一個大弧；同日 review 修正：整群走同一側、垂直經過時沿切線繞開、休息的黃金吊會游離休息 chromis、黃金吊轉向與速度不再突跳，新增 `around_x`/`around_y`；見「身體不重疊」「綠光鰓雀鯛休息」）。2026-09-26 晚（黃金吊啃食改成側面：身體中心離嘴半個身長 `TANG.reach`＝61 px × 體型，岩石點剩 4 個；綠光鰓雀鯛會避開啃食中黃金吊的身體；綠光鰓雀鯛休息時平穩懸停、不再上下抖，見「黃金吊」「自然游動欄位」）。2026-09-26（自然游動欄位 heading/pitch/speed/thrust/turn/roll/flick、身體不重疊、blenny 避開紫雷達洞口；見「自然游動欄位」）。2026-09-25（最終四物種：花園鰻移除；紫雷達洞口重新排開；黃金吊岩石點互斥；新增 `ate` 事件）。實作在 `scripts/stream_world.gd`，測試 `tests/test_presentation.gd`、`tests/test_world.gd`（`eel_checks`、`feeding_checks`、`blenny_checks`、`firefish_checks`、`chromis_checks`、`tang_checks`、`reef_cast_checks`）。
+> **2026-09-28 存檔 v3（S3，`8965125`）**：新存檔 `user://reef.world`，外層格式 `stillwater-reef-3`，world `version`＝3，只接受 v3，沒有任何舊格式升級。偏好設定若還記著舊的 `stream.world`（格式 `stillwater-stream-1`），`StreamStore.load_or_create` 不解開、不改、不刪它，改用同資料夾的 `reef.world` 並在回傳加 `legacy:true`（不再產生 `stream-recovery-*.world`）。state 裡拿掉的欄位：`reef_cast`、`totals.molt`、`totals.predation`、個體的 `next_molt`／`molting_until`／`shelter`。魚種仍是舊的四種，S4 才換成新陣容。
+
 前端契約（Codex）見 `FRONTEND_BACKEND_CONTRACT.md`；本檔只描述 backend 提供什麼。
 注意：該契約寫的 `stream_absence.gd` 實際檔名是 `scripts/absence.gd`。
 
