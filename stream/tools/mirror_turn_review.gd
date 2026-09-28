@@ -1,9 +1,12 @@
 extends SceneTree
-# Review only: old sprites are deliberately isolated from the production scene.
-const BEFORE=preload("res://tools/review_fixtures/front_turn_rig.gd")
-const OUT="res://artifacts/paper-turn-review/"
+# Current backend cast only; no new fish approval or persistence.
+const OUT="res://artifacts/mirror-turn-review/"
 func _initialize() -> void: call_deferred("run")
 func run() -> void:
+	if not "--qa" in OS.get_cmdline_user_args():
+		printerr("This recorder requires -- --qa")
+		quit(1)
+		return
 	Engine.max_fps=0
 	DirAccess.make_dir_recursive_absolute(OUT+"frames")
 	var view:=SubViewport.new()
@@ -20,7 +23,7 @@ func run() -> void:
 	for row in 4:
 		var species: String=["green_chromis","yellow_tang","purple_firefish","lawnmower_blenny"][row]
 		for col in 2:
-			var rig=BEFORE.new() if col==0 else ReefRig.new()
+			var rig:=ReefRig.new()
 			rig.species=species
 			rig.detached=true
 			rig.body_scale=1.65
@@ -35,19 +38,30 @@ func run() -> void:
 	for col in 2:
 		var label:=Label.new()
 		label.position=Vector2(24+col*640,8)
-		label.text="BEFORE / FRONT POSES" if col==0 else "AFTER / SIDE ONLY"
+		label.text="DIRECT MIRROR / SWIMMING" if col==0 else "HEADING JITTER / HOLD SIDE"
 		view.add_child(label)
+	var flips: Dictionary={}
 	for frame in 480:
 		var t: float=frame/60.0
 		var heading: float=PI*smoothstep(1,3,t) if t<4 else PI*(1-smoothstep(5,7,t))
-		for rig in rigs:
+		var jitter: float=0.0 if t<1 else PI*.5+sin(t*47)*.12 if t<4 or t>=5 else PI
+		for index in rigs.size():
+			var rig: ReefRig=rigs[index]
+			var previous: float=rig.facing
 			if frame%12==0:
-				rig.apply_actor({"heading":heading,"activity":"Cruising","speed":0.0,"thrust":0.0,"extend":1.0})
+				var target: float=heading if index%2==0 else jitter
+				rig.face_target=1 if cos(target)>=0 else -1
+				rig.apply_actor({"heading":target,"activity":"Cruising","speed":24.0,"thrust":.35,"extend":1.0})
 			rig.animate(1.0/60)
+			if rig.facing!=previous:
+				var key: String=rig.species+("_turn" if index%2==0 else "_jitter")
+				if not flips.has(key): flips[key]=[]
+				flips[key].append(frame)
 		await process_frame
 		RenderingServer.force_draw(false)
 		var capture: Image=view.get_texture().get_image()
 		capture.save_png(OUT+"frames/frame-%04d.png"%frame)
 		if frame in [0,120,240]: capture.save_png(OUT+"still-%03d.png"%frame)
+	FileAccess.open(OUT+"flips.json",FileAccess.WRITE).store_string(JSON.stringify(flips,"  "))
 	print("Recorded 8 seconds at 60 FPS, four current backend species at 1.65x; QA only")
 	quit()

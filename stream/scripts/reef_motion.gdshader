@@ -4,8 +4,6 @@ uniform float body_line = 0.5;
 uniform float phase = 0.;
 uniform float effort = 0.;
 uniform float facing = 1.;
-uniform float tail_facing = 1.;
-uniform float projection = 1.;
 uniform float bite = 0.;
 uniform float fin_open = 1.;
 uniform float pitch = 0.;
@@ -37,9 +35,6 @@ varying vec2 local_point;
 void vertex() {
     vec2 p = VERTEX;
     mat4 to_canvas = CANVAS_MATRIX * MODEL_MATRIX;
-    // A single raster column at the exact edge-on pose prevents a blank frame.
-    // Above that raster limit the sheet follows abs(cos(heading)) exactly.
-    float pixel_width = 1. / max(length(to_canvas[0].xy), .001);
     vec2 rest_point=vec2(p.x/extent.x+.5,p.y/extent.y+body_line);
     if (eel) {
         p.y += (1. - extension) * extent.y;
@@ -77,20 +72,17 @@ void vertex() {
         float jaw = smoothstep(.72,.98,p.x/extent.x+.5) * smoothstep(-.03,.07,p.y/extent.y);
         p.y += jaw * bite * 2.0;
         p.y *= 1. - portal_fold*.70*fin;
-        // One side texture folds as a single sheet. Tail lag must not fold
-        // opposite halves over each other when heading crosses PI/2.
+        // Flip the complete side drawing in one frame, with no turn deformation.
         p.x += sin(roll)*p.y*.25;
-        float sheet_facing = (facing < 0. ? -1. : 1.) * max(abs(facing), pixel_width / extent.x);
-        p.x *= sheet_facing * projection;
+        p.x *= facing;
         p.y *= cos(roll);
-        p.y += sin(tail*3.14159) * (facing-tail_facing) * abs(facing) * extent.y*.1;
         p=mat2(vec2(cos(pitch),sin(pitch)),vec2(-sin(pitch),cos(pitch)))*p;
     }
     p+=pose_offset;
     sand_y=p.y;
     local_point=p;
-    // Snap the shared pivot, never individual mesh vertices (which would tear
-    // or collapse the one-pixel sheet). Keep simulation positions untouched.
+    // Snap the shared pivot without changing simulation positions or deforming
+    // individual mesh vertices. Mirroring leaves this pivot unchanged.
     vec2 pivot = (to_canvas * vec4(pose_offset, 0., 1.)).xy;
     vec2 correction = floor(pivot) + vec2(.5) - pivot;
     p += inverse(mat2(to_canvas[0].xy, to_canvas[1].xy)) * correction;

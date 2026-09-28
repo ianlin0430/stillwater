@@ -42,7 +42,9 @@ var pose_from: Dictionary={}
 var pose_to: Dictionary={}
 var pose: Dictionary={}
 var pose_time: float=0.2
-var tail_heading: float=0
+const MIRROR_THRESHOLD: float=0.20
+const MIRROR_HOLD: float=0.25
+var mirror_hold: float=0
 var ray_flick: float=0
 var ray_velocity: float=0
 var last_flick: float=0
@@ -129,7 +131,9 @@ func apply_actor(value: Dictionary, _pellets: Array=[]) -> void:
 	if first_actor:
 		pose=pose_to.duplicate()
 		pose_from=pose.duplicate()
-		tail_heading=pose.heading
+		var horizontal: float=cos(pose.heading)
+		facing=(-1.0 if horizontal<0 else 1.0) if absf(horizontal)>=MIRROR_THRESHOLD else (-1.0 if value.get("direction",face_target)<0 else 1.0)
+		tail_facing=facing
 	pose_time=0
 	var flick: float=float(value.get("flick",0))
 	if flick>last_flick: ray_velocity=6.0
@@ -148,7 +152,7 @@ func apply_actor(value: Dictionary, _pellets: Array=[]) -> void:
 		if species=="yellow_tang" and activity=="Grazing" and actor.has("contact_x"):
 			var contact: Vector2=(Vector2(actor.contact_x,actor.contact_y)-position)/maxf(body_scale,.1)
 			var angle: float=atan2(contact.y,absf(contact.x))*float(actor.get("direction",1))
-			contact_offset=contact-Vector2(extent.x*.5*cos(pose.heading),0).rotated(angle)
+			contact_offset=contact-Vector2(extent.x*.5*facing,0).rotated(angle)
 		first_actor=false
 
 func consume_food(event: Dictionary={}) -> void:
@@ -219,10 +223,8 @@ func animate(delta: float) -> void:
 	if dying: pectoral_goal=0
 	pectoral_effort=lerpf(pectoral_effort,pectoral_goal,1-exp(-delta*8))
 	pectoral_phase+=delta*TAU*pectoral_effort*(4.16 if species=="green_chromis" else 2.88)
-	facing=cos(pose.heading)
-	var trailing: float=clampf(pose.heading-pose.turn*0.08,0,PI)
-	tail_heading=lerpf(tail_heading,trailing,1-exp(-delta*8))
-	tail_facing=cos(tail_heading)
+	_update_mirror(delta)
+	tail_facing=facing
 	brake=lerpf(brake,clampf((previous_speed-float(pose.speed))/maxf(delta,.001)/35,0,1) if not dying else 0.0,1-exp(-delta*5))
 	previous_speed=pose.speed
 	fin_spread=lerpf(fin_spread,1.0+effort*.10+brake*.16+(0.08 if activity=="Curious" else 0),1-exp(-delta*6))
@@ -267,7 +269,7 @@ func animate(delta: float) -> void:
 		var grazing_goal: float=maxf(1.0 if activity=="Grazing" else 0.0,sin(bite_timer/.35*PI)) if hop_age>=0.65 else 0.0
 		blenny_graze=lerpf(blenny_graze,grazing_goal,1-exp(-delta*8))
 		# Retain easing state across frames; interpolating from pose.pitch anew never settles.
-		blenny_pitch=lerp_angle(blenny_pitch,lerpf(visual_pitch,0.31*face_target,blenny_graze),1-exp(-delta*7))
+		blenny_pitch=lerp_angle(blenny_pitch,lerpf(visual_pitch,0.31*facing,blenny_graze),1-exp(-delta*7))
 		visual_pitch=blenny_pitch
 		var perch_y: float=-extent.y*(1-float(LOOK[species].line))
 		var grazing_y: float=-sin(absf(visual_pitch))*extent.x*0.5-3.0
@@ -285,7 +287,7 @@ func animate(delta: float) -> void:
 		var contact: Vector2=(Vector2(actor.contact_x,actor.contact_y)-position)/maxf(body_scale,0.1)
 		# Keep the silhouette intact; ease a visual mouth pivot toward the rock.
 		contact_projection=1.0
-		visual_pitch=atan2(contact.y,absf(contact.x))*face_target+sin(pose.roll*3)*.06*face_target
+		visual_pitch=atan2(contact.y,absf(contact.x))*facing+sin(pose.roll*3)*.06*facing
 		# Head direction is backend-owned at contact; prevent overshoot of the mouth.
 		# Backend finishes the heading turn before grazing; no direction snap here.
 	if species=="yellow_tang":
@@ -304,8 +306,6 @@ func animate(delta: float) -> void:
 			# A nighttime arrival must not travel underground in its final hidden pose.
 			extension=1
 			visual_pitch=0
-			facing=-signf(arrival_from.x)
-			tail_facing=facing
 			visual_offset=arrival_from*pow(1-arrival_age/arrival_duration,2)
 			visual_offset.y-=float(actor.get("hover_y",32))/maxf(body_scale,0.1)
 		else: arrival_age=-1
@@ -322,8 +322,6 @@ func animate(delta: float) -> void:
 	fish_material.set_shader_parameter("ray_flick",ray_flick)
 	fish_material.set_shader_parameter("eye_scan",1.0 if species=="lawnmower_blenny" and fmod(eye_clock+individual_id,9.0)>7.5 and sleep_blend>.4 else 0.0)
 	fish_material.set_shader_parameter("facing",facing)
-	fish_material.set_shader_parameter("tail_facing",tail_facing)
-	fish_material.set_shader_parameter("projection",contact_projection)
 	fish_material.set_shader_parameter("extension",extension)
 	fish_material.set_shader_parameter("fin_open",fin_spread)
 	fish_material.set_shader_parameter("sleep_amount",sleep_blend)
@@ -348,10 +346,28 @@ func animate(delta: float) -> void:
 		drawn_offset=selection_offset
 		queue_redraw()
 
+func _update_mirror(delta: float) -> void:
+	# Schmitt trigger: uncertain headings retain the last full-width side.
+	# The cooldown uses real seconds and freezes together with animate(0).
+	mirror_hold=maxf(0,mirror_hold-delta)
+	if arrival_age>=0 and arrival_age<arrival_duration:
+		facing=-1.0 if arrival_from.x>0 else 1.0
+		mirror_hold=MIRROR_HOLD
+		return
+	var horizontal: float=cos(pose.heading)
+	if mirror_hold<=0 and horizontal*facing < -MIRROR_THRESHOLD:
+		facing=-facing
+		# Cached world-space tilts mirror with the body; they must not ease
+		# through a second, unintended turn after the horizontal flip.
+		tang_pitch=-tang_pitch
+		blenny_pitch=-blenny_pitch
+		curiosity_pitch=-curiosity_pitch
+		mirror_hold=MIRROR_HOLD
+
 func _firefish_pose(entering: bool) -> void:
 	var h: float=float(actor.get("hover_y",32))/maxf(body_scale,.1)
 	var half: float=extent.x*.5
-	var direction: float=1 if face_target>0 else -1
+	var direction: float=facing
 	var t: float=1-extension
 	portal_fold=smoothstep(0,.60,t)
 	if entering:

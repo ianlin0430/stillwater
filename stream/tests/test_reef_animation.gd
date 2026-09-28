@@ -116,7 +116,7 @@ func run() -> void:
 	chromis.face_target=-1
 	chromis.apply_actor(turning)
 	for i in 60: chromis.animate(1.0/30)
-	check(is_equal_approx(chromis.facing,chromis.face_target) and is_equal_approx(chromis.tail_facing,chromis.facing),"Head-led turn finishes with attached tail")
+	check(is_equal_approx(chromis.facing,chromis.face_target) and is_equal_approx(chromis.tail_facing,chromis.facing),"Direct mirror changes body and tail together")
 	fire.target_extension=0
 	fire.extension=0
 	fire.begin_arrival()
@@ -171,7 +171,7 @@ func run() -> void:
 	check(var_to_bytes(snapshot)==frozen,"Rig updates never mutate snapshots")
 	check(var_to_bytes(world.export_state())==before,"Rig interactions preserve simulation and both random states")
 	# Replay a complete turn as 0.2 s snapshots, rendering six frames per snapshot.
-	var largest_step: float=0
+	var mirror_changes: int=0
 	var previous_facing: float=chromis.facing
 	var turn_pose: Dictionary=chromis.actor.duplicate(true)
 	turn_pose.heading=PI
@@ -189,9 +189,9 @@ func run() -> void:
 		chromis.apply_actor(turn_pose)
 		for frame in 6:
 			chromis.animate(1.0/30)
-			largest_step=maxf(largest_step,absf(chromis.facing-previous_facing))
+			if chromis.facing!=previous_facing: mirror_changes+=1
 			previous_facing=chromis.facing
-	check(largest_step<0.08,"A snapshot turn never flips the rendered orientation in one frame")
+	check(mirror_changes==1,"A complete snapshot turn mirrors exactly once")
 	check(absf(chromis.water_phase-neutral_phase)<0.6,"Zero thrust eases out of the previous stroke instead of running a fixed loop")
 	var fallback: Dictionary={"activity":"Resting","direction":-1,"species":"green_chromis"}
 	chromis.apply_actor(fallback)

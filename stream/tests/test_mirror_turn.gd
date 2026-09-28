@@ -10,23 +10,54 @@ func run() -> void:
 		var rig:=ReefRig.new()
 		rig.species=species
 		rig.detached=true
+		rig.position=Vector2(350.25,260.75)
 		root.add_child(rig)
 		var previous: float=1
-		var largest_step: float=0
+		var changes: int=0
 		var side_only: bool=true
-		var accurate: bool=true
+		var full_width: bool=true
+		var confirmed: bool=true
 		for frame in 241:
 			var heading: float=PI*frame/240.0
-			rig.apply_actor({"heading":heading,"activity":"Cruising","extend":1.0,"pitch":.1})
+			rig.apply_actor({"heading":heading,"activity":"Cruising","extend":1.0})
 			rig.animate(1.0/60)
-			var signed_width: float=rig.fish_material.get_shader_parameter("facing")
-			accurate=accurate and is_equal_approx(signed_width,cos(rig.pose.heading))
-			largest_step=maxf(largest_step,absf(signed_width-previous))
-			previous=signed_width
+			var orientation: float=rig.fish_material.get_shader_parameter("facing")
+			full_width=full_width and absf(orientation)==1 and rig.tail_facing==orientation
+			if orientation!=previous:
+				changes+=1
+				confirmed=confirmed and cos(rig.pose.heading)*previous < -rig.MIRROR_THRESHOLD
+			previous=orientation
 			side_only=side_only and rig.fish.visible and rig.fish.texture==ReefRig.ATLAS and rig.get_child_count()==1
-		check(side_only,species+": one side mesh throughout the turn; no replacement sprite")
-		check(accurate and largest_step<.014,species+": signed cosine projection is continuous through the flip")
+		check(side_only and full_width,species+": only full-width left/right side drawings, body and tail together")
+		check(changes==1 and confirmed and rig.facing==-1,species+": slow turn flips exactly once beyond threshold")
+		check(rig.position==Vector2(350.25,260.75),species+": flip never moves the actor pivot")
+		for frame in 120:
+			rig.apply_actor({"heading":PI*.5+sin(frame*2.3)*.12,"activity":"Cruising","extend":1.0})
+			rig.animate(1.0/60)
+			if rig.facing!=previous: changes+=1
+			previous=rig.facing
+		check(changes==1,species+": heading jitter around 90 degrees cannot flip back")
+		rig.apply_actor({"heading":0.0,"activity":"Cruising","extend":1.0})
+		rig.animate(.3)
+		check(rig.facing==1,species+": confirmed return heading mirrors right")
+		rig.apply_actor({"heading":PI,"activity":"Cruising","extend":1.0})
+		rig.animate(.1)
+		var hold: float=rig.mirror_hold
+		rig.animate(0)
+		check(rig.mirror_hold==hold and rig.facing==1,species+": pause freezes mirror lockout")
+		rig.animate(.1)
+		check(rig.facing==1,species+": opposite heading cannot reverse within 0.25 seconds")
+		rig.animate(.06)
+		check(rig.facing==-1,species+": confirmed opposite heading flips after cooldown")
 		rig.free()
+	# A new left-facing actor never flashes a right-facing first frame.
+	var left:=ReefRig.new()
+	left.species="green_chromis"
+	root.add_child(left)
+	left.apply_actor({"heading":PI,"activity":"Cruising"})
+	left.animate(1.0/60)
+	check(left.facing==-1 and left.fish_material.get_shader_parameter("facing")==-1.0,"First snapshot initializes the correct side")
+	left.free()
 	# Equal elapsed time at both supported foreground rates.
 	var results: Array=[]
 	for fps in [30,60]:

@@ -1,6 +1,6 @@
 # Reef source artwork
 
-**2026-09-28 redesign:** production now uses the approved side atlas only. Both `fish-turns-low-pixel-v1.png` and `v2.png` are retired comparison sources, never loaded by `scripts/reef_rig.gd`. The v2 rig/shader snapshot lives only in `tools/review_fixtures/` for the before/after recording. The pending new cast board and full generation prompt are in `tools/art_candidates/REDESIGN_FISH.md`; no new fish is installed in the app.
+**2026-09-28 afternoon:** production directly mirrors the approved side atlas, with heading hysteresis and a short cooldown. No front poses, intermediate poses, or paper-width compression. Both `fish-turns-low-pixel-v1.png` and `v2.png` are retired comparison sources, never loaded by `scripts/reef_rig.gd`. The v2 rig/shader snapshot lives only in `tools/review_fixtures/` as a historical reference. The pending new cast board and full generation prompt are in `tools/art_candidates/REDESIGN_FISH.md`; no new fish is installed in the app.
 
 Generated with OpenAI imagegen on 2026-09-24. Atlas regions are animated by `reef_rig.gd`; no raster postprocessing was used. The shader clips generated translucent edge halos. Earlier numbered cast boards are concept references, not runtime assets.
 
