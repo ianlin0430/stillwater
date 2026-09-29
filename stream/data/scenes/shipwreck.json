@@ -1,102 +1,87 @@
 {
 	"id": "shipwreck",
 	"version": 1,
-	"note": "Placeholder coordinates (S1, 2026-09-28) estimated from aquascape/shipwreck-background-v2.png scaled to 1280x720; Codex replaces them when the art is final.",
+	"note": "H1 2026-09-29: shipwreck-v2 structural geometry at 1280x720; foreground sand plane follows hull/arch feet. Arch is multiple solids, leaving its opening free. Background v3 lighting pass must retain geometry. All home capacities preserved.",
 	"background": "res://assets/aquascape/shipwreck-background-v2.png",
 	"bounds": {
 		"swim_x": [100, 1180],
-		"roam_x": [130, 1150],
+		"roam_x": [340, 1000],
 		"feed_x": [130, 1150],
 		"surface_y": 56
 	},
 	"bed": [
-		[0, 604.0],
-		[40, 604.5],
-		[80, 605.0],
-		[120, 605.5],
-		[160, 606.0],
-		[200, 604.5],
-		[240, 603.0],
-		[280, 601.5],
-		[320, 600.0],
-		[360, 598.0],
-		[400, 596.0],
-		[440, 594.0],
-		[480, 592.0],
-		[520, 591.5],
-		[560, 591.0],
-		[600, 590.5],
-		[640, 590.0],
-		[680, 590.5],
-		[720, 591.0],
-		[760, 591.5],
-		[800, 592.0],
-		[840, 593.5],
-		[880, 595.0],
-		[920, 596.5],
-		[960, 598.0],
-		[1000, 599.5],
-		[1040, 601.0],
-		[1080, 602.5],
-		[1120, 604.0],
-		[1160, 604.5],
-		[1200, 605.0],
-		[1240, 605.5],
-		[1280, 606.0]
+		[0, 664],
+		[160, 668],
+		[320, 660],
+		[440, 638],
+		[520, 620],
+		[640, 610],
+		[760, 632],
+		[920, 654],
+		[1080, 664],
+		[1280, 664]
 	],
 	"bands": {
 		"green_chromis": [180, 430],
-		"clownfish": [300, 575],
-		"seahorse": [240, 580],
-		"royal_gramma": [340, 590]
+		"clownfish": [300, 640],
+		"seahorse": [240, 650],
+		"royal_gramma": [300, 666]
 	},
 	"exits": [
 		[-40, 300],
 		[1320, 300]
 	],
 	"terrain_obstacles": [
-		{"cx": 230, "cy": 470, "rx": 200, "ry": 100},
-		{"cx": 1060, "cy": 480, "rx": 190, "ry": 100}
+		{"cx": 174, "cy": 462, "rx": 154, "ry": 96},
+		{"cx": 338, "cy": 504, "rx": 108, "ry": 68},
+		{"cx": 200, "cy": 334, "rx": 24, "ry": 40},
+		{"cx": 295, "cy": 362, "rx": 20, "ry": 48},
+		{"cx": 386, "cy": 394, "rx": 22, "ry": 56},
+		{"cx": 918, "cy": 468, "rx": 76, "ry": 32},
+		{"cx": 1018, "cy": 414, "rx": 110, "ry": 56},
+		{"cx": 1182, "cy": 469, "rx": 66, "ry": 90},
+		{"cx": 846, "cy": 552, "rx": 110, "ry": 45},
+		{"cx": 926, "cy": 554, "rx": 40, "ry": 58}
 	],
 	"rock_spots": [
-		{"x": 395, "y": 582, "side": 1},
-		{"x": 975, "y": 585, "side": -1},
-		{"x": 1240, "y": 588, "side": -1}
+		{"x": 492, "y": 540, "side": 1},
+		{"x": 1052, "y": 518, "side": -1},
+		{"x": 1118, "y": 568, "side": 1}
 	],
 	"slots": [
 		{
 			"id": "anemone",
-			"anchor": [580, 591],
+			"anchor": [598, 626],
 			"required": "anemone",
 			"styles": ["anemone_green", "anemone_pink"],
 			"default": "anemone_pink"
 		},
 		{
 			"id": "hitch_plant",
-			"anchor": [760, 592],
+			"anchor": [700, 636],
 			"required": "hitch",
 			"styles": ["kelp_short", "seagrass_tall"],
 			"default": "kelp_short"
 		},
 		{
 			"id": "s1",
-			"anchor": [480, 592],
+			"anchor": [454, 646],
 			"required": null,
 			"styles": ["wreck_bow", "cave_rock", "brain_coral"],
 			"default": "wreck_bow"
 		},
 		{
 			"id": "s2",
-			"anchor": [680, 590],
+			"anchor": [926, 668],
 			"required": null,
-			"styles": ["shell", "brain_coral", "table_coral"],
+			"styles": ["shell", "brain_coral", "table_coral", "rounded_rock"],
 			"default": ""
 		},
 		{
 			"id": "s3",
-			"anchor": [900, 596],
+			"anchor": [1080, 680],
 			"required": null,
-			"styles": ["cave_rock", "shell"],
+			"styles": ["cave_rock", "shell", "branch_coral"],
 			"default": ""
 		}
 	]

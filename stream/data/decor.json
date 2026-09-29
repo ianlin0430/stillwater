@@ -2,31 +2,31 @@
 	"anemone_green": {
 		"kind": "anemone",
 		"obstacles": [],
-		"anemone": {"cx": 0, "cy": -40, "rx": 46, "ry": 30, "capacity": 3},
+		"anemone": {"cx": 0, "cy": -42, "rx": 58, "ry": 34, "capacity": 3},
 		"hitches": [],
 		"shelters": [],
 		"fade_spots": [
-			[0, -24]
+			[0, -30]
 		]
 	},
 	"anemone_pink": {
 		"kind": "anemone",
 		"obstacles": [],
-		"anemone": {"cx": 0, "cy": -36, "rx": 40, "ry": 26, "capacity": 3},
+		"anemone": {"cx": 0, "cy": -40, "rx": 56, "ry": 32, "capacity": 3},
 		"hitches": [],
 		"shelters": [],
 		"fade_spots": [
-			[0, -22]
+			[0, -28]
 		]
 	},
 	"seagrass_tall": {
 		"kind": "hitch",
 		"obstacles": [],
 		"hitches": [
-			[-18, -120],
-			[6, -160],
-			[22, -95],
-			[-4, -70]
+			[-26, -130],
+			[-8, -166],
+			[18, -116],
+			[32, -82]
 		],
 		"shelters": [],
 		"fade_spots": [
@@ -37,10 +37,10 @@
 		"kind": "hitch",
 		"obstacles": [],
 		"hitches": [
-			[-30, -110],
-			[0, -150],
-			[28, -120],
-			[10, -80]
+			[-38, -126],
+			[-12, -166],
+			[30, -142],
+			[34, -88]
 		],
 		"shelters": [],
 		"fade_spots": [
@@ -51,10 +51,10 @@
 		"kind": "hitch",
 		"obstacles": [],
 		"hitches": [
-			[-10, -90],
-			[8, -120],
-			[16, -70],
-			[-14, -60]
+			[-28, -108],
+			[-8, -140],
+			[18, -98],
+			[30, -64]
 		],
 		"shelters": [],
 		"fade_spots": [
@@ -67,12 +67,12 @@
 			{"cx": 0, "cy": -40, "rx": 60, "ry": 40}
 		],
 		"hitches": [
-			[-40, -78]
+			[-38, -82]
 		],
 		"shelters": [
 			{
 				"x": 62,
-				"y": -24,
+				"y": -34,
 				"side": 1,
 				"use": ["royal_gramma", "green_chromis_night"]
 			}
@@ -90,7 +90,7 @@
 		"shelters": [
 			{
 				"x": 36,
-				"y": -14,
+				"y": -24,
 				"side": 1,
 				"use": ["royal_gramma"]
 			}
@@ -105,12 +105,12 @@
 			{"cx": 0, "cy": -50, "rx": 80, "ry": 50}
 		],
 		"hitches": [
-			[40, -104]
+			[40, -112]
 		],
 		"shelters": [
 			{
 				"x": 84,
-				"y": -20,
+				"y": -42,
 				"side": 1,
 				"use": ["royal_gramma", "green_chromis_night"]
 			}
@@ -128,7 +128,7 @@
 		"shelters": [
 			{
 				"x": 0,
-				"y": -30,
+				"y": -34,
 				"side": -1,
 				"use": ["royal_gramma", "green_chromis_night"]
 			}
@@ -146,6 +146,28 @@
 		"shelters": [],
 		"fade_spots": [
 			[0, -24]
+		]
+	},
+	"rounded_rock": {
+		"kind": "obstacle",
+		"obstacles": [
+			{"cx": 0, "cy": -32, "rx": 48, "ry": 32}
+		],
+		"hitches": [],
+		"shelters": [],
+		"fade_spots": [
+			[0, -28]
+		]
+	},
+	"branch_coral": {
+		"kind": "obstacle",
+		"obstacles": [
+			{"cx": 0, "cy": -44, "rx": 40, "ry": 42}
+		],
+		"hitches": [],
+		"shelters": [],
+		"fade_spots": [
+			[0, -28]
 		]
 	}
 }

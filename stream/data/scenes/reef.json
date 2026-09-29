@@ -1,7 +1,7 @@
 {
 	"id": "reef",
 	"version": 1,
-	"note": "Placeholder coordinates (S1, 2026-09-28) estimated from background-v1.png scaled to 1280x720; Codex replaces them when the art is final. bed samples StreamWorld.floor_y every 40 px.",
+	"note": "H1 2026-09-29: checked against background-v1 at 1280x720. Bed retains the S1 sampled sand plane (test_scene_data locks it within 1 unit of legacy world); terrain silhouettes are separate obstacles. Anchors use a 2-world-unit render grid. Optional slots sit on foreground sand, not inside the left reef.",
 	"background": "res://assets/reef/background-v1.png",
 	"bounds": {
 		"swim_x": [100, 1180],
@@ -46,58 +46,63 @@
 	],
 	"bands": {
 		"green_chromis": [180, 430],
-		"clownfish": [300, 575],
-		"seahorse": [240, 580],
-		"royal_gramma": [380, 590]
+		"clownfish": [280, 590],
+		"seahorse": [230, 590],
+		"royal_gramma": [280, 600]
 	},
 	"exits": [
 		[-40, 300],
 		[1320, 300]
 	],
 	"terrain_obstacles": [
-		{"cx": 210, "cy": 480, "rx": 200, "ry": 90},
-		{"cx": 330, "cy": 450, "rx": 140, "ry": 30},
-		{"cx": 1110, "cy": 548, "rx": 90, "ry": 45}
+		{"cx": 40, "cy": 344, "rx": 92, "ry": 42},
+		{"cx": 126, "cy": 410, "rx": 134, "ry": 70},
+		{"cx": 212, "cy": 392, "rx": 106, "ry": 18},
+		{"cx": 276, "cy": 450, "rx": 196, "ry": 24},
+		{"cx": 188, "cy": 528, "rx": 200, "ry": 56},
+		{"cx": 408, "cy": 551, "rx": 70, "ry": 32},
+		{"cx": 1116, "cy": 534, "rx": 94, "ry": 50},
+		{"cx": 1174, "cy": 580, "rx": 50, "ry": 22}
 	],
 	"rock_spots": [
-		{"x": 452, "y": 585, "side": 1},
-		{"x": 1015, "y": 575, "side": -1},
-		{"x": 1210, "y": 585, "side": -1}
+		{"x": 476, "y": 520, "side": 1},
+		{"x": 988, "y": 510, "side": -1},
+		{"x": 1230, "y": 566, "side": -1}
 	],
 	"slots": [
 		{
 			"id": "anemone",
-			"anchor": [620, 589],
+			"anchor": [616, 600],
 			"required": "anemone",
 			"styles": ["anemone_green", "anemone_pink"],
 			"default": "anemone_green"
 		},
 		{
 			"id": "hitch_plant",
-			"anchor": [930, 591],
+			"anchor": [886, 602],
 			"required": "hitch",
 			"styles": ["seagrass_tall", "gorgonian"],
 			"default": "seagrass_tall"
 		},
 		{
 			"id": "s1",
-			"anchor": [520, 599],
+			"anchor": [500, 606],
 			"required": null,
 			"styles": ["cave_rock", "shell", "brain_coral"],
 			"default": "cave_rock"
 		},
 		{
 			"id": "s2",
-			"anchor": [780, 590],
+			"anchor": [756, 606],
 			"required": null,
-			"styles": ["cave_rock", "table_coral", "brain_coral"],
+			"styles": ["cave_rock", "table_coral", "brain_coral", "rounded_rock"],
 			"default": ""
 		},
 		{
 			"id": "s3",
-			"anchor": [330, 603],
+			"anchor": [1016, 602],
 			"required": null,
-			"styles": ["shell", "brain_coral"],
+			"styles": ["shell", "brain_coral", "branch_coral"],
 			"default": ""
 		}
 	]
