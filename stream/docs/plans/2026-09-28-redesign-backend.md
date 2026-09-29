@@ -491,7 +491,7 @@
 - 完成：`test_world`、`test_presentation`、`test_lifecycle`、`test_persist_qa`、`test_long_run_chunks`、`test_natural_motion`、`test_roaming` 綠；`godot --path stream -- --qa` 開 10 秒無錯誤。
 - Codex：**H2**——告知存檔改名、舊世界不見是設計如此。**注意**：`main.gd:92` 從 `preferences.cfg` 讀 `world/path`，`:107` 又把路徑寫回去，所以舊使用者的設定裡存的是 `user://stream.world`；只改 `DEFAULT_PATH` 沒用——舊 v2 檔讀不進來時，`load_or_create`（`stream_store.gd:63–69`）會把新世界存到 `stream-recovery-<時間>.world`，而且**每次開啟都再開一個新的**。所以 `main.gd` 要改用新的設定鍵（例如 `world/path_v3`）或忽略舊鍵；這要 Codex 改（或 Codex 同意由 Claude 改這兩行）。S3 的測試要模擬「設定檔裡存著舊路徑」這種情況。
 
-**S4 換陣容（cutover）：新四種＋生態保證＋場景感知地形**
+**S4 換陣容（cutover）：新四種＋生態保證＋場景感知地形**　〔進度：2026-09-29 完成於分支 `s4-cast-swap`（前端 `test_frontend` 的「Cruising fish render」兩條要 Codex 改，見下）。後端測試全綠；`tools/cast_probe.gd` 32 個 WIDE seed 180 天與 365 天都 32/32 過 C1–C6（最差 seed 13，microfauna 最低 10.89，沒改任何設計數字，見 ecology.md「S4 re-run」）；`long_run.gd --mode=offline --days=180 --year=false` 32 seed 分 4 批都 `ACCEPTANCE PASS`；`--mode=live --days=1 --seeds=42` 的 `audit_space` 0 違規。`BODY` 用 Codex H3 交接值。另外：夜裡 chromis 只短程游（不橫越）；魚的身體不會低於床面（場景水層下緣比床面低的地方）〕
 - 目標：`ACTIVE_SPECIES`＝新四種；S2 定的數字；§4.3 兩個保證；床面／水層／出入口從 `ReefScene`（預設 `reef`）讀；刪 tang/blenny/firefish 全部程式；新魚先用**最簡單的行為**（在家附近的水層裡慢慢游，用 `_swim`），完整行為在 S6–S8。
 - 檔案：`scripts/stream_world.gd`、`tests/test_world.gd`、`tests/test_natural_motion.gd`、`tests/test_roaming.gd`、`tests/long_run.gd`（`audit_space` 初版）、`docs/BACKEND_SNAPSHOT_EVENTS.md`（陣容與欄位章節改寫，舊魚段落移到「已移除」）。
 - 先寫的失敗測試：`test_world`：「新世界的 `counts()` 等於新開場陣容」「池子全歸零 30 天沒有 `starvation`」「某物種剩 1 隻且過了壽命時不會老死、救援在 24 小時內到」；`test_world`：衍生閘門數字（由 S2 的常數算出後釘死）。

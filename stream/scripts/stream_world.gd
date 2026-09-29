@@ -436,7 +436,9 @@ func _move(delta: float) -> void:
 					_choose_activity(a)
 				else:
 					_choose_home(a)
-		var band: Array=_bands[species]
+		# Its band, but never so low that the body dips into the bed (a scene's band may reach below
+		# the bed where the sand rises, e.g. the royal gramma's; S4 audit_space).
+		var band: Array=[_bands[species][0],minf(_bands[species][1],bed_y(p.x)-_bodies[a.id].y*0.5)]
 		var target:=Vector2(a.tx,a.ty)
 		# (Targets are always in the band; an edited one is aimed at the band edge.)
 		var offset: Vector2=Vector2(target.x,clampf(target.y,band[0],band[1]))-p
@@ -705,19 +707,23 @@ func _free_home(species: String, parent: int) -> Dictionary:
 			gap=d
 	return best
 
-# A fixed spot of its own beside the home (by id, no draw), inside the band and the x bounds.
+# A fixed spot of its own beside the home (by id, no draw), inside the band and the x bounds and
+# with an adult body clear of the bed.
 func _near_home(species: String, home: Dictionary, id: int) -> Vector2:
 	var r: float=HOME[species].radius*0.5
-	var band: Array=_bands[species]
-	var x: float=home.x+(_hash01(id,1)*2.0-1.0)*r
+	var x: float=clampf(home.x+(_hash01(id,1)*2.0-1.0)*r,_roam_x.x,_roam_x.y)
 	var y: float=home.y+(_hash01(id,2)*2.0-1.0)*r*0.6
-	return Vector2(clampf(x,_roam_x.x,_roam_x.y),clampf(y,band[0],band[1]))
+	return Vector2(x,_in_water(species,x,y))
+
+# y kept in the species' band and an adult body's half height above the bed at x.
+func _in_water(species: String, x: float, y: float) -> float:
+	var band: Array=_bands[species]
+	return clampf(y,band[0],minf(band[1],bed_y(x)-BODY[species][1]*0.5))
 
 # A new fish's next move (S4, the simplest behaviour): by day a swim to a point near its home, at
 # night a rest at its own spot beside it.
 func _choose_home(a: Dictionary) -> void:
 	var h: Dictionary=HOME[a.species]
-	var band: Array=_bands[a.species]
 	if state.light_hour<7 or state.light_hour>19:
 		var rest: Vector2=_near_home(a.species,{"x":a.home_x,"y":a.home_y},int(a.id))
 		a.activity="Resting"
@@ -729,7 +735,7 @@ func _choose_home(a: Dictionary) -> void:
 	var reach: float=h.radius*sqrt(motion_rng.randf())
 	a.activity="Hovering"
 	a.tx=clampf(a.home_x+cos(angle)*reach,_roam_x.x,_roam_x.y)
-	a.ty=clampf(a.home_y+sin(angle)*reach*0.6,band[0],band[1])
+	a.ty=_in_water(a.species,a.tx,a.home_y+sin(angle)*reach*0.6)
 	a.decision_at=state.elapsed+motion_rng.randf_range(h.dwell[0],h.dwell[1])
 
 # A school member holds its own slot beside the leader, mirrored with the leader's heading.

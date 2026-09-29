@@ -2,6 +2,7 @@
 
 更新：2026-09-27（大魚繞小魚：休息中、或被夾在水層邊緣／牆邊的綠光鰓雀鯛不再讓黃金吊，由黃金吊從上方或下方繞一個大弧；同日 review 修正：整群走同一側、垂直經過時沿切線繞開、休息的黃金吊會游離休息 chromis、黃金吊轉向與速度不再突跳，新增 `around_x`/`around_y`；見「身體不重疊」「綠光鰓雀鯛休息」）。2026-09-26 晚（黃金吊啃食改成側面：身體中心離嘴半個身長 `TANG.reach`＝61 px × 體型，岩石點剩 4 個；綠光鰓雀鯛會避開啃食中黃金吊的身體；綠光鰓雀鯛休息時平穩懸停、不再上下抖，見「黃金吊」「自然游動欄位」）。2026-09-26（自然游動欄位 heading/pitch/speed/thrust/turn/roll/flick、身體不重疊、blenny 避開紫雷達洞口；見「自然游動欄位」）。2026-09-25（最終四物種：花園鰻移除；紫雷達洞口重新排開；黃金吊岩石點互斥；新增 `ate` 事件）。實作在 `scripts/stream_world.gd`，測試 `tests/test_presentation.gd`、`tests/test_world.gd`（`eel_checks`、`feeding_checks`、`blenny_checks`、`firefish_checks`、`chromis_checks`、`tang_checks`、`reef_cast_checks`）。
 > **2026-09-28 存檔 v3（S3，`8965125`）**：新存檔 `user://reef.world`，外層格式 `stillwater-reef-3`，world `version`＝3，只接受 v3，沒有任何舊格式升級。偏好設定若還記著舊的 `stream.world`（格式 `stillwater-stream-1`），`StreamStore.load_or_create` 不解開、不改、不刪它，改用同資料夾的 `reef.world` 並在回傳加 `legacy:true`（不再產生 `stream-recovery-*.world`）。state 裡拿掉的欄位：`reef_cast`、`totals.molt`、`totals.predation`、個體的 `next_molt`／`molting_until`／`shelter`。魚種仍是舊的四種，S4 才換成新陣容。
+> **2026-09-28 換陣容（S4）**：`ACTIVE_SPECIES` = `green_chromis`、`clownfish`、`seahorse`、`royal_gramma`（這個順序；`counts()` 就是這四個鍵）。黃金吊、紫雷達、草食鳚的後端程式全部刪除，`SPECIES` 只有這四種，含舊魚種的 v3 存檔 `validate()` 會拒絕（S3 之後沒有正式版存檔含舊魚）。上限 8/3/4/3＝18、開場 6/2/2/2＝12。新增：state 的 `scene`（字串，目前一律 `"reef"`）、可缺的 `rescue`（{物種: 救援到達時間}）、`totals.floor_hits`；新魚的 `home`／`home_x`／`home_y`（見文末「珊瑚礁 v3 陣容」）。拿掉的個體欄位：`burrow_x/burrow_y/hover_y/extend/flick`（紫雷達）、`contact_x/contact_y/roll/chew_until/around_x/around_y`（黃金吊）。沙床、水層、x 範圍、出入口改從場景檔讀（`ReefScene`，`data/scenes/reef.json`）：`world.bed_y(x)`、`world.band(species)`；靜態的 `StreamWorld.floor_y(x)` 保留給前端，等於預設場景的床面。**不會餓死、不會死光**兩個保證見「珊瑚礁 v3 陣容」。
 
 前端契約（Codex）見 `FRONTEND_BACKEND_CONTRACT.md`；本檔只描述 backend 提供什麼。
 注意：該契約寫的 `stream_absence.gd` 實際檔名是 `scripts/absence.gd`。
@@ -211,6 +212,8 @@ events 只保留 160 筆；若 `events_after` 最舊一筆 `seq > cursor+1`，�
 ## 活動名稱（`animals[].activity`）
 
 綠光鰓雀鯛（green_chromis）：`Schooling`、`Resting`，以及互動造成的 `Feeding`、`Startled`、`Curious`（只有領頭魚）。
+小丑魚、海馬、皇家范魚（S4 基本行為）：`Hovering`（白天在家附近游）、`Resting`（夜裡在家旁）、`Feeding`、`Startled`。S6–S8 會換成各自的活動名。
+以下三種 S4 起已移除（backend 不再產生）：
 草食鳚（lawnmower_blenny）：`Grazing`、`Perching`、`Hopping`、`Sleeping`（夜裡），以及 `Feeding`（去啄沉底飼料）、`Startled`（沿沙床逃開）。
 紫雷達（purple_firefish）：`Hovering`、`Hiding`、`Sleeping`。
 黃金吊（yellow_tang）：`Cruising`（游）、`Grazing`（嘴貼岩石啃，有 `contact_x/contact_y`）、`Resting`（多半在夜裡），以及互動造成的 `Feeding`、`Startled`、`Curious`。
@@ -224,7 +227,22 @@ events 只保留 160 筆；若 `events_after` 最舊一筆 `seq > cursor+1`，�
 `snapshot()`、`events_after()`、`counts()`、`natural_light()`、`sub_light()`、`biofilm_max()`、`animal_scale()` 及讀取 `state.animals/archive/recent`（選取資訊面板）不消耗 RNG、不改 `export_state()` 位元組（`test_presentation.gd` 驗證）。選取、zoom、viewing light 都在前端，backend 沒有對應狀態。
 （`main.gd` 的 `_update_biological_clock()` 會把系統時間寫入 `state.light_hour`，那是生物時鐘，不是 viewing light。）
 
-## 珊瑚礁陣容（2026-09-24，使用者決定；2026-09-25 起最終四物種，花園鰻移除）
+## 珊瑚礁 v3 陣容（2026-09-28 重新定案，S4）
+
+四種都吃 `microfauna`；世界座標 1280×720；水層、床面、出入口與「家」都從場景檔來（S4 固定是 `reef` 場景、預設裝飾；Codex 改 JSON 座標後自動跟著變）。S4 的新魚只有**最基本的行為**，完整行為（小丑魚 `Nestling`/`nestle`、海馬 `Hitched`/`lean`、皇家范魚 `extend`/`den_*`）在 S6–S8，欄位與活動名到時會增加。
+
+- **綠光鰓雀鯛 `green_chromis`**：同下方舊章節的魚群規則（領頭魚、成員位置、餵食、敲玻璃、游標引魚）。唯一改變：夜裡領頭魚選「游」時只做短程（40–150 px、不橫越），讓夜裡確實比白天慢（S4：新陣容改變了亂數順序後，有的 seed 夜裡游的距離接近白天）。
+- **小丑魚 `clownfish`**（*Amphiprion ocellaris*）、**海馬 `seahorse`**（*Hippocampus kuda*）、**皇家范魚 `royal_gramma`**（*Gramma loreto*）：每隻有一個家（`StreamWorld.HOME`）：
+  - `home` = `{"kind","slot","i"}`：`kind` 是 `anemone`（小丑魚共用場景唯一的海葵，最多 capacity 隻）、`hitch`（海馬一隻一個勾點，必備水草優先）、`shelter`（范魚一隻一個 `use` 含 `royal_gramma` 的洞）或 `rock`（沒有空洞時用場景的 `rock_spots`）；`slot` 是槽位 id（`rock` 為空字串），`i` 是該槽效果清單裡的序號。`home_x`/`home_y` 是家的世界座標。出生、移入、開場時指派，不抽亂數；離親代的家最近的空位優先。
+  - 活動：白天 `Hovering`（游到家附近 `radius` 內的點：小丑魚 60、海馬 30、范魚 50 px，每 6–15／15–40／5–12 秒換一個點）、夜裡 `Resting`（在家旁邊自己固定的位置休息），以及互動的 `Feeding`、`Startled`。**不理游標**（只有 chromis 領頭魚會 `Curious`）。
+  - 游動欄位同「自然游動欄位」（`heading/pitch/speed/thrust/turn/vx/vy`）；小丑魚與范魚是 burst-and-glide，海馬是慢速平穩划動（cruise 4 px/s）。身體大小 `BODY` 用 Codex 在 `assets/reef/PROVENANCE.md` 給的保守外框：小丑魚 69×44、海馬 37×61（直立）、范魚 68×37。
+  - 同一海葵的小丑魚彼此不互推（窩在一起）；其他魚之間照「身體不重疊」規則，年輕的 id 讓路。
+  - 移入：從場景出入口那一側進來（x 在 130 或 1150），y＝出入口高度夾進自己的水層，然後游回家。
+- **不會餓死**（`StreamWorld.FLOOR`＝0.1）：能量有下限 0.1×reserve；代謝只付到下限，付不起的就不付（不從任何池子扣，帳本仍平衡）；成長也不會把能量拉到下限以下；繁殖要 0.74×reserve，所以在下限時不會繁殖。碰到下限的「隻×分鐘」記在 `totals.floor_hits`（平常應該是 0）。死因不再有 `starvation`。
+- **不會死光**：某種魚只剩最後一隻時，到了壽命也先不老死，等到有同伴（出生或救援）才走；某種魚 ≤ `RESCUE_AT`（1）時，每小時檢查排一個救援（一次亂數，2–22 小時後），24 小時內必到；排定的時間存在 state 的 `rescue`，數量回升就取消。
+- 事件照舊（`begin/birth/dispersal/arrival/death/ate/fed`）；`death.cause` 只會是 `"old age"`。
+
+## 已移除：舊珊瑚礁陣容（2026-09-24/25；S4 起 backend 不再產生，以下只是紀錄）
 
 四個物種都吃自然食物就能活；欄位都在 `animals[]` 裡。畫面座標同樣是世界座標 1280×720，沙床 `StreamWorld.floor_y(x)`。
 
