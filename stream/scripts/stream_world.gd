@@ -756,7 +756,10 @@ func _choose_activity(a: Dictionary) -> void:
 	var band: Array=_bands[a.species]
 	a.decision_at=state.elapsed+motion_rng.randf_range(18,45)
 	a.activity="Schooling"
-	a.tx=_roaming_x(a,290,0.42)
+	# Night trips are short and stay on this side (2026-09-28, S4; the yellow tang's night rule):
+	# with the tang gone the chromis draws come in a new order, and on some seeds the school's
+	# night trips added up to nearly its daytime distance (test_roaming "Night no longer slows").
+	a.tx=_roaming_x(a,150.0 if night else 290.0,0.0 if night else 0.42)
 	# Inset by the members' vertical reach so the whole school fits in the band.
 	a.ty=motion_rng.randf_range(band[0]+CHROMIS.spread[1]*0.5,band[1]-CHROMIS.spread[1]*0.5)
 	if r<0.16 or night and r<0.6:
