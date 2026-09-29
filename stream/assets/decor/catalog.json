@@ -1,0 +1,62 @@
+{
+	"anemone_green": {
+		"texture": "res://assets/decor/anemone_green-v1.png",
+		"region": [87, 135, 1347, 794],
+		"size": [140, 82.524]
+	},
+	"anemone_pink": {
+		"texture": "res://assets/decor/anemone_pink-v1.png",
+		"region": [82, 199, 1344, 695],
+		"size": [140, 72.396]
+	},
+	"seagrass_tall": {
+		"texture": "res://assets/decor/seagrass_tall-v1.png",
+		"region": [51, 22, 867, 1569],
+		"size": [108.306, 196]
+	},
+	"gorgonian": {
+		"texture": "res://assets/decor/gorgonian-v1.png",
+		"region": [84, 56, 864, 1454],
+		"size": [112.902, 190]
+	},
+	"kelp_short": {
+		"texture": "res://assets/decor/kelp_short-v1.png",
+		"region": [120, 78, 835, 1351],
+		"size": [100.126, 162]
+	},
+	"cave_rock": {
+		"texture": "res://assets/decor/cave_rock-v1.png",
+		"region": [69, 205, 1465, 682],
+		"size": [140, 65.174]
+	},
+	"shell": {
+		"texture": "res://assets/decor/shell-v1.png",
+		"region": [84, 115, 1538, 717],
+		"size": [128, 59.672]
+	},
+	"wreck_bow": {
+		"texture": "res://assets/decor/wreck_bow-v1.png",
+		"region": [88, 91, 1499, 738],
+		"size": [186, 91.573]
+	},
+	"table_coral": {
+		"texture": "res://assets/decor/table_coral-v1.png",
+		"region": [75, 253, 1438, 599],
+		"size": [150, 62.483]
+	},
+	"brain_coral": {
+		"texture": "res://assets/decor/brain_coral-v1.png",
+		"region": [92, 139, 1380, 769],
+		"size": [96, 53.496]
+	},
+	"rounded_rock": {
+		"texture": "res://assets/decor/rounded_rock-v1.png",
+		"region": [109, 171, 1325, 752],
+		"size": [104, 59.025]
+	},
+	"branch_coral": {
+		"texture": "res://assets/decor/branch_coral-v1.png",
+		"region": [79, 155, 1145, 971],
+		"size": [92, 78.019]
+	}
+}

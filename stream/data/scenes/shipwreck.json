@@ -79,7 +79,7 @@
 		},
 		{
 			"id": "s3",
-			"anchor": [1080, 680],
+			"anchor": [1080, 666],
 			"required": null,
 			"styles": ["cave_rock", "shell", "branch_coral"],
 			"default": ""
