@@ -1,5 +1,11 @@
 # 給 Codex 的指令
 
+> **2026-09-29 使用者決定畫風統一（最優先）**：使用者看了兩個場景的疊圖後說「統一成沉船花園那種畫風」。
+> - **礁岩場景重畫**成沉船花園 v2 的風格：色塊平塗、低碎紋、飽和的珊瑚色、同樣的像素粗細與光線處理。構圖可以保留（左側大岩礁、右側小岩礁、中間沙地），但畫法照沉船花園。
+> - **裝飾**（12 款）與**四種魚**也要跟這個畫風一致；有不搭的款式請一起調，並出一張「兩個場景＋裝飾＋四種魚」的總覽圖給使用者核可。
+> - 重畫後礁岩的床面、障礙物、槽位位置會變：請重新對齊 `data/scenes/reef.json`（和受影響的 `data/decor.json`），`tests/test_scene_data.gd` 必須全綠（海葵容量 ≥3、每款水草勾點 ≥4、岩洞點 ≥3 不能少），並附疊圖。
+> - 其他照上一條的順序繼續（新魚動畫、沉船花園正式場景）。
+
 > **2026-09-28 換陣容前置（計畫 H3，請先做）**：Claude 接下來做 S4，backend 會改成送 `green_chromis`、`clownfish`、`seahorse`、`royal_gramma`，不再送 tang／firefish／blenny。請先讓舞台接上你的 `reef_new_cast_rig.gd`：
 > 1. `stream_stage.gd` 遇到這三種新魚時用新 rig 畫；遇到不認得的物種不崩潰（跳過或佔位）。`SPECIES` 相關的 key（`main.gd:392`、`stream_stage.gd:86,:213`）要能接受新魚。
 > 2. `floor_y` 會從 static 改成跟場景有關（`ReefScene.open(id).floor_y(x)`）；`main.gd:295`、`stream_events.gd:61` 請改成向世界或場景取。
