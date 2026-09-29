@@ -63,14 +63,14 @@ func _initialize() -> void:
 	check(moved and consistent,"vx/vy match per-tick displacement unless relocated_at marks the tick")
 	# A fish found far outside its layer (e.g. an edited save) snaps back into it: that is a relocation.
 	var s: Dictionary=w.state.animals.filter(func(a): return a.species=="green_chromis")[0]
-	s.y=StreamWorld.DEPTH.green_chromis[1]+80
+	s.y=w.band("green_chromis")[1]+80
 	s.activity="Resting"
 	s.decision_at=w.state.elapsed+100
 	s.tx=s.x
 	s.ty=s.y
 	w.state.elapsed+=0.2
 	w._move(0.2)
-	check(s.relocated_at==w.state.elapsed and s.y==StreamWorld.DEPTH.green_chromis[1],"An instantaneous snap records relocated_at")
+	check(s.relocated_at==w.state.elapsed and s.y==w.band("green_chromis")[1],"An instantaneous snap records relocated_at")
 	# Natural death: the event arrives in the same snapshot the animal disappears from.
 	var cursor: int=w.state.next_event-1
 	var old: Dictionary=w.state.animals.filter(func(a): return a.species=="green_chromis")[2]

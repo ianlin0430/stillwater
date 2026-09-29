@@ -23,10 +23,9 @@ func no_predation() -> bool:
 			var young: Dictionary=w.spawn("green_chromis",3)
 			young.x=900.0+i*40
 		for f: Dictionary in w.state.animals:
-			if f.species in StreamWorld.DEPTH:
-				f.energy=StreamWorld.SPECIES[f.species].reserve*0.4
-				f.x=910.0
-				f.y=StreamWorld.DEPTH[f.species][1]
+			f.energy=StreamWorld.SPECIES[f.species].reserve*0.4
+			f.x=910.0
+			f.y=w.band(f.species)[1]
 		if offline:
 			w.advance_offline(StreamWorld.DAY*3)
 		else:
@@ -39,14 +38,16 @@ func _initialize() -> void:
 	var start: int=Time.get_ticks_msec()
 	var a:=StreamWorld.new(42,1000)
 	var b:=StreamWorld.new(42,1000)
-	# The one place these tests pin the cast (user decision 2026-09-25: no garden eels); others read the constants.
-	check(StreamWorld.ACTIVE_SPECIES==["lawnmower_blenny","purple_firefish","green_chromis","yellow_tang"] and StreamWorld.CAP=={"lawnmower_blenny":3,"purple_firefish":4,"green_chromis":8,"yellow_tang":2} and StreamWorld.habitat_cap()==17 and StreamWorld.ACTIVE_SPECIES.map(func(k): return StreamWorld.SPECIES[k].initial)==[2,2,6,2] and StreamWorld.RESCUE_AT==1,"Reef cast: blenny/purple firefish/chromis/yellow tang, caps 3/4/8/2 (17), opening 2/2/6/2, rescue at one")
+	# The one place these tests pin the cast (reef v3, 2026-09-28 redesign; S2 numbers in docs/ecology.md
+	# "Reef v3 cast sizing"); others read the constants.
+	check(StreamWorld.ACTIVE_SPECIES==["green_chromis","clownfish","seahorse","royal_gramma"] and StreamWorld.CAP=={"green_chromis":8,"clownfish":3,"seahorse":4,"royal_gramma":3} and StreamWorld.habitat_cap()==18 and StreamWorld.ACTIVE_SPECIES.map(func(k): return StreamWorld.SPECIES[k].initial)==[6,2,2,2] and StreamWorld.RESCUE_AT==1,"Reef v3 cast: chromis/clownfish/seahorse/royal gramma, caps 8/3/4/3 (18), opening 6/2/2/2, rescue at one")
+	check(StreamWorld.STREAM_IN=={"nutrients":0.7,"microfauna":1.2} and StreamWorld.OPENING_AGE=={"fish":[40.0,150.0]} and StreamWorld.FLOOR==0.1,"S2 numbers: microfauna input 1.2, opening ages 40-150 for every species, energy floor 0.1 x reserve")
 	var opening: Dictionary={}
 	for k: String in StreamWorld.ACTIVE_SPECIES:
 		opening[k]=StreamWorld.SPECIES[k].initial
 	check(a.counts()==opening and a.state.animals.size()==opening.values().reduce(func(x,y): return x+y),"A new world opens with exactly the opening cast, no threadfin, shrimp or hatchetfish")
 	check(a.state.animals.all(func(x): return x.x>=150 and x.x<=1130),"Opening fish are spread inside the stream")
-	check(a.spawn("crayfish").is_empty() and a.spawn("shrimp").is_empty() and a.spawn("hatchet").is_empty() and a.spawn("threadfin").is_empty() and a.spawn("garden_eel").is_empty(),"Removed species cannot spawn")
+	check(["crayfish","shrimp","hatchet","threadfin","garden_eel","yellow_tang","purple_firefish","lawnmower_blenny","firefish"].all(func(k): return a.spawn(k).is_empty() and not StreamWorld.SPECIES.has(k)),"Removed species (the old reef cast included) cannot spawn")
 	check(StreamWorld.validate(a.export_state()),"Initial state validates")
 	a.advance_live(120)
 	for i in 600:
@@ -129,18 +130,7 @@ func _initialize() -> void:
 	check(same(interrupted,recovered.world),"Interrupted uncommitted catch-up replays exactly once")
 	recovered=StreamStore.load_or_create(path,1000+7200)
 	check(same(interrupted,recovered.world),"Committed catch-up not repeated on reopen")
-	# Deliberately empty food and reserves to force real starvation.
-	a=StreamWorld.new(9)
-	a.state.supply_scale=0.0
-	for pool: String in StreamWorld.POOLS:
-		a.state.resources[pool]=0.0
-	for animal: Dictionary in a.state.animals:
-		animal.energy=0.0
-		animal.body=0.0
-	reset_material(a)
-	a.advance_offline(60)
-	check(a.state.totals.death>0,"Starvation remains possible")
-	check(absf(a.residual())<0.00001,"Starvation recycles remaining material")
+	guarantee_checks()
 	a=StreamWorld.new(33)
 	var gone: Dictionary=a.state.animals[0]
 	a._remove(gone,"old age")
@@ -172,6 +162,9 @@ func _initialize() -> void:
 	a=StreamWorld.new(9)
 	var swimmer: Dictionary=chromis(a)[0]
 	swimmer.activity="Schooling"
+	# At rest and already facing its way (a fish still turning sculls sideways at up to SWIM.scull).
+	swimmer.direction=1.0
+	swimmer.heading=0.0
 	swimmer.tx=swimmer.x+100
 	swimmer.ty=swimmer.y
 	swimmer.decision_at=1000
@@ -183,19 +176,17 @@ func _initialize() -> void:
 	feeding_checks()
 	startle_checks()
 	lure_checks()
-	blenny_checks()
-	firefish_checks()
 	chromis_checks()
-	tang_checks()
+	new_cast_checks()
 	var acceptance=preload("res://tests/ecology_acceptance.gd")
-	# Gates derived from the configured cast (docs/ecology.md "Acceptance gates"), 180 days:
-	# 7 openers must reach old age (6 chromis, the older firefish), the earliest by day 76,
-	# and 7 + 5 open places = 12 offspring; band 12..17 (docs/ecology.md, four-species cast 2026-09-25).
-	check(acceptance.certain_old_age(180)==7 and acceptance.first_old_age_bound()==76 and acceptance.offspring_needed(180)==12 and acceptance.population_band()==[12,17],"Derived gates: 7 old-age deaths by day 76, 12 offspring, band 12-17")
+	# Gates derived from the configured cast (docs/ecology.md "Reef v3 cast sizing", criterion C6,
+	# written before the S2 probe), 180 days: the 6 chromis openers must reach old age, the earliest
+	# by day 76, and 6 + 6 open places = 12 offspring; band 12..18.
+	check(acceptance.certain_old_age(180)==6 and acceptance.first_old_age_bound()==76 and acceptance.offspring_needed(180)==12 and acceptance.population_band()==[12,18],"Derived gates: 6 old-age deaths by day 76, 12 offspring, band 12-18")
 	var need: int=acceptance.offspring_needed(180)
 	check(acceptance.reproduction_passes({"births":6,"dispersal":need-6,"arrivals":2,"days":180}),"Dispersed offspring count toward reproduction")
 	check(not acceptance.reproduction_passes({"births":6,"dispersal":need-7,"arrivals":2,"days":180}),"One offspring short of the threshold fails")
-	check(acceptance.old_age_passes({"old_age":7,"first_old_age_day":76,"days":180}) and not acceptance.old_age_passes({"old_age":6,"first_old_age_day":40,"days":180}) and not acceptance.old_age_passes({"old_age":9,"first_old_age_day":77,"days":180}),"Old-age gate: at least 7, the first by day 76")
+	check(acceptance.old_age_passes({"old_age":6,"first_old_age_day":76,"days":180}) and not acceptance.old_age_passes({"old_age":5,"first_old_age_day":40,"days":180}) and not acceptance.old_age_passes({"old_age":9,"first_old_age_day":77,"days":180}),"Old-age gate: at least 6, the first by day 76")
 	check(not acceptance.local_replacement_passes({"births":2,"dispersal":30,"arrivals":7}),"Dispersal cannot disguise immigration-dominated replacement")
 	check(acceptance.local_replacement_passes({"births":17,"dispersal":14,"arrivals":7}),"Retained births still exceed arrivals")
 	var result: Dictionary={"checks":checks,"failures":failures,"seconds":(Time.get_ticks_msec()-start)/1000.0,"catch_up_72h_ms":catch_ms}
@@ -294,7 +285,7 @@ func ecosystem_checks() -> void:
 		w2._arrive(species)
 		for i2 in range(placed,w2.state.animals.size()):
 			var a: Dictionary=w2.state.animals[i2]
-			var band: Array=StreamWorld.DEPTH[a.species]
+			var band: Array=w2.band(a.species)
 			placed_ok=placed_ok and a.y>=band[0] and a.y<=band[1] and a.x>=120 and a.x<=1150
 		while w2.state.animals.size()>12:
 			w2.state.animals.pop_back()
@@ -305,12 +296,12 @@ func ecosystem_checks() -> void:
 	for s in 12:
 		w=StreamWorld.new(1000+s)
 		for i in 6:
-			w.spawn(["green_chromis","purple_firefish"][i%2],1)
+			w.spawn(StreamWorld.ACTIVE_SPECIES[i%4],1)
 		for animal: Dictionary in w.state.animals:
 			var base: float=StreamWorld.SPECIES[animal.species].lifespan
 			spans_ok=spans_ok and animal.lifespan>=base*0.85 and animal.lifespan<=base*1.15
 			if animal.age>1:
-				# R11 ranges: fish [40, 150], yellow tang [130, 260] (adults).
+				# R11 range: every species [40, 150].
 				var span: Array=StreamWorld.OPENING_AGE.get(animal.species,StreamWorld.OPENING_AGE.fish)
 				var lo: float=span[0]
 				var hi: float=span[1]
@@ -318,17 +309,15 @@ func ecosystem_checks() -> void:
 	check(spans_ok,"Lifespans within 0.85-1.15 of species lifespan")
 	check(ages_ok,"Opening ages staggered within R11 ranges")
 	check(StreamWorld.SPECIES.green_chromis.lifespan==180.0,"Chromis lifespan 180")
-	# R10: a nearly vanished species is rescued from upstream; adults never wander off.
+	# R10: a vanished species is rescued from upstream (certain, within 24 h: guarantee_checks);
+	# adults never wander off.
 	w=StreamWorld.new(11)
 	for animal: Dictionary in w.state.animals.duplicate():
 		if animal.species=="green_chromis":
 			w.state.animals.erase(animal)
 	reset_material(w)
-	# Rescue is a 1/96-per-hour draw: 24 days leave a 0.2% chance of none.
-	for i in 8:
-		if w.counts().green_chromis==0:
-			w.advance_offline(StreamWorld.MAX_AWAY)
-	check(w.counts().green_chromis>0,"Rescue arrival restores a missing species")
+	w.advance_offline(StreamWorld.DAY)
+	check(w.counts().green_chromis>0,"Rescue arrival restores a missing species within a day")
 	check(w.state.totals.departure==0,"No random adult departures")
 	# Reproducibility within a mode, and a pool-bearing snapshot.
 	var r1:=StreamWorld.new(19)
@@ -356,7 +345,7 @@ func by_id(w: StreamWorld, id: int) -> Dictionary:
 func ids(list: Array) -> Array:
 	return list.map(func(x): return x.id)
 
-# Fish only: nothing molts, broods or carries shrimp-era fields; firefish fields are still checked.
+# Fish only: nothing molts, broods or carries shrimp-era fields; motion fields are still checked.
 func fish_only_checks() -> void:
 	# New animals carry no shrimp-only fields and nothing molts or broods.
 	var n:=StreamWorld.new(42,1000)
@@ -365,18 +354,8 @@ func fish_only_checks() -> void:
 	var seen: Array=StreamWorld.events_after(n.state.events,cursor)
 	check(n.state.animals.all(func(x): return not x.has("tint") and not x.has("brood_until")) and not seen.any(func(e): return e.kind in ["berried","molt"]) and seen.any(func(e): return e.kind in ["birth","dispersal"]),"Fish breed; no tint, brood or molt appears")
 	var bad: Dictionary=StreamWorld.new(5).export_state()
-	bad.animals.filter(func(x): return x.species=="purple_firefish")[0].extend=1.5
-	check(not StreamWorld.validate(bad),"Extend above 1 rejected")
-
-func at_burrow(e: Dictionary) -> bool:
-	return e.has("burrow_x") and e.x==e.burrow_x and e.y==e.burrow_y and absf(e.burrow_y-StreamWorld.floor_y(e.burrow_x))<0.0001 and e.get("vx",0.0)==0.0 and e.get("vy",0.0)==0.0
-
-func apart(list: Array) -> bool:
-	for i in list.size():
-		for j in range(i+1,list.size()):
-			if absf(list[i].burrow_x-list[j].burrow_x)<30:
-				return false
-	return true
+	bad.animals.filter(func(x): return x.species=="clownfish")[0].heading=INF
+	check(not StreamWorld.validate(bad),"Non-finite motion field rejected")
 
 func chromis(w: StreamWorld) -> Array:
 	return w.state.animals.filter(func(x): return x.species=="green_chromis")
@@ -552,7 +531,7 @@ func feeding_checks() -> void:
 	bad.food="none"
 	check(not StreamWorld.validate(bad),"Non-array food rejected")
 
-# Tap the glass: a short dart away (burrow fish hide, firefish_checks); no ecology effect, nothing saved.
+# Tap the glass: a short dart away; no ecology effect, nothing saved (new fish: new_cast_checks).
 func startle_checks() -> void:
 	var w:=StreamWorld.new(42,1000)
 	var twin:=StreamWorld.new(42,1000)
@@ -588,7 +567,7 @@ func lure_checks() -> void:
 		world.state.light_hour=12.0
 	var spot:=Vector2(640,90)
 	w.set_lure(spot)
-	var band: Array=StreamWorld.DEPTH.green_chromis
+	var band: Array=w.band("green_chromis")
 	var curious: Dictionary={}
 	var in_band: bool=true
 	var came_close: bool=false
@@ -631,263 +610,6 @@ func lure_checks() -> void:
 	w.set_lure(spot)
 	check(r.restore(w.export_state()) and r.lure.is_empty(),"A restored world has no lure")
 
-func blennies(w: StreamWorld) -> Array:
-	return w.state.animals.filter(func(x): return x.species=="lawnmower_blenny")
-
-func on_bed(a: Dictionary) -> bool:
-	return absf(a.y-StreamWorld.floor_y(a.x))<0.0001 and a.x>=130 and a.x<=1150
-
-# Keeps only the animals `keep` accepts, then rebalances the ledger.
-func only(w: StreamWorld, keep: Callable) -> void:
-	for x: Dictionary in w.state.animals.duplicate():
-		if not keep.call(x):
-			w.state.animals.erase(x)
-	reset_material(w)
-
-# 2026-09-24 user decision: a lawnmower blenny grazes biofilm on the bed and rocks,
-# perching, grazing and hopping short distances; it never leaves the bottom.
-func blenny_checks() -> void:
-	var cfg: Dictionary=StreamWorld.SPECIES.get("lawnmower_blenny",{})
-	check(cfg.get("label")=="Lawnmower blenny" and cfg.get("latin")=="Salarias fasciatus" and cfg.get("pool")=="biofilm" and StreamWorld.CAP.get("lawnmower_blenny")==3 and cfg.get("initial")==2,"Lawnmower blenny: biofilm grazer, habitat for three, opening pair")
-	var w:=StreamWorld.new(42,1000)
-	var pair: Array=blennies(w)
-	check(pair.size()==2 and pair.all(on_bed) and pair.any(func(x): return x.sex=="female") and pair.any(func(x): return x.sex=="male"),"A new world opens with a blenny pair on the bed")
-	w.state.light_hour=12.0
-	var seen: Dictionary={}
-	var bed: bool=true
-	var step_ok: bool=true
-	var low: float=INF
-	var high: float=-INF
-	var x0: float=pair[0].x
-	for i in 9000:
-		var before: Array=pair.map(func(x): return Vector2(x.x,x.y))
-		w.advance_live(0.2)
-		for k in pair.size():
-			var b: Dictionary=pair[k]
-			seen[b.activity]=true
-			bed=bed and on_bed(b)
-			step_ok=step_ok and absf(b.x-before[k].x)<=StreamWorld.BLENNY.hop_speed*0.2+0.001 and Vector2(b.x,b.y).distance_to(before[k]+Vector2(b.vx,b.vy)*0.2)<0.001
-		low=minf(low,pair[0].x)
-		high=maxf(high,pair[0].x)
-	check(bed,"Blennies stay on the bed")
-	check(["Perching","Grazing","Hopping"].all(func(k): return seen.has(k)) and seen.keys().all(func(k): return k in ["Perching","Grazing","Hopping"]),"By day blennies perch, graze and hop (%s)" % str(seen.keys()))
-	check(step_ok,"Hops are short, smooth steps along the bed (vx/vy match the motion)")
-	check(high-low>60 and high-low<1020,"A blenny works its way along the bottom (%.0f px)" % (high-low))
-	w.state.light_hour=23.0
-	w.advance_live(130)
-	var night: Array=pair.map(func(x): return x.x)
-	w.advance_live(60)
-	check(pair.all(func(x): return x.activity=="Sleeping") and pair.map(func(x): return x.x)==night,"At night blennies sleep in place")
-	check(absf(w.residual())<0.00001 and StreamWorld.validate(w.export_state()),"Blenny world conserves material and validates")
-	# They graze biofilm, not microfauna.
-	var grazed:=StreamWorld.new(8,1000)
-	var bare:=StreamWorld.new(8,1000)
-	only(grazed,func(x): return x.species=="lawnmower_blenny")
-	only(bare,func(x): return false)
-	for b: Dictionary in blennies(grazed):
-		b.energy=1.0
-	offline(grazed,StreamWorld.DAY*2)
-	offline(bare,StreamWorld.DAY*2)
-	check(blennies(grazed).all(func(x): return x.energy>1.0) and grazed.state.resources.biofilm<bare.state.resources.biofilm,"Hungry blennies feed on biofilm")
-	# Young are born on the bed beside the mother; arrivals settle on the bed at the edge.
-	var b:=StreamWorld.new(3,1000)
-	var mom: Dictionary=blennies(b).filter(func(x): return x.sex=="female")[0]
-	mom.energy=cfg.reserve
-	var cursor: int=b.state.next_event-1
-	b._breed(mom)
-	var born: Array=StreamWorld.events_after(b.state.events,cursor).filter(func(e): return e.kind=="birth")
-	check(born.size()==1 and on_bed(by_id(b,born[0].id)) and absf(by_id(b,born[0].id).x-mom.x)<=30.001,"A young blenny is born on the bed beside its mother")
-	var came: Dictionary=b._arrive("lawnmower_blenny")
-	check(on_bed(came) and came.x in [130.0,1150.0] and came.tx==came.x and came.ty==came.y,"An arriving blenny settles on the bed at the edge")
-	# Settled food: a hungry blenny hops over and pecks it up.
-	var f:=StreamWorld.new(42,1000)
-	only(f,func(x): return x==blennies(f)[0])
-	var bl: Dictionary=blennies(f)[0]
-	bl.energy=1.0
-	bl.x=500.0
-	bl.y=StreamWorld.floor_y(500.0)
-	bl.tx=bl.x
-	bl.ty=bl.y
-	reset_material(f)
-	f.state.light_hour=12.0
-	f.feed(560.0)
-	var fed: bool=false
-	for i in 900:
-		f.advance_live(0.2)
-		fed=fed or bl.activity=="Feeding"
-	check(fed and food_mass(f)<StreamWorld.FOOD.particles*StreamWorld.FOOD.mass-0.000001 and bl.energy>1.0 and on_bed(bl) and absf(f.residual())<0.00001,"A blenny pecks up settled food")
-	check(f.state.events.any(func(e): return e.kind=="ate" and e.id==bl.id and e.live and absf(e.food_x-e.x)<StreamWorld.FOOD.eat),"A blenny's peck is an ate event beside the pellet")
-	# Tap: it hops away along the bed, then settles; a lure does not interest it.
-	var t:=StreamWorld.new(42,1000)
-	t.state.light_hour=12.0
-	var tb: Dictionary=blennies(t)[0]
-	var tap:=Vector2(tb.x+40,tb.y-30)
-	check(t.startle(tap.x,tap.y,1.0)>=1 and tb.activity=="Startled","A tap startles a nearby blenny")
-	var start: float=absf(tb.x-tap.x)
-	t.advance_live(2)
-	check(absf(tb.x-tap.x)>start+20 and on_bed(tb),"It scoots away along the bed")
-	t.advance_live(StreamWorld.STARTLE.seconds+1)
-	check(tb.activity!="Startled","Then it settles again")
-	t.set_lure(Vector2(tb.x,tb.y-40))
-	var curious: bool=false
-	for i in 600:
-		t.advance_live(0.2)
-		curious=curious or blennies(t).any(func(x): return x.activity=="Curious")
-	check(not curious,"Blennies ignore the cursor lure")
-
-func firefish(w: StreamWorld) -> Array:
-	return w.state.animals.filter(func(x): return x.species=="purple_firefish")
-
-# Open sand of the approved background (assets/reef/background-v1.png scaled to 1280x720),
-# read off along floor_y: left of the small rocks in front of the left reef, and between those
-# rocks and the right outcrop (docs/BACKEND_SNAPSHOT_EVENTS.md "Placement").
-const SAND: Array=[[210.0,440.0],[505.0,940.0]]
-# Adult art boxes around the backend position (ReefRig.LOOK: width, height from the atlas
-# region, anchor `line`), so spacing follows the real artwork.
-func art_box(species: String, at: Vector2) -> Rect2:
-	var look: Dictionary=ReefRig.LOOK[species]
-	var size:=Vector2(look.width,look.width*look.region.size.y/look.region.size.x)
-	return Rect2(at-Vector2(size.x*0.5,size.y*look.line),size)
-
-func tang_grazing_box(s: Array) -> Rect2:
-	return art_box("yellow_tang",StreamWorld._tang_hold(s))
-
-# Every hover height a firefish can have, at its burrow.
-func firefish_boxes(x: float) -> Array:
-	var y: float=StreamWorld.floor_y(x)
-	return [art_box("purple_firefish",Vector2(x,y-StreamWorld.FIRE.hover[0])),art_box("purple_firefish",Vector2(x,y-StreamWorld.FIRE.hover[1]))]
-
-# 2026-09-24 user decision: firefish hover a little above their own sand burrows (a patch
-# of their own) and dart inside when startled, when a fish passes close, and at night.
-func firefish_checks() -> void:
-	var cfg: Dictionary=StreamWorld.SPECIES.get("purple_firefish",{})
-	check(cfg.get("label")=="Purple firefish" and cfg.get("latin")=="Nemateleotris decora" and cfg.get("pool")=="microfauna" and StreamWorld.CAP.get("purple_firefish")==4 and cfg.get("initial")==2,"Purple firefish: microfauna, habitat for four, opening pair")
-	# The red firefish (key "firefish", N. magnifica) was replaced before any user save held it; no legacy entry.
-	check(not StreamWorld.SPECIES.has("firefish") and "firefish" not in StreamWorld.HOMES and StreamWorld.new(42,1000).spawn("firefish").is_empty(),"The red firefish key is gone entirely")
-	var w:=StreamWorld.new(42,1000)
-	var pair: Array=firefish(w)
-	check(pair.size()==2 and pair.all(at_burrow) and apart(pair) and pair.any(func(x): return x.sex=="female") and pair.any(func(x): return x.sex=="male"),"A new world opens with a firefish pair, each in its own burrow")
-	check(StreamWorld.FIRE_BURROWS.size()>=StreamWorld.CAP.purple_firefish and pair.all(func(x): return x.burrow_x in StreamWorld.FIRE_BURROWS),"The firefish patch has a burrow for every firefish place")
-	# Codex review 2026-09-25: burrows 32 px apart made same-facing adults (91 px art) overlap.
-	var length: float=ReefRig.LOOK.purple_firefish.width
-	var sites: Array=StreamWorld.FIRE_BURROWS
-	var spaced: bool=true
-	for i in sites.size():
-		for j in range(i+1,sites.size()):
-			spaced=spaced and absf(sites[i]-sites[j])>=length+16.0 and not firefish_boxes(sites[i]).any(func(r): return firefish_boxes(sites[j]).any(func(q): return r.intersects(q)))
-	check(spaced,"Firefish burrows are at least an adult body length (%d px) plus a margin apart; hovering adults never overlap" % length)
-	check(sites.all(func(x): return SAND.any(func(r): return x>=r[0] and x<=r[1])),"Every firefish burrow is on the open sand of the approved background")
-	var clear: bool=true
-	for x: float in sites:
-		for sp: Array in StreamWorld.TANG.spots:
-			clear=clear and absf(x-sp[0])>StreamWorld.FIRE.dx and not firefish_boxes(x).any(func(r): return r.intersects(tang_grazing_box(sp)))
-			# A grazing tang (adult or juvenile hold) never sits where it would send the firefish
-			# into its burrow (the hide rule: within `dx` sideways and `dy` above the mouth).
-			for scale: float in [1.0,0.5]:
-				var hold: Vector2=StreamWorld._tang_hold(sp,scale)
-				clear=clear and not (absf(x-hold.x)<StreamWorld.FIRE.dx and StreamWorld.floor_y(x)-hold.y<StreamWorld.FIRE.dy)
-	check(clear,"No firefish burrow or hovering firefish overlaps a tang rock spot or a grazing tang")
-	check(pair.map(func(x): return x.burrow_x)==[sites[0],sites[1]] and absf(sites[0]-sites[1])==sites.slice(1).map(func(x): return absf(x-sites[0])).min(),"The opening pair takes the first site and its nearest neighbour")
-	check(pair.all(func(x): return x.hover_y>=StreamWorld.FIRE.hover[0] and x.hover_y<=StreamWorld.FIRE.hover[1]),"Each firefish has its own hover height above the burrow")
-	only(w,func(x): return x.species=="purple_firefish" or x==chromis(w)[0])
-	var fish: Dictionary=chromis(w)[0]
-	var ff: Dictionary=pair[0]
-	w.state.light_hour=12.0
-	fish.x=1100.0
-	fish.tx=1100.0
-	w.advance_live(1)
-	check(pair.all(func(x): return x.activity=="Hovering" and x.extend==1.0),"By day firefish hover above their burrows")
-	fish.x=ff.burrow_x
-	fish.y=StreamWorld.DEPTH[fish.species][1]
-	fish.tx=fish.x
-	fish.ty=fish.y
-	fish.activity="Resting"
-	fish.decision_at=w.state.elapsed+60
-	w.advance_live(0.4)
-	check(ff.activity=="Hiding" and ff.extend==0.0,"A fish passing close sends a firefish into its burrow")
-	fish.x=1100.0
-	fish.tx=1100.0
-	w.advance_live(StreamWorld.FIRE.seconds+1)
-	check(ff.activity=="Hovering" and ff.extend==1.0,"It comes back out a few seconds later")
-	var b:=StreamWorld.new(42,1000)
-	only(b,func(x): return x.species in ["purple_firefish","lawnmower_blenny"])
-	b.state.light_hour=12.0
-	var hop: Dictionary=blennies(b)[0]
-	var bf: Dictionary=firefish(b)[0]
-	for o: Dictionary in blennies(b):
-		o.x=1100.0
-		o.tx=1100.0
-		o.y=StreamWorld.floor_y(1100.0)
-		o.activity="Perching"
-		o.decision_at=b.state.elapsed+600
-	hop.x=bf.burrow_x-60
-	hop.y=StreamWorld.floor_y(hop.x)
-	hop.tx=bf.burrow_x+60
-	hop.activity="Hopping"
-	hop.decision_at=b.state.elapsed+600
-	var hid: bool=false
-	for i in 20:
-		b.advance_live(0.2)
-		hid=hid or bf.activity=="Hiding"
-	check(hid,"A blenny hopping past makes a firefish duck")
-	w.state.light_hour=23.0
-	w.advance_live(1)
-	check(pair.all(func(x): return x.activity=="Sleeping" and x.extend==0.0),"At night firefish sleep in their burrows")
-	w.state.light_hour=6.0
-	w.advance_live(3600*4)
-	check(pair.all(at_burrow) and StreamWorld.validate(w.export_state()) and absf(w.residual())<0.00001,"Firefish never leave their burrows; the world validates and balances")
-	# A tap darts them home; food drifting past a hovering firefish is snatched.
-	var t:=StreamWorld.new(42,1000)
-	only(t,func(x): return x.species=="purple_firefish")
-	t.state.light_hour=12.0
-	t.advance_live(1)
-	var tf: Dictionary=firefish(t)[0]
-	check(t.startle(tf.burrow_x,tf.burrow_y-30,1.0)>=1 and tf.activity=="Hiding" and tf.extend==0.0,"A tap near the burrow sends the firefish inside")
-	t.advance_live(StreamWorld.STARTLE.eel_seconds+1)
-	check(tf.activity=="Hovering","Then it hovers again")
-	tf.energy=1.0
-	reset_material(t)
-	var before: float=tf.energy
-	t.feed(tf.burrow_x)
-	t.advance_live(80)
-	check(tf.energy>before+StreamWorld.FOOD.mass*0.8-0.000001 and absf(t.residual())<0.00001,"A hovering firefish snatches food drifting past its burrow")
-	var snatch: Array=t.state.events.filter(func(e): return e.kind=="ate" and e.id==tf.id)
-	check(snatch.size()>=1 and snatch.all(func(e): return e.live and e.x==tf.burrow_x and absf(e.food_x-tf.burrow_x)<StreamWorld.FOOD.eel_dx and e.food_y<tf.burrow_y and e.food_y>tf.burrow_y-StreamWorld.FOOD.eel_reach),"The firefish's bites are ate events at its burrow, with the pellet above it")
-	t.set_lure(Vector2(tf.burrow_x,tf.burrow_y-60))
-	var curious: bool=false
-	for i in 300:
-		t.advance_live(0.2)
-		curious=curious or firefish(t).any(func(x): return x.activity=="Curious")
-	check(not curious,"Firefish ignore the cursor lure")
-	# Young dig beside the parent in the firefish patch; a full patch sends them downstream.
-	var y:=StreamWorld.new(3,1000)
-	var mom: Dictionary=firefish(y).filter(func(x): return x.sex=="female")[0]
-	mom.energy=cfg.reserve
-	reset_material(y)
-	y._breed(mom)
-	check(firefish(y).size()==3 and firefish(y).all(at_burrow) and apart(firefish(y)) and firefish(y).all(func(x): return x.burrow_x in StreamWorld.FIRE_BURROWS and x.hover_y>=StreamWorld.FIRE.hover[0]),"A young firefish digs its own burrow in the patch")
-	mom.energy=cfg.reserve
-	y._breed(mom)
-	check(firefish(y).size()==StreamWorld.CAP.purple_firefish and firefish(y).all(at_burrow) and apart(firefish(y)),"The patch fills up to its cap, one burrow each")
-	mom.energy=cfg.reserve
-	reset_material(y)
-	var dispersed: int=y.state.totals.dispersal
-	y._breed(mom)
-	check(y.state.totals.dispersal==dispersed+1 and firefish(y).size()==StreamWorld.CAP.purple_firefish and absf(y.residual())<0.00001,"A full patch sends young downstream")
-	var r:=StreamWorld.new(11,1000)
-	for x: Dictionary in firefish(r):
-		r.state.animals.erase(x)
-	reset_material(r)
-	for i in 3:
-		r.advance_offline(StreamWorld.MAX_AWAY)
-	check(firefish(r).size()>0 and firefish(r).all(func(x): return at_burrow(x) and x.burrow_x in StreamWorld.FIRE_BURROWS),"Rescue arrival settles a firefish into a free burrow")
-	var bad: Dictionary=StreamWorld.new(5).export_state()
-	bad.animals.filter(func(x): return x.species=="purple_firefish")[0].erase("burrow_y")
-	check(not StreamWorld.validate(bad),"Firefish without a burrow rejected")
-	bad=StreamWorld.new(5).export_state()
-	bad.animals.filter(func(x): return x.species=="purple_firefish")[0].hover_y=-3.0
-	check(not StreamWorld.validate(bad),"Negative hover_y rejected")
-
 func centroid(list: Array) -> Vector2:
 	var c:=Vector2.ZERO
 	for x: Dictionary in list:
@@ -908,7 +630,7 @@ func chromis_checks() -> void:
 	check(cfg.get("label")=="Green chromis" and cfg.get("latin")=="Chromis viridis" and cfg.get("pool")=="microfauna" and StreamWorld.CAP.get("green_chromis")==8 and cfg.get("initial")==6,"Green chromis: microfauna, habitat for eight, opening school of six")
 	var w:=StreamWorld.new(42,1000)
 	var school: Array=chromis(w)
-	var band: Array=StreamWorld.DEPTH.green_chromis
+	var band: Array=w.band("green_chromis")
 	check(school.size()==cfg.initial and school.all(func(x): return x.y>=band[0] and x.y<=band[1]) and spread(school)<StreamWorld.CHROMIS.regroup,"The opening chromis start together as a school in midwater")
 	w.state.light_hour=12.0
 	var in_band: bool=true
@@ -965,154 +687,262 @@ func chromis_checks() -> void:
 	check(resting>1500*chromis(n).size()*0.3,"At night the school mostly rests")
 	check(StreamWorld.validate(w.export_state()) and absf(w.residual())<0.00001,"Chromis world validates and balances")
 
-func tangs(w: StreamWorld) -> Array:
-	return w.state.animals.filter(func(x): return x.species=="yellow_tang")
 
-func in_tang_band(a: Dictionary) -> bool:
-	var band: Array=StreamWorld.DEPTH.yellow_tang
+func of(w: StreamWorld, species: String) -> Array:
+	return w.state.animals.filter(func(x): return x.species==species)
+
+# Keeps only the animals `keep` accepts, then rebalances the ledger.
+func only(w: StreamWorld, keep: Callable) -> void:
+	for x: Dictionary in w.state.animals.duplicate():
+		if not keep.call(x):
+			w.state.animals.erase(x)
+	reset_material(w)
+
+func in_band(w: StreamWorld, a: Dictionary) -> bool:
+	var band: Array=w.band(a.species)
 	return a.y>=band[0]-0.01 and a.y<=band[1]+0.01
 
-# 2026-09-24 user decision: yellow tang, the largest fish of the pool and a biofilm grazer like the
-# blenny; a small group cruising the upper midwater and reef face, pecking at rock surfaces.
-func tang_checks() -> void:
-	var cfg: Dictionary=StreamWorld.SPECIES.get("yellow_tang",{})
-	check(cfg.get("label")=="Yellow tang" and cfg.get("latin")=="Zebrasoma flavescens" and cfg.get("pool")=="biofilm" and "yellow_tang" in StreamWorld.ACTIVE_SPECIES,"Yellow tang: biofilm grazer in the reef cast")
-	var others: Array=StreamWorld.ACTIVE_SPECIES.filter(func(k): return k!="yellow_tang")
-	check(others.all(func(k): return cfg.get("body",0.0)>StreamWorld.SPECIES[k].body),"Yellow tang is the largest fish of the pool")
-	var ch: Dictionary=StreamWorld.SPECIES.green_chromis
-	check(cfg.get("lifespan",0.0)>ch.lifespan and cfg.get("mature",0.0)>ch.mature and cfg.get("breed",1.0)<ch.breed and cfg.get("cooldown",0.0)>ch.cooldown,"Tangs live longer and breed more slowly than chromis")
-	check(absf(cfg.get("cost",0.0)-0.8*cfg.get("bite",0.0)*0.5)<0.000001 and cfg.get("k_food")==10.0,"Tangs break even at food 10 like the rest of the cast")
-	check(StreamWorld.CAP.get("yellow_tang",99)==2 and cfg.get("initial",0)==2,"Tangs stay a small group: an opening pair, habitat for two")
+func home_dist(a: Dictionary) -> float:
+	return Vector2(a.x,a.y).distance_to(Vector2(a.home_x,a.home_y))
+
+# The guarantees (user decisions 2026-09-28, plan §4.3): nobody starves (energy floor), and no
+# species dies out (the last one waits for a companion; a rescue is certain within 24 h).
+func guarantee_checks() -> void:
+	var floor_of: Callable=func(x: Dictionary) -> float: return StreamWorld.SPECIES[x.species].reserve*StreamWorld.FLOOR
+	# No food at all for 30 days (every pool empty, no inflow).
+	var a:=StreamWorld.new(9)
+	a.state.supply_scale=0.0
+	for pool: String in StreamWorld.POOLS:
+		a.state.resources[pool]=0.0
+	for animal: Dictionary in a.state.animals:
+		animal.energy=StreamWorld.SPECIES[animal.species].reserve*0.3
+	reset_material(a)
+	offline(a,StreamWorld.DAY*30)
+	check(not a.state.causes.has("starvation") and a.state.totals.floor_hits>0,"No food for 30 days: animals reach the energy floor (%d floor hits) and none starves" % a.state.totals.floor_hits)
+	check(a.state.animals.all(func(x): return x.energy>=floor_of.call(x)-0.000001),"Energy never drops below the floor")
+	check(a.state.totals.birth==0 and a.state.totals.dispersal==0,"At the floor nobody breeds")
+	check(a.state.causes.keys().all(func(k): return k=="old age"),"Without food only old age ends a life (%s)" % str(a.state.causes))
+	check(absf(a.residual())<0.00001 and StreamWorld.validate(a.export_state()),"Unpaid metabolism takes nothing from any pool: the ledger balances")
+	# The old forced-starvation setup (no energy, no body): still nobody starves.
+	var z:=StreamWorld.new(9)
+	z.state.supply_scale=0.0
+	for pool: String in StreamWorld.POOLS:
+		z.state.resources[pool]=0.0
+	for animal: Dictionary in z.state.animals:
+		animal.energy=0.0
+		animal.body=0.0
+	reset_material(z)
+	z.advance_offline(3600)
+	check(not z.state.causes.has("starvation") and z.state.animals.size()==12 and absf(z.residual())<0.00001,"Even with no energy and no food an animal does not starve")
+	# An ordinary world never meets the floor (S2 probe criterion C1).
+	var fed:=StreamWorld.new(42)
+	offline(fed,StreamWorld.DAY*10)
+	check(fed.state.totals.floor_hits==0,"Ten ordinary days never meet the floor")
+	# The last one of a species outlives its lifespan until a companion comes.
+	for species: String in StreamWorld.ACTIVE_SPECIES:
+		var w:=StreamWorld.new(21,1000)
+		var lone: Dictionary=of(w,species)[0]
+		only(w,func(x): return x.species!=species or x==lone)
+		lone.age=lone.lifespan+1.0
+		var arrived: int=-1
+		var died: int=-1
+		var never_zero: bool=true
+		for hour in 30:
+			w.advance_offline(3600)
+			never_zero=never_zero and w.counts()[species]>=1
+			if arrived<0 and of(w,species).any(func(x): return x.id!=lone.id):
+				arrived=hour+1
+			if died<0 and not w.state.animals.has(lone):
+				died=hour+1
+		var end: Dictionary=w.state.archive.filter(func(x): return x.id==lone.id)[0] if died>0 else {}
+		check(never_zero and arrived>0 and arrived<=24 and died>=arrived and end.get("cause","")=="old age","The last %s outlives its lifespan until a companion arrives (after %d h, within 24), then dies of old age (hour %d)" % [species,arrived,died])
+	# A vanished species always comes back within 24 hours.
+	var late: Array=[]
+	for seed_value in range(1,25):
+		for species: String in StreamWorld.ACTIVE_SPECIES:
+			var w:=StreamWorld.new(seed_value,1000)
+			only(w,func(x): return x.species!=species)
+			for hour in 24:
+				w.advance_offline(3600)
+			if w.counts()[species]<1:
+				late.append("%s/%d" % [species,seed_value])
+	check(late.is_empty(),"Every vanished species is rescued within 24 hours (24 seeds x 4 species; late: %s)" % str(late))
+	# A pending rescue is saved and validated.
+	var p:=StreamWorld.new(5,1000)
+	only(p,func(x): return x.species!="seahorse")
+	p.advance_offline(3600)
+	var saved: Dictionary=p.export_state()
+	var back:=StreamWorld.new()
+	check(saved.has("rescue") and saved.rescue.has("seahorse") and back.restore(saved) and same(back,p),"A pending rescue is saved and restored")
+	back.advance_offline(StreamWorld.DAY)
+	p.advance_offline(StreamWorld.DAY)
+	check(same(back,p) and p.counts().seahorse>0,"The restored rescue arrives as it would have")
+	saved.rescue={"yellow_tang":10.0}
+	check(not StreamWorld.validate(saved),"A rescue for an unknown species is rejected")
+	saved.rescue={"seahorse":NAN}
+	check(not StreamWorld.validate(saved),"A non-finite rescue time is rejected")
+	var bad: Dictionary=p.export_state()
+	bad.totals.erase("floor_hits")
+	check(not StreamWorld.validate(bad),"totals.floor_hits is required")
+
+# S2 design numbers (docs/ecology.md "Reef v3 cast sizing", criteria table) and the homes each takes.
+const NEW_CAST: Dictionary = {
+	"clownfish":{"label":"Clownfish","latin":"Amphiprion ocellaris","cap":3,"mature":45.0,"lifespan":300.0,"body":0.6,"reserve":4.0,"cost":0.2,"bite":0.5,"breed":0.06,"cooldown":12.0,"homes":["anemone"]},
+	"seahorse":{"label":"Seahorse","latin":"Hippocampus kuda","cap":4,"mature":60.0,"lifespan":300.0,"body":0.5,"reserve":3.5,"cost":0.16,"bite":0.4,"breed":0.05,"cooldown":14.0,"homes":["hitch"]},
+	"royal_gramma":{"label":"Royal gramma","latin":"Gramma loreto","cap":3,"mature":40.0,"lifespan":240.0,"body":0.4,"reserve":3.0,"cost":0.16,"bite":0.4,"breed":0.07,"cooldown":10.0,"homes":["shelter","rock"]}}
+
+func distinct_homes(list: Array) -> bool:
+	var seen: Dictionary={}
+	for x: Dictionary in list:
+		seen[str(x.home)]=true
+	return seen.size()==list.size()
+
+# 2026-09-28 redesign (S4): clownfish, seahorse and royal gramma replace the blenny, firefish and
+# tang. S4 gives them the simplest behaviour: each lives at a home from the scene (the anemone, a
+# hitch point, a cave or rock spot), swims about it by day and rests beside it at night. Their full
+# behaviours come in S6-S8.
+func new_cast_checks() -> void:
+	for species: String in NEW_CAST:
+		var want: Dictionary=NEW_CAST[species]
+		var cfg: Dictionary=StreamWorld.SPECIES.get(species,{})
+		var numbers: bool=cfg.get("pool")=="microfauna" and cfg.get("initial")==2 and cfg.get("brood")==2 and cfg.get("k_food")==10.0 and StreamWorld.CAP.get(species)==want.cap
+		for k: String in ["label","latin","mature","lifespan","body","reserve","cost","bite","breed","cooldown"]:
+			numbers=numbers and cfg.get(k)==want[k]
+		check(numbers,"%s: the S2 design numbers, microfauna, habitat for %d, opening pair" % [want.label,want.cap])
+		check(absf(cfg.get("cost",0.0)-0.8*cfg.get("bite",0.0)*0.5)<0.000001,"%s breaks even at food 10 like the rest of the cast" % want.label)
+	# The opening pairs, at their homes.
 	var w:=StreamWorld.new(42,1000)
-	var group: Array=tangs(w)
-	check(group.size()==cfg.initial and group.all(in_tang_band) and group.any(func(x): return x.sex=="female") and group.any(func(x): return x.sex=="male"),"A new world opens with a tang pair in its band")
-	check(group.all(func(x): return x.age>=cfg.mature),"The opening tangs are adults")
-	w.state.light_hour=12.0
+	for species: String in NEW_CAST:
+		var pair: Array=of(w,species)
+		var r: float=StreamWorld.HOME[species].radius
+		check(pair.size()==2 and pair.any(func(x): return x.sex=="female") and pair.any(func(x): return x.sex=="male") and pair.all(func(x): return in_band(w,x) and x.home.kind in NEW_CAST[species].homes and home_dist(x)<=r),"A new world opens with a %s pair at its home, in its band" % species)
+	check(of(w,"clownfish").all(func(x): return x.home==of(w,"clownfish")[0].home),"The clownfish share the anemone")
+	# Up to the caps every fish has a home: the anemone holds all clownfish, one hitch or cave each.
+	var full:=StreamWorld.new(7,1000)
+	for species: String in NEW_CAST:
+		while of(full,species).size()<StreamWorld.CAP[species]:
+			full.spawn(species,50.0)
+	var anemone: Dictionary=full.scene.effects("anemone",full.scene.default_decor().anemone).anemone
+	check(of(full,"clownfish").size()==StreamWorld.CAP.clownfish and of(full,"clownfish").all(func(x): return x.home.kind=="anemone") and anemone.capacity>=StreamWorld.CAP.clownfish,"Clownfish up to their cap all live in the anemone (capacity %d)" % anemone.capacity)
+	check(of(full,"seahorse").size()==StreamWorld.CAP.seahorse and distinct_homes(of(full,"seahorse")),"Seahorses up to their cap each hold a hitch point of their own")
+	check(of(full,"royal_gramma").size()==StreamWorld.CAP.royal_gramma and distinct_homes(of(full,"royal_gramma")),"Royal grammas up to their cap each hold a cave or rock spot of their own")
+	check(full.state.animals.filter(func(x): return x.has("home")).all(func(x): return x.home_x>=100.0 and x.home_x<=1180.0 and x.home_y>=full.band(x.species)[0] and x.home_y<=full.band(x.species)[1]),"Every home lies in its species' band and the swimming width")
+	# By day they swim about their homes.
+	var d:=StreamWorld.new(42,1000)
+	d.state.light_hour=12.0
 	var seen: Dictionary={}
 	var band_ok: bool=true
-	var contact_ok: bool=true
-	var grazes: int=0
-	var both: int=0
-	var both_ok: bool=true
-	var low: float=INF
-	var high: float=-INF
+	var far: Dictionary={}
+	var travelled: Dictionary={}
 	for i in 9000:
-		w.advance_live(0.2)
-		if group.all(func(t): return t.activity=="Grazing"):
-			both+=1
-			both_ok=both_ok and not art_box("yellow_tang",Vector2(group[0].x,group[0].y)).intersects(art_box("yellow_tang",Vector2(group[1].x,group[1].y)))
-		for t: Dictionary in group:
-			seen[t.activity]=true
-			band_ok=band_ok and in_tang_band(t)
-			if t.activity=="Grazing":
-				grazes+=1
-				var spot: Array=[]
-				for s: Array in StreamWorld.TANG.spots:
-					if s[0]==t.get("contact_x") and s[1]==t.get("contact_y"):
-						spot=s
-				# Mouth on the rock: body centre `reach` (half a body) x scale out on the open side, facing the rock.
-				contact_ok=contact_ok and not spot.is_empty() and t.direction==-spot[2] and Vector2(t.x,t.y).distance_to(StreamWorld._tang_hold(spot,w.animal_scale(t)))<6.0
-			else:
-				contact_ok=contact_ok and not t.has("contact_x") and not t.has("contact_y")
-		low=minf(low,group[0].x)
-		high=maxf(high,group[0].x)
-	check(band_ok,"Tangs stay in their band")
-	check(seen.has("Cruising") and seen.has("Grazing") and seen.keys().all(func(k): return k in ["Cruising","Grazing","Resting"]),"By day tangs cruise and graze (%s)" % str(seen.keys()))
-	check(grazes>0 and contact_ok,"A grazing tang holds its mouth to a rock spot (contact_x/contact_y), only while grazing")
-	check(both_ok,"Two tangs never graze spots whose adult bodies (122 px art) overlap (%d ticks both grazing)" % both)
-	check(high-low>400,"A tang cruises across the pool (%.0f px)" % (high-low))
-	check(absf(w.residual())<0.00001 and StreamWorld.validate(w.export_state()),"Tang world conserves material and validates")
-	# The choice itself: with one tang holding a spot, the other never picks a spot whose body would overlap.
-	var pick:=StreamWorld.new(42,1000)
-	pick.state.light_hour=12.0
-	var pt: Array=tangs(pick)
-	var picked_ok: bool=true
-	var picked: int=0
-	for s: Array in StreamWorld.TANG.spots:
-		var hold: Vector2=StreamWorld._tang_hold(s)
-		pt[0].tx=hold.x
-		pt[0].ty=hold.y
-		for i in 400:
-			pt[1].x=640.0
-			pt[1].y=250.0
-			pick._choose_tang(pt[1])
-			if pt[1].activity=="Cruising" and StreamWorld.TANG.spots.any(func(o): return StreamWorld._tang_hold(o)==Vector2(pt[1].tx,pt[1].ty)):
-				picked+=1
-				picked_ok=picked_ok and not art_box("yellow_tang",hold).intersects(art_box("yellow_tang",Vector2(pt[1].tx,pt[1].ty)))
-	check(picked>50 and picked_ok,"A tang skips rock spots where its body would overlap the other tang's (%d picks)" % picked)
-	# Night: mostly resting.
+		var before: Dictionary={}
+		for x: Dictionary in d.state.animals:
+			before[x.id]=Vector2(x.x,x.y)
+		d.advance_live(0.2)
+		for x: Dictionary in d.state.animals:
+			if not x.has("home"):
+				continue
+			seen[x.activity]=true
+			band_ok=band_ok and in_band(d,x)
+			far[x.species]=maxf(far.get(x.species,0.0),home_dist(x))
+			travelled[x.id]=travelled.get(x.id,0.0)+Vector2(x.x,x.y).distance_to(before.get(x.id,Vector2(x.x,x.y)))
+	check(band_ok,"The new fish keep to their depth bands")
+	check(seen.has("Hovering") and seen.keys().all(func(k): return k in ["Hovering","Resting"]),"By day the new fish swim about their homes (%s)" % str(seen.keys()))
+	for species: String in NEW_CAST:
+		var r: float=StreamWorld.HOME[species].radius
+		check(far.get(species,INF)<=2.0*r,"A %s stays near its home (at most %.0f px away, limit %.0f)" % [species,far.get(species,INF),2.0*r])
+	check(travelled.size()==6 and travelled.values().all(func(v): return v>100.0),"Every new fish moves about (%s px in 30 min)" % str(travelled.values().map(func(v): return int(v))))
+	# At night they rest beside their homes.
 	var n:=StreamWorld.new(42,1000)
 	n.state.light_hour=1.0
-	var resting: int=0
-	for i in 1500:
-		n.advance_live(0.2)
-		resting+=tangs(n).filter(func(x): return x.activity=="Resting").size()
-	check(resting>1500*tangs(n).size()*0.4,"At night tangs mostly rest")
-	# They graze biofilm, like the blenny.
+	n.advance_live(300)
+	check(n.state.animals.filter(func(x): return x.has("home")).all(func(x): return x.activity=="Resting" and home_dist(x)<=StreamWorld.HOME[x.species].radius),"At night the new fish rest beside their homes")
+	check(absf(d.residual())<0.00001 and StreamWorld.validate(d.export_state()) and StreamWorld.validate(n.export_state()),"New-cast worlds conserve material and validate")
+	# They eat microfauna.
 	var grazed:=StreamWorld.new(8,1000)
 	var bare:=StreamWorld.new(8,1000)
-	only(grazed,func(x): return x.species=="yellow_tang")
+	for x: Dictionary in grazed.state.animals:
+		x.energy=1.0
+	only(grazed,func(x): return x.has("home"))
 	only(bare,func(x): return false)
-	for t: Dictionary in tangs(grazed):
-		t.energy=1.0
+	# (No rescue during the comparison: the absent species are held back.)
+	grazed.state.rescue={"green_chromis":1.0e12}
+	bare.state.rescue={"green_chromis":1.0e12,"clownfish":1.0e12,"seahorse":1.0e12,"royal_gramma":1.0e12}
 	offline(grazed,StreamWorld.DAY*2)
 	offline(bare,StreamWorld.DAY*2)
-	check(tangs(grazed).all(func(x): return x.energy>1.0) and grazed.state.resources.biofilm<bare.state.resources.biofilm,"Hungry tangs feed on biofilm")
-	# Feeding, a tap and the lure: like the other swimmers.
-	var f:=StreamWorld.new(42,1000)
-	only(f,func(x): return x==tangs(f)[0])
-	var ft: Dictionary=tangs(f)[0]
-	ft.energy=1.0
-	reset_material(f)
-	f.state.light_hour=12.0
-	f.feed(ft.x)
-	var chased: bool=false
-	for i in 600:
-		f.advance_live(0.2)
-		chased=chased or ft.activity=="Feeding"
-	check(chased and ft.energy>1.0 and food_mass(f)<StreamWorld.FOOD.particles*StreamWorld.FOOD.mass-0.000001 and in_tang_band(ft) and absf(f.residual())<0.00001,"A hungry tang chases drifting food and eats it")
-	var t:=StreamWorld.new(42,1000)
-	t.state.light_hour=12.0
-	t.advance_live(5)
-	var tt: Dictionary=tangs(t)[0]
-	var x0: float=tt.x
-	check(t.startle(tt.x+30,tt.y,1.0)>=1 and tt.activity=="Startled" and not tt.has("contact_x"),"A tap startles a tang")
-	var fled: bool=true
-	for i in 10:
-		t.advance_live(0.2)
-		fled=fled and in_tang_band(tt)
-	check(fled and tt.x<x0-5,"It darts away from the tap inside its band")
-	t.advance_live(StreamWorld.STARTLE.seconds+1)
-	check(tt.activity!="Startled","Then it settles again")
-	var l:=StreamWorld.new(42,1000)
-	only(l,func(x): return x.species=="yellow_tang")
-	l.state.light_hour=12.0
-	var curious: bool=false
-	for i in 900:
-		var lt: Dictionary=tangs(l)[0]
-		if i%100==0:
-			l.set_lure(Vector2(lt.x+40+i*0.01,lt.y))
-		l.advance_live(0.2)
-		curious=curious or tangs(l).any(func(x): return x.activity=="Curious")
-	check(curious,"The cursor lure draws a curious tang")
-	# Young are born in the band beside the mother; arrivals come in at the edge in the band.
+	check(grazed.state.animals.size()==6 and grazed.state.animals.all(func(x): return x.energy>1.0) and grazed.state.resources.microfauna<bare.state.resources.microfauna,"Hungry new fish feed on microfauna")
+	for species: String in NEW_CAST:
+		# A hungry fish goes for a pinch above its home and eats it.
+		var f:=StreamWorld.new(42,1000)
+		var fish: Dictionary=of(f,species)[0]
+		fish.energy=1.0
+		only(f,func(x): return x==fish)
+		f.state.light_hour=12.0
+		f.feed(fish.x)
+		var chased: bool=false
+		var kept: bool=true
+		for i in 900:
+			f.advance_live(0.2)
+			chased=chased or fish.activity=="Feeding"
+			kept=kept and in_band(f,fish)
+		var bites: Array=f.state.events.filter(func(e): return e.kind=="ate" and e.id==fish.id and e.live and absf(e.food_x-e.x)<StreamWorld.FOOD.eat)
+		check(chased and not bites.is_empty() and fish.energy>1.0 and kept and absf(f.residual())<0.00001,"A hungry %s chases drifting food above its home and eats it (%d bites)" % [species,bites.size()])
+		# A tap startles it; it darts away inside its band, settles, and goes home.
+		var t:=StreamWorld.new(42,1000)
+		t.state.light_hour=12.0
+		var tf: Dictionary=of(t,species)[0]
+		var tap:=Vector2(tf.x+30,tf.y)
+		var start: float=Vector2(tf.x,tf.y).distance_to(tap)
+		check(t.startle(tap.x,tap.y,1.0)>=1 and tf.activity=="Startled","A tap startles a nearby %s" % species)
+		t.advance_live(StreamWorld.STARTLE.seconds)
+		var moved: float=Vector2(tf.x,tf.y).distance_to(tap)-start
+		check(moved>(5.0 if species=="seahorse" else 10.0) and in_band(t,tf),"The %s darts away from the tap inside its band (%.1f px)" % [species,moved])
+		t.advance_live(60)
+		check(tf.activity!="Startled" and home_dist(tf)<=2.0*StreamWorld.HOME[species].radius,"Then it settles and returns to its home")
+	# Young are born beside their own home; a full habitat sends them away; arrivals swim home.
 	var b:=StreamWorld.new(3,1000)
-	var mom: Dictionary=tangs(b).filter(func(x): return x.sex=="female")[0]
-	mom.energy=cfg.reserve
-	reset_material(b)
-	var dispersed: int=b.state.totals.dispersal
-	b._breed(mom)
-	check(b.state.totals.dispersal==dispersed+1 and tangs(b).size()==StreamWorld.CAP.yellow_tang and absf(b.residual())<0.00001,"With the pair filling the habitat, a young tang disperses")
-	# Room for one: the male is gone.
-	only(b,func(x): return x.species!="yellow_tang" or x==mom)
-	mom.energy=cfg.reserve
-	reset_material(b)
-	var cursor: int=b.state.next_event-1
-	b._breed(mom)
-	var born: Array=StreamWorld.events_after(b.state.events,cursor).filter(func(e): return e.kind=="birth")
-	check(born.size()==1 and in_tang_band(by_id(b,born[0].id)) and absf(by_id(b,born[0].id).x-mom.x)<=30.001 and absf(b.residual())<0.00001,"A young tang is born in the band beside its mother")
-	var came: Dictionary=b._arrive("yellow_tang")
-	check(in_tang_band(came) and came.x in [130.0,1150.0],"An arriving tang comes in at the edge, in its band")
-	var bad: Dictionary=StreamWorld.new(5).export_state()
-	bad.animals.filter(func(x): return x.species=="yellow_tang")[0].contact_x="rock"
-	check(not StreamWorld.validate(bad),"Non-numeric contact_x rejected")
+	for species: String in NEW_CAST:
+		var mom: Dictionary=of(b,species).filter(func(x): return x.sex=="female")[0]
+		mom.energy=StreamWorld.SPECIES[species].reserve
+		var cursor: int=b.state.next_event-1
+		b._breed(mom)
+		var born: Array=StreamWorld.events_after(b.state.events,cursor).filter(func(e): return e.kind=="birth")
+		var kid: Dictionary=by_id(b,born[0].id) if born.size()==1 else {}
+		check(not kid.is_empty() and kid.parent==mom.id and in_band(b,kid) and kid.home.kind in NEW_CAST[species].homes and home_dist(kid)<=StreamWorld.HOME[species].radius+30.0 and distinct_homes(of(b,species).filter(func(x): return x.home.kind!="anemone")),"A young %s is born beside a home of its own" % species)
+		while of(b,species).size()<StreamWorld.CAP[species]:
+			b.spawn(species,50.0)
+		var dispersed: int=b.state.totals.dispersal
+		mom.energy=StreamWorld.SPECIES[species].reserve
+		reset_material(b)
+		b._breed(mom)
+		check(b.state.totals.dispersal==dispersed+1 and of(b,species).size()==StreamWorld.CAP[species] and absf(b.residual())<0.00001,"With every %s home taken, a young one disperses" % species)
+	for species: String in NEW_CAST:
+		var c:=StreamWorld.new(4,1000)
+		c.state.light_hour=12.0
+		var came: Dictionary=c._arrive(species)
+		check(not came.is_empty() and came.x in [130.0,1150.0] and in_band(c,came) and came.home.kind in NEW_CAST[species].homes,"An arriving %s comes in at the edge, in its band, with a home" % species)
+		c.advance_live(600)
+		check(home_dist(came)<=2.0*StreamWorld.HOME[species].radius,"Then it swims home (%.0f px from it after 10 min)" % home_dist(came))
+	# A home is required and checked.
+	var v: Dictionary=StreamWorld.new(5,1000).export_state()
+	var fish_v: Dictionary=v.animals.filter(func(x): return x.species=="seahorse")[0]
+	fish_v.erase("home")
+	check(not StreamWorld.validate(v),"A new fish without a home is rejected")
+	v=StreamWorld.new(5,1000).export_state()
+	v.animals.filter(func(x): return x.species=="royal_gramma")[0].home.kind="burrow"
+	check(not StreamWorld.validate(v),"An unknown home kind is rejected")
+	v=StreamWorld.new(5,1000).export_state()
+	v.animals.filter(func(x): return x.species=="clownfish")[0].home_x="620"
+	check(not StreamWorld.validate(v),"A non-numeric home point is rejected")
+	v=StreamWorld.new(5,1000).export_state()
+	v.scene="lagoon"
+	check(not StreamWorld.validate(v),"An unknown scene is rejected")
+	# The lure draws only the chromis school for now.
+	var l:=StreamWorld.new(42,1000)
+	l.state.light_hour=12.0
+	l.set_lure(Vector2(620,420))
+	var curious: bool=false
+	for i in 600:
+		l.advance_live(0.2)
+		curious=curious or l.state.animals.any(func(x): return x.has("home") and x.activity=="Curious")
+	check(not curious,"The new fish ignore the cursor lure")

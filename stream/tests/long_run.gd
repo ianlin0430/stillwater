@@ -8,26 +8,24 @@ func plant_max(world: StreamWorld, plant: String) -> float:
 
 # Live mode steps the same hours through advance_live, so movement takes part
 # instead of the offline approximation.
-const BANDS: Dictionary = StreamWorld.DEPTH
-# Population target band, derived from the cast (2026-09-25, four-species reef): the bottom is the
-# opening cast (12), the top the combined habitat caps (17). Same >= 80% share as before.
+# Population target band, derived from the cast (2026-09-28, reef v3): the bottom is the
+# opening cast (12), the top the combined habitat caps (18). Same >= 80% share as before.
 var POPULATION_BAND: Array=ACCEPTANCE.population_band()
 
-func audit_depth(world: StreamWorld, depth: Dictionary) -> void:
+# audit_space (S4 first version, plan §6.2): every fish inside its scene depth band and the
+# scene's swimming width, above the bed (violations). How far a new fish swimming about or resting
+# at its home got from it is reported (depth.farthest), not gated: an arrival swims home from an
+# exit across the pool. Obstacles come in S5.
+func audit_space(world: StreamWorld, depth: Dictionary) -> void:
+	var swim: Array=world.scene.bounds().swim_x
 	for a: Dictionary in world.state.animals:
 		depth.checked+=1
-		if a.species in StreamWorld.HOMES:
-			# Purple firefish never swim: exactly at their own burrow mouth.
-			if a.x!=a.burrow_x or a.y!=a.burrow_y or absf(a.y-StreamWorld.floor_y(a.x))>0.0001:
-				depth.violations+=1
-		elif a.species=="lawnmower_blenny":
-			# Perched, grazing or hopping, always on the bed.
-			if absf(a.y-StreamWorld.floor_y(a.x))>0.0001:
-				depth.violations+=1
-		else:
-			var band: Array=BANDS[a.species]
-			if a.y<band[0] or a.y>band[1]:
-				depth.violations+=1
+		var band: Array=world.band(a.species)
+		if a.y<band[0] or a.y>band[1] or a.x<swim[0] or a.x>swim[1] or a.y>=world.bed_y(a.x):
+			depth.violations+=1
+		elif a.has("home") and a.activity in ["Hovering","Resting"] and a.get("relocated_at",-1.0)<0.0:
+			var far: float=Vector2(a.x,a.y).distance_to(Vector2(a.home_x,a.home_y))
+			depth.farthest=maxf(depth.get("farthest",0.0),far)
 
 # --feed=daily: a pinch at 08, 11, 14 and 17 h (sim time since start) at rotating x, which is
 # the whole daily cap (StreamWorld.FOOD.daily); --feed=none (default) never calls feed().
@@ -76,7 +74,7 @@ func run_days(world: StreamWorld, t: Dictionary, seed_value: int, days: int, to_
 						world.advance_live(1.0/60.0)
 				else:
 					world.advance_live(3600.0)
-				audit_depth(world,depth)
+				audit_space(world,depth)
 			t.peak=maxi(t.peak,world.state.animals.size())
 		t.max_residual=maxf(t.max_residual,absf(world.residual()))
 		t.detritus_max=maxf(t.detritus_max,world.state.resources.detritus)
@@ -127,7 +125,7 @@ func summarize(world: StreamWorld, t: Dictionary, seed_value: int, days: int, mo
 	var plants: Dictionary={}
 	for plant: String in PLANT_POOLS:
 		plants[plant]={"days_above_5pct":float(t.plant_ok[plant])/days,"lowest_share":t.plant_low[plant]}
-	return {"seed":seed_value,"mode":mode,"feed":feed,"fed":t.fed,"detritus_max":t.detritus_max,"absent_days":absent_days,"depth":t.depth,"days":days,"births":totals.birth,"arrivals":totals.arrival,"old_age":causes.get("old age",0),"first_old_age_day":t.first_old_age,"starvation":causes.get("starvation",0),"predation":totals.get("predation",0),"departures":totals.departure,"dispersal":totals.dispersal,"population_band":POPULATION_BAND,"band_share":float(t.in_band)/days,"max_population":t.peak,"presence":presence,"longest_absence":t.longest_gap,"plants":plants,"max_material_residual":t.max_residual,"invalid_days":t.invalid,"removed_species_returned":t.removed_species,"causes":causes,"totals":totals,"monthly":t.rows,"seconds":t.seconds}
+	return {"seed":seed_value,"mode":mode,"feed":feed,"fed":t.fed,"detritus_max":t.detritus_max,"absent_days":absent_days,"depth":t.depth,"days":days,"births":totals.birth,"arrivals":totals.arrival,"old_age":causes.get("old age",0),"first_old_age_day":t.first_old_age,"starvation":causes.get("starvation",0),"floor_hits":totals.get("floor_hits",0),"predation":totals.get("predation",0),"departures":totals.departure,"dispersal":totals.dispersal,"population_band":POPULATION_BAND,"band_share":float(t.in_band)/days,"max_population":t.peak,"presence":presence,"longest_absence":t.longest_gap,"plants":plants,"max_material_residual":t.max_residual,"invalid_days":t.invalid,"removed_species_returned":t.removed_species,"causes":causes,"totals":totals,"monthly":t.rows,"seconds":t.seconds}
 
 # A relative checkpoint path lives in res://artifacts/, like --out.
 func checkpoint_path(path: String) -> String:
@@ -194,11 +192,13 @@ func judge(run: Dictionary) -> Dictionary:
 	ok.reproduction=ACCEPTANCE.reproduction_passes(run)
 	ok.local_replacement=ACCEPTANCE.local_replacement_passes(run)
 	ok.old_age=ACCEPTANCE.old_age_passes(run)
-	ok.starvation=run.starvation<run.old_age
+	# Never starves, never dies out (2026-09-28, user decisions; plan §4.3): no starvation, the
+	# floor never met (S2 criterion C1), every species present every day.
+	ok.starvation=run.starvation==0 and run.floor_hits==0
 	# Predation was removed on 2026-09-23: no animal eats another.
 	ok.predation=run.predation==0 and not run.causes.has("predation")
 	ok.population=run.band_share>=0.8 and run.max_population<=POPULATION_BAND[1]
-	ok.presence=run.presence.values().all(func(v): return v>=0.95) and run.longest_absence.values().all(func(v): return v<=30)
+	ok.presence=run.presence.values().all(func(v): return v==1.0) and run.longest_absence.values().all(func(v): return v==0)
 	ok.no_departures=run.departures==0
 	ok.conservation=run.max_material_residual<0.00001
 	ok.plants=run.plants.values().all(func(p): return p.days_above_5pct>=0.95)
@@ -288,7 +288,7 @@ func _initialize() -> void:
 		return
 	var year: Dictionary=simulate(240921,365)
 	var last: Dictionary=year.monthly[-1]
-	year.acceptance={"species_persist":year.longest_absence.values().all(func(v): return v<=30) and StreamWorld.ACTIVE_SPECIES.all(func(k): return last[k]>0),"conservation":year.max_material_residual<0.00001,"valid":year.invalid_days==0}
+	year.acceptance={"species_persist":year.longest_absence.values().all(func(v): return v==0) and StreamWorld.ACTIVE_SPECIES.all(func(k): return last[k]>0),"starvation":year.starvation==0 and year.floor_hits==0,"conservation":year.max_material_residual<0.00001,"valid":year.invalid_days==0}
 	for key: String in year.acceptance:
 		if not year.acceptance[key]:
 			report.failures.append("365-day run failed "+key)

@@ -6,24 +6,22 @@ const VERSION: int = 3
 const MAX_ANIMALS: int = 24
 const MAX_AWAY: float = 259200.0
 const DAY: float = 86400.0
-const ACTIVE_SPECIES: Array[String] = ["lawnmower_blenny","purple_firefish","green_chromis","yellow_tang"]
+# Reef v3 cast (2026-09-28 redesign, S4): the green chromis stays; the clownfish, seahorse and royal
+# gramma replace the lawnmower blenny, purple firefish and yellow tang. All four eat microfauna.
+const ACTIVE_SPECIES: Array[String] = ["green_chromis","clownfish","seahorse","royal_gramma"]
 const SPECIES: Dictionary = {
-	# Stillwater Reef cast (user decision 2026-09-24). Authored rates; sizing in docs/ecology.md.
-	"lawnmower_blenny": {"label":"Lawnmower blenny","latin":"Salarias fasciatus","initial":2,"mature":45.0,"lifespan":240.0,"body":0.8,"reserve":4.5,"cost":0.24,"bite":0.6,"brood":2,"breed":0.07,"cooldown":12.0,"pool":"biofilm","k_food":10.0},
-	# Purple firefish replaced the red firefish (N. magnifica, key "firefish") on 2026-09-24, before any
-	# user save held one, so the red key was dropped.
-	"purple_firefish": {"label":"Purple firefish","latin":"Nemateleotris decora","initial":2,"mature":35.0,"lifespan":200.0,"body":0.5,"reserve":3.5,"cost":0.18,"bite":0.45,"brood":2,"breed":0.08,"cooldown":10.0,"pool":"microfauna","k_food":10.0},
+	# Authored rates; each species breaks even at food 10 (cost = 0.4 x bite). Sized by offline probe
+	# (docs/ecology.md "Reef v3 cast sizing"); the chromis values are unchanged since 2026-09-24.
 	"green_chromis": {"label":"Green chromis","latin":"Chromis viridis","initial":6,"mature":30.0,"lifespan":180.0,"body":0.5,"reserve":3.5,"cost":0.2,"bite":0.5,"brood":2,"breed":0.1,"cooldown":8.0,"pool":"microfauna","k_food":10.0},
-	# Added 2026-09-24 (user decision): the largest fish of the pool, a biofilm grazer beside the
-	# blenny; longer lived and slower breeding than the chromis. Break-even at food 10 like the rest.
-	"yellow_tang": {"label":"Yellow tang","latin":"Zebrasoma flavescens","initial":2,"mature":120.0,"lifespan":540.0,"body":1.4,"reserve":7.0,"cost":0.32,"bite":0.8,"brood":2,"breed":0.03,"cooldown":30.0,"pool":"biofilm","k_food":10.0}}
+	"clownfish": {"label":"Clownfish","latin":"Amphiprion ocellaris","initial":2,"mature":45.0,"lifespan":300.0,"body":0.6,"reserve":4.0,"cost":0.2,"bite":0.5,"brood":2,"breed":0.06,"cooldown":12.0,"pool":"microfauna","k_food":10.0},
+	"seahorse": {"label":"Seahorse","latin":"Hippocampus kuda","initial":2,"mature":60.0,"lifespan":300.0,"body":0.5,"reserve":3.5,"cost":0.16,"bite":0.4,"brood":2,"breed":0.05,"cooldown":14.0,"pool":"microfauna","k_food":10.0},
+	"royal_gramma": {"label":"Royal gramma","latin":"Gramma loreto","initial":2,"mature":40.0,"lifespan":240.0,"body":0.4,"reserve":3.0,"cost":0.16,"bite":0.4,"brood":2,"breed":0.07,"cooldown":10.0,"pool":"microfauna","k_food":10.0}}
 # Ecology v2 (docs/plans/2026-09-22-self-sustaining-ecosystem.md). Rates are per day, applied per one-minute tick.
-# Reef cast since 2026-09-25 (four species, no garden eels): caps 3+4+8+2 = 17, opening cast
-# 2+2+6+2 = 12 (SPECIES.initial),
-# sized against the food pools by offline probe (tools/cast_probe.gd, docs/ecology.md). These
-# two are the only places the cast sizes live; the arrival limit (habitat_cap) and the
-# long-run band follow from them.
-const CAP: Dictionary = {"lawnmower_blenny":3,"purple_firefish":4,"green_chromis":8,"yellow_tang":2}
+# Reef v3 cast (S2 probe, 2026-09-28): caps 8+3+4+3 = 18, opening cast 6+2+2+2 = 12 (SPECIES.initial).
+# These two are the only places the cast sizes live; the arrival limit (habitat_cap) and the
+# long-run band follow from them. Each cap fits the scene's homes (tests/test_scene_data.gd):
+# clownfish <= anemone capacity, seahorse <= hitches of the required plant, gramma <= rock spots.
+const CAP: Dictionary = {"green_chromis":8,"clownfish":3,"seahorse":4,"royal_gramma":3}
 const POOLS: Array[String] = ["nutrients","stem","floating","biofilm","microfauna","detritus"]
 # Opening pools (R11, set with the earlier shrimp cast).
 const OPENING: Dictionary = {"nutrients":0.4,"stem":45.0,"floating":24.0,"biofilm":32.0,"microfauna":24.0,"detritus":8.0}
@@ -34,14 +32,13 @@ const PLANTS: Dictionary = {
 const K_NUTRIENT: float = 3.0
 const MICRO: Dictionary = {"r":1.2,"m":0.06,"max":80.0,"k":25.0}
 const DECAY: float = 0.08
-const STREAM_IN: Dictionary = {"nutrients":0.7,"microfauna":0.35}
+# Microfauna input 1.2 a day (S2, 2026-09-28; was 0.35): four species now share the one food pool.
+const STREAM_IN: Dictionary = {"nutrients":0.7,"microfauna":1.2}
 const STREAM_OUT: Dictionary = {"nutrients":0.05,"microfauna":0.015,"detritus":0.04,"floating":0.005}
-# Swimming depth bands, a little wider than the authored targets in _choose_activity.
-const DEPTH: Dictionary = {"green_chromis":[180.0,430.0],"yellow_tang":[120.0,540.0]}
 # Chromis school: the lowest-id chromis leads; each other member holds its own slot
 # (golden-angle direction, radius in `spread` px, flattened vertically, mirrored with the
 # leader's heading) and hurries (`catch_up` x speed) when more than `regroup` px from it.
-# Members keep `spacing` px apart. A resting chromis within `hold` px of its spot stops steering
+# Members keep `spacing` px apart. A resting fish within `hold` px of its spot stops steering
 # toward it and keeps its facing: it glides to a stop and hovers (2026-09-26, user: resting
 # chromis bobbed up and down at night from small repeated corrections); within `hold` px of the
 # spot's depth it never corrects its depth.
@@ -49,96 +46,75 @@ const CHROMIS: Dictionary = {"spread":[34.0,80.0],"regroup":120.0,"catch_up":1.8
 # A species is rescued from upstream only when it can no longer breed here: one or none left
 # (2026-09-24; was two, when each species had six places and two was a third of them).
 const RESCUE_AT: int = 1
+# Never dies out (2026-09-28, user decision; plan §4.3): a rescue is certain. When a species is at
+# or below RESCUE_AT at the hourly migration check, one arrival is scheduled RESCUE_DELAY seconds
+# later (one rng draw, 2-22 h); checks are hourly, so it arrives within 24 h of the drop.
+const RESCUE_DELAY: Array[float] = [7200.0,79200.0]
+# Never starves (2026-09-28, user decision; plan §4.3): energy has a floor of FLOOR x reserve.
+# Metabolism is paid only down to it; what cannot be paid is not paid (nothing is taken from any
+# pool, so the ledger still balances). Breeding needs 0.74 x reserve, so a fish at the floor never
+# breeds. Each animal-minute that meets the floor adds one to totals.floor_hits.
+const FLOOR: float = 0.1
 # Opening ages in days (R11): one opener per stratum of [lo, hi]. The long-run gates derive
 # the old-age deaths the opening cast must produce from these (tests/ecology_acceptance.gd).
-# Yellow tang openers are adults (mature at 120 days).
-const OPENING_AGE: Dictionary = {"fish":[40.0,150.0],"yellow_tang":[130.0,260.0]}
-const RESCUE_RATE: float = 1.0/96.0
+const OPENING_AGE: Dictionary = {"fish":[40.0,150.0]}
 const ARRIVAL_RATE: float = 1.0/504.0
 # An unexplained position jump larger than this in one motion tick is a relocation
 # (animals carry relocated_at). Generic: fish layer clamping stays under 1 px in normal
-# play, so since the shrimp (whose surface snap crossed it) left, only a fish found
-# outside its band, e.g. from an edited save, is snapped back and marked.
+# play, so only a fish found outside its band, e.g. from an edited save, is snapped back and marked.
 const RELOCATION: float = 3.0
-# Firefish burrows on the open sand of the approved background, filled nearest-first from the
-# first site; a firefish never leaves its burrow. Sites are at least 110 px apart (adult art is
-# 91 px long, so same-facing neighbours never overlap), more than `dx` from every tang rock spot,
-# and clear of a grazing tang's body (2026-09-25, Codex review; was 420/452/388/484, 32 px apart).
-# It hovers `hover_y` px (per individual, in `hover`) above it and hides for `seconds` when a
-# swimming fish within `dx` sideways and `dy` above the mouth (the bottom of the chromis layer)
-# or a moving blenny within `dx` passes. (The garden eels' colony and rule left with them, 2026-09-25.)
-const FIRE_BURROWS: Array[float] = [650.0,540.0,760.0,410.0]
-const FIRE: Dictionary = {"seconds":6.0,"hover":[24.0,40.0],"dx":48.0,"dy":200.0,"flick":12.0}
-# Species that live in a burrow of their own patch (spawn digs one, validate() requires it).
-const HOMES: Dictionary = {"purple_firefish":FIRE_BURROWS}
+# Terrain comes from the scene file (ReefScene, data/scenes/<id>.json): bed, depth bands, x bounds,
+# exits and homes. S4 always uses this scene with its default decor (switching comes in S11).
+const DEFAULT_SCENE: String = "reef"
+# Homes of the new fish (S4, the simplest behaviour; the full behaviours are S6-S8): each lives at
+# a home from the scene's decor - the clownfish share the anemone (up to its capacity), a seahorse
+# takes a hitch point of its own, a royal gramma a cave (a shelter whose `use` names it) or else a
+# rock spot of the scene. By day it swims (`Hovering`) to points within `radius` px of its home,
+# a new one every `dwell` s; at night it rests beside it. Assigned without any rng draw.
+const HOME: Dictionary = {
+	"clownfish":{"kind":"anemone","radius":60.0,"dwell":[6.0,15.0]},
+	"seahorse":{"kind":"hitch","radius":30.0,"dwell":[15.0,40.0]},
+	"royal_gramma":{"kind":"shelter","radius":50.0,"dwell":[5.0,12.0]}}
 # Feeding (user decision 2026-09-23: real food, never required). A pinch is `particles` of
 # `mass` dropped just below the surface (y `surface`); at most `daily` mass per simulated day.
 # Particles sink `sink` px/s; fish with room notice food within `notice` px and eat it within
-# `eat` px; a hovering firefish snatches food within `eel_dx` of its burrow and `eel_reach`
-# above it (names kept from the garden eels, which had the same rule). Food on the bed becomes detritus `decay` seconds after it settles.
+# `eat` px. Food on the bed becomes detritus `decay` seconds after it settles.
 # Every pellet eaten is an `ate` event (no journal text); the journal keeps only the latest `max_bites`. See
 # docs/BACKEND_SNAPSHOT_EVENTS.md.
-const FOOD: Dictionary = {"particles":5,"mass":0.05,"daily":1.0,"max":40,"surface":56.0,"sink":10.0,"notice":260.0,"eat":12.0,"eel_dx":22.0,"eel_reach":80.0,"decay":900.0,"max_bites":10}
-# Tap the glass: fish within `radius` dart up to `dart` px away for `seconds`; firefish in reach
-# stay down `eel_seconds` (name kept from the garden eels). Presentation of the tap only; no ecology effect, nothing saved.
-const STARTLE: Dictionary = {"radius":260.0,"dart":150.0,"seconds":3.0,"eel_seconds":5.0}
-# Cursor lure: for `interest` seconds after the cursor comes to rest, a fish choosing its next
-# move within `range` of it looks with probability `chance`, hovering `stand_off` px to the side
-# for `look` seconds. Jitter under `still` px keeps the same lure. Never saved.
+const FOOD: Dictionary = {"particles":5,"mass":0.05,"daily":1.0,"max":40,"surface":56.0,"sink":10.0,"notice":260.0,"eat":12.0,"decay":900.0,"max_bites":10}
+# Tap the glass: fish within `radius` dart up to `dart` px away for `seconds`. Presentation of the
+# tap only; no ecology effect, nothing saved.
+const STARTLE: Dictionary = {"radius":260.0,"dart":150.0,"seconds":3.0}
+# Cursor lure: for `interest` seconds after the cursor comes to rest, the chromis school leader
+# choosing its next move within `range` of it looks with probability `chance`, hovering `stand_off`
+# px to the side for `look` seconds. Jitter under `still` px keeps the same lure. Never saved.
 const LURE: Dictionary = {"range":320.0,"chance":0.5,"interest":45.0,"look":[6.0,12.0],"stand_off":36.0,"still":8.0}
-# Lawnmower blenny on the bed: `y` is always floor_y(x). Grazing/perching dwell ranges (s), hop
-# length (px) and flick speeds (px/s); a hop turns away from another blenny within `space` px.
-# A hop (2026-09-25): pivot to face the way at `turn` rad/s (twice that when startled), then tail
-# flicks at the flick speed, gliding down at `glide` /s, finishing at no less than `land` px/s.
-# `burrow_clear` (2026-09-25, Codex recording): a blenny never perches, grazes or sleeps within this
-# many px of an occupied firefish burrow (half a 100 px blenny + half a 91 px firefish + 8 px), so a
-# hovering firefish is never drawn on top of it; it hops out when it finds itself there.
-const BLENNY: Dictionary = {"graze":[6.0,20.0],"perch":[4.0,12.0],"sleep":[60.0,120.0],"hop":[20.0,90.0],"hop_speed":45.0,"dart_speed":90.0,"space":120.0,"burrow_clear":104.0,"turn":7.0,"glide":1.44,"land":8.0}
-# Adult body [length, height] in world px (the rig's art, ReefRig.LOOK), halved for juveniles
-# like the rig. Used to keep bodies apart (2026-09-25).
-const BODY: Dictionary = {"green_chromis":[68.0,39.0],"yellow_tang":[122.0,87.0],"lawnmower_blenny":[100.0,42.0],"purple_firefish":[91.0,55.0]}
-# Body separation between swimmers (2026-09-25, Codex recording: two tangs merged into one blob and
-# chromis swam straight through tangs). Each pair is measured in the ellipse of their combined
-# half bodies times `margin`; a fish reacts to where the pair will be up to `look` s ahead,
-# dodging mostly up or down (the upper fish rises), and never closes in once inside `close`.
-# A chromis gives way to a tang; a grazing tang holds its rock; chromis space themselves (CHROMIS).
-# The big fish goes around the small one (2026-09-27, user decision): a chromis that cannot get out
-# of a tang's way (resting, or pinned at a band edge or wall, _stuck) stays put, and the tang bends
-# its course into a wide arc that passes it `clear` px outside that ellipse, starting up to `ahead`
-# s before it (_around), and aims beside it rather than into it (_off_stuck_chromis); a resting
-# tang lying in such a chromis's space swims out of it. `ease` (px/s2): how fast that bend may
-# change; `jolt` (px/s2): how fast a tang's whole steering may change (2026-09-27 review).
-# A tang that just ate chews for `chew` s before chasing food again and skips pellets inside
-# another feeding tang's body, so two tangs take turns at a pinch instead of piling onto it.
+# Adult body [length, height] in world px, halved for juveniles like the rig. Used to keep bodies
+# apart. Chromis from its approved art (ReefRig.LOOK). The three new fish (S4, 2026-09-28): Codex's
+# conservative sprite envelopes from the H3 handoff (assets/reef/PROVENANCE.md "H3 backend BODY
+# handoff", from ReefFishArt.extent_for); the seahorse is upright, narrow in x and tall in y.
+const BODY: Dictionary = {"green_chromis":[68.0,39.0],"clownfish":[69.0,44.0],"seahorse":[37.0,61.0],"royal_gramma":[68.0,37.0]}
+# Body separation between swimmers (2026-09-25). Each pair is measured in the ellipse of their
+# combined half bodies times `margin` (x 1.17 for two species, x `same` for two of one species);
+# a fish reacts to where the pair will be up to `look` s ahead, dodging mostly up or down (the
+# upper fish rises), and never closes in once inside `close`; the younger id gives way. Chromis
+# space themselves (CHROMIS) and a resting chromis stays put.
 # Swimming (2026-09-25, user: "natural first"). Per species: `cruise` px/s (x 0.82-1.18 per id),
 # `turn` max heading rate rad/s (x `startle_turn` when startled), `pitch` max nose up/down rad and
 # `pitch_rate` rad/s, water `drag` /s, stroke power `push` (terminal speed = push x wanted), `gap`
 # burst-and-glide band (0 = smooth rowing with `respond` /s and a `row` surge every `stroke` s),
 # pectoral `brake` px/s2, `scull` px/s at a standstill, `drift` rise-and-fall share while travelling.
 # `edge`: px over which a climb or dive eases off before a depth-band edge; `ramp`: how fast (/s)
-# thrust can build toward full.
+# thrust can build toward full. The three new fish (S4, provisional until S6-S8): the clownfish and
+# gramma swim in bursts like the chromis, a little slower; the seahorse rows slowly and evenly.
 const SWIM: Dictionary = {
 	"green_chromis":{"cruise":17.0,"turn":4.0,"pitch":0.7,"pitch_rate":0.8,"drag":0.9,"push":2.0,"gap":0.3,"brake":24.0,"scull":6.0,"drift":0.22},
-	"yellow_tang":{"cruise":20.0,"turn":1.2,"pitch":0.45,"pitch_rate":0.5,"drag":0.3,"push":2.0,"gap":0.0,"respond":0.8,"row":0.05,"stroke":1.6,"brake":8.0,"scull":6.0,"drift":0.15},
+	"clownfish":{"cruise":12.0,"turn":3.0,"pitch":0.5,"pitch_rate":0.6,"drag":0.9,"push":2.0,"gap":0.3,"brake":20.0,"scull":5.0,"drift":0.15},
+	"seahorse":{"cruise":4.0,"turn":1.0,"pitch":0.2,"pitch_rate":0.3,"drag":0.6,"push":2.0,"gap":0.0,"respond":0.8,"row":0.05,"stroke":1.2,"brake":4.0,"scull":3.0,"drift":0.1},
+	"royal_gramma":{"cruise":13.0,"turn":3.5,"pitch":0.6,"pitch_rate":0.7,"drag":0.9,"push":2.0,"gap":0.3,"brake":22.0,"scull":5.0,"drift":0.15},
 	"startle_speed":2.4,"startle_turn":4.0,"turn_gain":3.0,"edge":40.0,"ramp":2.0}
-const SEPARATE: Dictionary = {"margin":1.2,"look":5.0,"gain":1.6,"close":1.05,"chew":5.0,"tangs":1.25,"clear":4.0,"ahead":14.0,"ease":6.0,"jolt":10.0}
-# Yellow tang: cruises the upper midwater (`cruise` y range) and grazes rock `spots` [x, y, side]
-# on the left reef face and the right outcrop of the approved background (docs/BACKEND_SNAPSHOT_EVENTS.md).
-# The spot is where the mouth touches the rock; the body centre holds `reach` px (half the adult
-# body, BODY.yellow_tang; x animal_scale, so a juvenile holds 30.5 px out) out on the open `side`
-# (+1 right of the rock, -1 left), facing the rock, so the fish grazes in profile (2026-09-26, user:
-# the tang looked squashed; was 22 px, which the frontend foreshortened the body to reach).
-# 2026-09-26 spots, checked against artifacts/reef-review/background-normal.png at the 61 px hold:
-# the old lower-left spot (240, 472) is gone (its body now lay over the reef ledges, and every
-# other left-reef ledge tip puts a grazing tang over a firefish burrow), and the right outcrop spot
-# moved from (1080, 486) on the rock top to its left face (1048, 496). Graze/rest dwell times (s), cruise speed
-# (px/s), trip length (px); two tangs keep their bodies apart (SEPARATE; was `spacing` 70 px). `graze` share of day choices, `night_rest` at night.
-# While grazing the body rolls up to `roll` rad toward the rock with each peck (every `peck` s).
-# `clear` [w, h]: a spot is skipped while another tang holds or heads to a point closer than this on
-# both axes, so two grazing adults (122 x 87 px art) never overlap (spots 3/4, the right outcrop, are exclusive).
-# Swimming to a rock hold it eases in at no more than `settle` (/s) x the distance left (_move).
-const TANG: Dictionary = {"spots":[[170.0,318.0,1.0],[310.0,400.0,1.0],[962.0,532.0,-1.0],[1048.0,496.0,-1.0]],"reach":61.0,"cruise":[150.0,360.0],"graze":0.4,"graze_time":[8.0,20.0],"rest":[30.0,90.0],"night_rest":0.7,"speed":20.0,"trip":[80.0,360.0],"roll":0.35,"peck":1.6,"clear":[130.0,92.0],"settle":0.3}
-const NAMES: Dictionary = {"green_chromis":["Jade","Mint","Lagoon","Kelp","Glass","Pearl"],"lawnmower_blenny":["Moss","Pebble"],"purple_firefish":["Ember","Flicker"],"yellow_tang":["Saffron","Lemon"]}
+const SEPARATE: Dictionary = {"margin":1.2,"look":5.0,"gain":1.6,"close":1.05,"same":1.25}
+const NAMES: Dictionary = {"green_chromis":["Jade","Mint","Lagoon","Kelp","Glass","Pearl"],"clownfish":["Poppy","Ember"],"seahorse":["Drift","Kelpie"],"royal_gramma":["Violet","Dusk"]}
 var rng := RandomNumberGenerator.new()
 var motion_rng := RandomNumberGenerator.new()
 var state: Dictionary
@@ -148,23 +124,27 @@ var lure: Dictionary = {}
 var _live: bool = false
 # How urgently the last _avoid() call had to dodge (0 = clear, up to 1). Scratch, never saved.
 var _dodge: float = 0.0
-# Which way (+1 right, -1 left) a resting tang last moved off a chromis that cannot get out of its
-# way faces while it does, 0 when it did not (_off_stuck_chromis; per tick, never saved).
-var _away: float = 0.0
-# Whether the last _avoid() call met another fish of its own species (scratch, never saved).
-var _kin: bool = false
 # Per-tick scratch that _move() fills before moving anyone (2026-09-27, speed only; never saved):
-# the swimmers (species with a DEPTH band) in state.animals order, the same without the chromis,
-# and each swimmer's _body() by id. Within a motion tick no animal is added or removed and no
-# species or age changes, so these equal what a scan of state.animals would find.
-var _swimmers: Array = []
+# the non-chromis animals in state.animals order and each animal's _body() by id. Within a motion
+# tick no animal is added or removed and no species or age changes.
 var _not_chromis: Array = []
 var _bodies: Dictionary = {}
+# The world's scene (state.scene) and what is read from it once (never saved): depth band per
+# species [top, bottom], x bounds (swim: where a fish may be; roam: where it may aim) and the homes.
+var scene: ReefScene
+var _bands: Dictionary = {}
+var _swim_x: Vector2
+var _roam_x: Vector2
+var _feed_x: Vector2
+var _homes: Dictionary = {}
+# The default scene, for the static floor_y (frontend callers).
+static var _default_scene: ReefScene = null
 
 func _init(world_seed: int = 240921, wall_time: float = 0) -> void:
 	rng.seed = world_seed
 	motion_rng.seed = world_seed + 7919
-	state = {"version":VERSION,"seed":world_seed,"elapsed":0.0,"ecology_remainder":0.0,"motion_remainder":0.0,"motion_ticks":0,"ecology_ticks":0,"next_id":1,"next_event":1,"wall_checkpoint":wall_time,"animals":[],"archive":[],"events":[],"history":[],"resources":OPENING.duplicate(),"ledger":{"initial":0.0,"in":0.0,"out":0.0},"totals":{"birth":0,"death":0,"arrival":0,"departure":0,"dispersal":0},"causes":{},"light_hour":12.0}
+	state = {"version":VERSION,"seed":world_seed,"scene":DEFAULT_SCENE,"elapsed":0.0,"ecology_remainder":0.0,"motion_remainder":0.0,"motion_ticks":0,"ecology_ticks":0,"next_id":1,"next_event":1,"wall_checkpoint":wall_time,"animals":[],"archive":[],"events":[],"history":[],"resources":OPENING.duplicate(),"ledger":{"initial":0.0,"in":0.0,"out":0.0},"totals":{"birth":0,"death":0,"arrival":0,"departure":0,"dispersal":0,"floor_hits":0},"causes":{},"light_hour":12.0}
+	_use_scene(DEFAULT_SCENE)
 	for species: String in ACTIVE_SPECIES:
 		var n: int = int(SPECIES[species].initial)
 		var lo: float = OPENING_AGE.get(species,OPENING_AGE.fish)[0]
@@ -188,58 +168,65 @@ func _init(world_seed: int = 240921, wall_time: float = 0) -> void:
 				# The opening school, together in midwater.
 				animal.x=560.0+i*40.0
 				animal.y=280.0+(i%2)*30
-			elif species=="yellow_tang":
-				# The opening pair, in the upper midwater near the left reef.
-				animal.x=260.0+i*140.0
-				animal.y=260.0
 			animal.tx=animal.x
 			animal.ty=animal.y
 	state.ledger.initial = material()
 	_event("begin",{},"A small world begins beneath the surface.")
 	_sample()
 
+# Reads the scene's terrain and homes (never saved; a restored world reads its state.scene again).
+func _use_scene(scene_id: String) -> void:
+	scene=ReefScene.open(scene_id)
+	var b: Dictionary=scene.bounds()
+	_swim_x=Vector2(b.swim_x[0],b.swim_x[1])
+	_roam_x=Vector2(b.roam_x[0],b.roam_x[1])
+	_feed_x=Vector2(b.feed_x[0],b.feed_x[1])
+	for species: String in ACTIVE_SPECIES:
+		var band: Vector2=scene.band(species)
+		_bands[species]=[band.x,band.y]
+	for species: String in HOME:
+		_homes[species]=_home_spots(species)
+
+# Depth band [top, bottom] of a species in this world's scene.
+func band(species: String) -> Array:
+	return _bands[species]
+
+# Bed height at x in this world's scene.
+func bed_y(x: float) -> float:
+	return scene.floor_y(x)
+
+# Bed height at x in the default scene (the frontend's static call, main.gd and stream_events.gd;
+# plan H3 moves those to the world's own scene). Equal to bed_y while S4 has one scene.
 static func floor_y(x: float) -> float:
-	return 597.0 + sin(x*0.006)*9.0 + sin(x*0.017)*3.0
+	if _default_scene==null:
+		_default_scene=ReefScene.open(DEFAULT_SCENE)
+	return _default_scene.floor_y(x)
 
 func animal_scale(a: Dictionary) -> float:
 	var juvenile: bool = a.age < SPECIES[a.species].mature
 	return 0.5 if juvenile else 1.0
 
+# A chromis somewhere in midwater (motion_rng only).
 func _place(species: String) -> Vector2:
 	var x: float = motion_rng.randf_range(150,1130)
-	var y: float = floor_y(x)
-	if species=="green_chromis":
-		y = motion_rng.randf_range(220,390)
-	elif species=="yellow_tang":
-		y = motion_rng.randf_range(TANG.cruise[0],TANG.cruise[1])
+	var y: float = motion_rng.randf_range(220,390)
 	return Vector2(x,y)
 
 func spawn(species: String, age: float = 0, parent: int = 0) -> Dictionary:
 	if species not in ACTIVE_SPECIES or state.animals.size()>=MAX_ANIMALS:
 		return {}
 	var cfg: Dictionary = SPECIES[species]
-	var p: Vector2 = _burrow(parent,species) if species in HOMES else _place(species)
+	var home: Dictionary = _free_home(species,parent) if HOME.has(species) else {}
+	var p: Vector2 = _near_home(species,home,state.next_id) if not home.is_empty() else _place(species)
 	var a: Dictionary = {"id":state.next_id,"species":species,"name":cfg.label+" "+str(state.next_id),"sex":"female" if rng.randf()<0.5 else "male","age":age,"parent":parent,"born":state.elapsed,"body":cfg.body*(0.45 if age<cfg.mature else 1.0),"energy":cfg.reserve*(0.35 if age<cfg.mature else 0.67),"x":p.x,"y":p.y,"tx":p.x,"ty":p.y,"direction":1.0 if p.x<640 else -1.0,"activity":"Resting","decision_at":0.0,"last_breed":-cfg.cooldown,"recent":[],"hunger":0.0}
 	a.lifespan=cfg.lifespan*rng.randf_range(0.85,1.15)
-	if species in HOMES:
-		a.burrow_x=p.x
-		a.burrow_y=p.y
-		if species=="purple_firefish":
-			a.hover_y=FIRE.hover[0]+float((int(a.id)*7)%int(FIRE.hover[1]-FIRE.hover[0]+1))
-		_burrower(a)
+	if not home.is_empty():
+		a.home={"kind":home.kind,"slot":home.slot,"i":home.i}
+		a.home_x=home.x
+		a.home_y=home.y
 	state.next_id += 1
 	state.animals.append(a)
 	return a
-
-# Moving a newly placed animal sideways; a burrow fish stays at its burrow.
-func _bed_align(a: Dictionary, x: float) -> void:
-	if a.species in HOMES:
-		return
-	a.x=x
-	if a.species=="lawnmower_blenny":
-		a.y=floor_y(x)
-		a.tx=a.x
-		a.ty=a.y
 
 # `id` is the actor; `seq` is the event's own id (see docs/BACKEND_SNAPSHOT_EVENTS.md).
 func _event(kind: String, a: Dictionary, text: String, extra: Dictionary = {}) -> void:
@@ -322,7 +309,7 @@ func feed(x: float) -> bool:
 	var food: Array=state.get("food",[])
 	if fed.mass+amount>FOOD.daily+0.000001 or food.size()+FOOD.particles>FOOD.max:
 		return false
-	x=clampf(x,130,1150)
+	x=clampf(x,_feed_x.x,_feed_x.y)
 	# Fixed offsets by particle id: no draw from rng or motion_rng.
 	for i in FOOD.particles:
 		var id: int=state.get("next_food",1)
@@ -337,7 +324,7 @@ func feed(x: float) -> bool:
 	_live=false
 	return true
 
-# Taps the glass at (x, y). Returns how many animals noticed.
+# Taps the glass at (x, y). Returns how many animals noticed. Each darts away inside its band.
 func startle(x: float, y: float, strength: float = 1.0) -> int:
 	if not (is_finite(x) and is_finite(y) and is_finite(strength)) or strength<=0:
 		return 0
@@ -350,22 +337,11 @@ func startle(x: float, y: float, strength: float = 1.0) -> int:
 		if gap>=reach:
 			continue
 		noticed+=1
-		if a.species in HOMES:
-			a.decision_at=maxf(a.decision_at,state.elapsed+STARTLE.eel_seconds)
-			_burrower(a)
-			continue
-		if a.species=="lawnmower_blenny":
-			var side: float=signf(a.x-x) if absf(a.x-x)>0.01 else a.direction
-			a.activity="Startled"
-			a.tx=clampf(a.x+side*STARTLE.dart*(1.0-0.5*gap/reach),130,1150)
-			a.decision_at=state.elapsed+STARTLE.seconds
-			a.erase("food_id")
-			continue
 		var away: Vector2=(p-hit)/gap if gap>0.01 else Vector2(a.direction,0)
-		var band: Array=DEPTH[a.species]
+		var band: Array=_bands[a.species]
 		var to: Vector2=p+away*STARTLE.dart*(1.0-0.5*gap/reach)
 		a.activity="Startled"
-		a.tx=clampf(to.x,130,1150)
+		a.tx=clampf(to.x,_roam_x.x,_roam_x.y)
 		a.ty=clampf(to.y,band[0],band[1])
 		a.decision_at=state.elapsed+STARTLE.seconds
 		a.erase("food_id")
@@ -380,7 +356,7 @@ func set_lure(point: Vector2) -> void:
 	lure={"x":point.x,"y":point.y,"since":state.elapsed}
 	# The school leader looks up at once (followers follow it; see _choose_activity).
 	for a: Dictionary in state.animals:
-		if a.species in DEPTH and a.activity in ["Schooling","Cruising","Resting"]:
+		if a.species=="green_chromis" and a.activity in ["Schooling","Resting"]:
 			a.decision_at=minf(a.decision_at,state.elapsed+1.0)
 
 func clear_lure() -> void:
@@ -391,7 +367,7 @@ func _sink_food(delta: float) -> void:
 		if f.settled:
 			continue
 		f.y+=FOOD.sink*delta
-		var bed: float=floor_y(f.x)-2
+		var bed: float=bed_y(f.x)-2
 		if f.y>=bed:
 			f.y=bed
 			f.settled=true
@@ -400,16 +376,11 @@ func _sink_food(delta: float) -> void:
 # Nearest drifting food this fish can reach within its layer, if it has room to eat.
 func _seek_food(a: Dictionary) -> bool:
 	var best: Dictionary={}
-	var band: Array=DEPTH[a.species]
-	var tang: bool=a.species=="yellow_tang"
-	if SPECIES[a.species].reserve-a.energy>=FOOD.mass*0.8 and state.elapsed>=a.get("chew_until",-1.0):
+	var band: Array=_bands[a.species]
+	if SPECIES[a.species].reserve-a.energy>=FOOD.mass*0.8:
 		var gap: float=FOOD.notice
-		var food: Array=state.get("food",[])
-		var rivals: Array=state.animals.filter(func(o): return tang and o.id!=a.id and o.species=="yellow_tang" and o.activity=="Feeding") if tang and not food.is_empty() else []
-		for f: Dictionary in food:
+		for f: Dictionary in state.get("food",[]):
 			if f.settled or f.y>band[1]+FOOD.eat:
-				continue
-			if rivals.any(func(o): return absf(f.x-o.x)<BODY.yellow_tang[0] and absf(f.y-o.y)<BODY.yellow_tang[1]):
 				continue
 			var d: float=Vector2(a.x,a.y).distance_to(Vector2(f.x,clampf(f.y,band[0],band[1])))
 			if d<gap:
@@ -434,83 +405,52 @@ func _eat(a: Dictionary, f: Dictionary) -> void:
 	state.resources.detritus+=f.mass*0.2
 	state.food.erase(f)
 	a.erase("food_id")
-	if a.species=="yellow_tang":
-		a.chew_until=state.elapsed+SEPARATE.chew
 	_live=true
 	_event("ate",a,"",{"food_id":f.id,"food_x":f.x,"food_y":f.y})
 	_live=false
-
-# Activity sets and per-activity values the per-tick motion code tests against (2026-09-27, speed
-# only: an array or dictionary literal in an expression is built anew each time it is evaluated).
-const _SLOW: Array = ["Resting","Displaying","Grazing"]
-const _ROAMING: Array = ["Schooling","Cruising"]
-const _AT_SPOT: Array = ["Cruising","Grazing"]
-const _GIVE: Dictionary = {"green_chromis":2.0,"yellow_tang":0.33}
-const _BLENNY_MOVING: Array = ["Hopping","Startled","Feeding"]
-const _BLENNY_SETTLED: Array = ["Perching","Grazing","Sleeping"]
-const _BLENNY_TOP: Dictionary = {"Hopping":BLENNY.hop_speed,"Feeding":BLENNY.hop_speed,"Startled":BLENNY.dart_speed}
 
 func _move(delta: float) -> void:
 	if not state.get("food",[]).is_empty():
 		_sink_food(delta)
 	# The lowest-id chromis leads the school (it decides; the others follow). Empty if none.
 	var lead: Dictionary={}
-	_swimmers.clear()
 	_not_chromis.clear()
 	_bodies.clear()
 	for o: Dictionary in state.animals:
-		if o.species in DEPTH:
-			_swimmers.append(o)
-			_bodies[o.id]=_body(o)
-			if o.species!="green_chromis":
-				_not_chromis.append(o)
-			elif lead.is_empty() or o.id<lead.id:
-				lead=o
+		_bodies[o.id]=_body(o)
+		if o.species!="green_chromis":
+			_not_chromis.append(o)
+		elif lead.is_empty() or o.id<lead.id:
+			lead=o
 	for a: Dictionary in state.animals:
-		if a.species in HOMES:
-			_burrower(a)
-			continue
-		if a.species=="lawnmower_blenny":
-			_blenny(a,delta)
-			continue
 		var p:=Vector2(a.x,a.y)
 		var species: String=a.species
+		var chromis: bool=species=="green_chromis"
 		var startled: bool=a.activity=="Startled" and state.elapsed<a.decision_at
-		var tang: bool=species=="yellow_tang"
-		var follower: bool=not tang and not lead.is_empty() and a.id!=lead.id
+		var follower: bool=chromis and a.id!=lead.id
 		if not startled and not _seek_food(a):
 			if follower:
 				_follow(a,lead)
 			elif state.elapsed>=a.decision_at:
-				if tang:
-					_choose_tang(a)
-				else:
+				if chromis:
 					_choose_activity(a)
-		var band: Array = DEPTH[species]
+				else:
+					_choose_home(a)
+		var band: Array=_bands[species]
 		var target:=Vector2(a.tx,a.ty)
-		if not tang:
-			target=_off_grazing_tangs(a,target,band)
-		elif a.activity!="Grazing":
-			target=_off_stuck_chromis(a,target,band)
 		# (Targets are always in the band; an edited one is aimed at the band edge.)
 		var offset: Vector2=Vector2(target.x,clampf(target.y,band[0],band[1]))-p
-		# A resting chromis already within `hold` px of its spot's depth never corrects its depth:
+		# A resting fish already within `hold` px of its spot's depth never corrects its depth:
 		# nudged aside (spacing) it glides straight back, level (2026-09-26).
-		var resting: bool=not tang and a.activity=="Resting"
+		var resting: bool=a.activity=="Resting"
 		if resting and absf(offset.y)<CHROMIS.hold:
 			offset.y=0.0
 		var gap: float=offset.length()
 		var cfg: Dictionary=SWIM[species]
 		var cruise: float=cfg.cruise*(0.82+0.36*float((int(a.id)*37)%101)/100.0)
 		var speed: float=cruise
-		if a.activity in _SLOW:
+		if resting:
 			speed=1.2
-			# A resting tang whose spot lies in the space of a chromis that cannot get out of its
-			# way swims clear of it at up to half its cruise, gathering speed by half SEPARATE.ease
-			# px/s2 (2026-09-27 review: at 1.2 px/s a tang lying 40 px from a resting chromis still
-			# covered it 10 s later; at full speed at once, sculling jerked it 5.5 px/s in a tick).
-			if tang and target!=Vector2(a.tx,a.ty):
-				speed=minf(0.5*cruise,maxf(speed,Vector2(a.get("vx",0.0),a.get("vy",0.0)).length()+0.5*SEPARATE.ease*delta))
 		elif a.activity=="Startled":
 			speed*=SWIM.startle_speed
 		elif follower:
@@ -518,49 +458,20 @@ func _move(delta: float) -> void:
 		# Arrive: never faster than the fish can brake to a stop at the target.
 		# (Chasing a sinking pellet it keeps closing in: no slower than twice the sink speed.)
 		var top: float=minf(speed,maxf(sqrt(2.0*cfg.brake*gap),2.0*FOOD.sink if a.activity=="Feeding" else 0.0))
-		# A tang swimming to a rock hold eases in: no faster than TANG.settle x the px still to go,
-		# so it glides onto the hold nearly still (2026-09-27: the cap above assumes it brakes at
-		# `brake` 8 px/s2, but its rowing slows only ~2.75; with just the velocity limit below it
-		# coasted up to 6.2 px past the hold).
-		var landing: bool=false
-		if tang and a.activity=="Cruising":
-			for sp: Array in TANG.spots:
-				var hold: Vector2=_tang_hold(sp,animal_scale(a))
-				if target==hold:
-					top=minf(top,gap*TANG.settle)
-				# (Its last 30 px to the hold, for the velocity limit below.)
-				landing=landing or Vector2(a.tx,a.ty)==hold and p.distance_to(hold)<=30.0
 		var arrive: Vector2=offset/gap*top if gap>0.01 else Vector2.ZERO
-		# A tang never aims to cover more than half the remaining gap in one tick: settled on a
-		# spot it used to overshoot it every tick and scull back, a 2.6 px/s shiver (2026-09-27
-		# review).
-		if tang:
-			arrive=arrive.limit_length(0.5*gap/delta)
-		# A cruising tang whose target was moved off a chromis (_off_stuck_chromis) heads for its
-		# own target and steers the difference, so it eases in with the rest of its steering
-		# (2026-09-27 review: a school settling round the end of its course moved the target 93 px
-		# in a tick and jerked the tang 3.6 px/s); over its last 70 px it hands that back to
-		# arriving, which brakes it onto the moved target (a rock spot needs the full brake).
-		var shift:=Vector2.ZERO
-		if tang and a.activity!="Resting" and target!=Vector2(a.tx,a.ty):
-			var own: Vector2=Vector2(a.tx,clampf(a.ty,band[0],band[1]))-p
-			var far: float=own.length()
-			var straight: Vector2=(own/far*minf(speed,sqrt(2.0*cfg.brake*far))).limit_length(0.5*far/delta) if far>0.01 else Vector2.ZERO
-			shift=(arrive-straight)*clampf((gap-30.0)/40.0,0.0,1.0)
-			arrive-=shift
 		var hovering: bool=resting and gap<CHROMIS.hold
 		if hovering:
 			arrive=Vector2.ZERO
 		# Everything else steering adds on top of arriving: rise and fall, spacing, dodging.
 		var desired:=Vector2.ZERO
 		# A gentle rise and fall while travelling, fading out on approach; no per-frame randomness.
-		if a.activity in _ROAMING and not follower and gap>35:
+		if a.activity=="Schooling" and not follower and gap>35:
 			var bend: float=sin(state.elapsed*(0.28+float(int(a.id)%5)*0.025)+a.id*1.73)
 			desired.y+=bend*speed*cfg.drift*minf(1,gap/100)
 		# School members keep their spacing; bodies keep apart across the pool (_avoid).
-		if not tang:
+		if chromis:
 			var spacing: float=CHROMIS.spacing
-			for other: Dictionary in _swimmers:
+			for other: Dictionary in state.animals:
 				if other.id==a.id or other.species!=species:
 					continue
 				var apart: Vector2=p-Vector2(other.x,other.y)
@@ -569,37 +480,15 @@ func _move(delta: float) -> void:
 					var room: Vector2=apart.normalized()*(spacing-dist)*0.16
 					# At rest the leader holds its place and the others make room sideways only,
 					# so spacing never bobs a resting school up and down (2026-09-26).
-					if a.activity=="Resting":
+					if resting:
 						room=Vector2(0.0 if follower==false else room.x,0.0)
 					desired+=room
 		# Give way smoothly: the steering _avoid() adds is eased over about three ticks (0.3 a
-		# tick; 0.5 still let a chromis meeting a cruising tang flip up and down every tick,
-		# 2026-09-26), so a meeting reads as one sweeping dodge, not a twitch each tick.
-		var change: Vector2=_avoid(a,p,arrive+desired,cruise)-arrive-desired+shift
-		# A tang bends its course around a chromis that cannot get out of its way (eased with the
-		# rest). The bend itself changes by at most SEPARATE.ease px/s2 (`around_x`, `around_y`;
-		# 2026-09-27 review: a chromis settling to rest just ahead started the arc with a 2.5-3.4
-		# px/s jolt in one tick).
-		if tang:
-			var bent: Vector2=Vector2(a.get("around_x",0.0),a.get("around_y",0.0))
-			if a.activity!="Grazing":
-				bent+=(_around(a,p,p+offset,band,arrive.length(),cruise)-bent).limit_length(SEPARATE.ease*delta)
-			else:
-				bent=Vector2.ZERO
-			a.around_x=bent.x
-			a.around_y=bent.y
-			change+=bent
+		# tick; 0.5 still let a chromis flip up and down every tick, 2026-09-26), so a meeting reads
+		# as one sweeping dodge, not a twitch each tick.
+		var change: Vector2=_avoid(a,p,arrive+desired,cruise)-arrive-desired
 		var was: Vector2=Vector2(a.get("avoid_x",0.0),a.get("avoid_y",0.0))
 		var steer: Vector2=was.lerp(change,0.3)
-		# A tang's steering never changes by more than `jolt` px/s2 (2026-09-27 review: when a
-		# school ahead settled to rest all at once it jerked 2.6-4 px/s in a tick) - except while
-		# it dodges the other tang, where that let two tangs overlap by 0.27.
-		if tang and not _kin:
-			steer=was+(steer-was).limit_length(SEPARATE.jolt*delta)
-		# A grazing tang holds its rock: the eased give-way steering of its approach stops when it
-		# starts grazing (2026-09-27: it carried the tang up to 7 px off its hold).
-		if a.activity=="Grazing":
-			steer=Vector2.ZERO
 		a.avoid_x=steer.x
 		a.avoid_y=steer.y
 		_dodge=minf(1.0,steer.length()/cruise)
@@ -607,34 +496,19 @@ func _move(delta: float) -> void:
 		# Soft edges: what steering adds toward a band edge or a side wall eases off over the last
 		# `edge` px (arriving already stops at its in-band target).
 		desired.y*=clampf(((p.y-band[0]) if desired.y<0 else (band[1]-p.y))/SWIM.edge,0.0,1.0)
-		desired.x*=clampf(((p.x-100.0) if desired.x<0 else (1180.0-p.x))/SWIM.edge,0.0,1.0)
+		desired.x*=clampf(((p.x-_swim_x.x) if desired.x<0 else (_swim_x.y-p.x))/SWIM.edge,0.0,1.0)
 		desired+=arrive
-		# Which way to face: a grazing tang faces its rock, a school member settled in its slot
-		# faces the way the leader does (so the school turns almost together).
+		# Which way to face: a resting fish settled on its spot keeps its facing, a school member
+		# settled in its slot faces the way the leader does (so the school turns almost together).
 		var face: float=0.0
-		if tang and a.activity in _AT_SPOT and gap<8:
-			for sp: Array in TANG.spots:
-				if target==_tang_hold(sp,animal_scale(a)):
-					face=-sp[2]
-		elif hovering:
+		if hovering:
 			face=a.direction
-		elif tang and a.activity=="Resting" and _away!=0.0:
-			# Moving off a chromis, it keeps facing away from it: rising or sinking takes some
-			# forward swimming, which must not carry it back over the chromis.
-			face=_away
 		elif follower and gap<40:
 			face=lead.direction
 		var velocity: Vector2=_swim(a,desired,speed,cruise,cfg,delta,a.activity=="Startled",face)
-		# A resting tang's velocity changes by at most 1.2 `jolt` px/s2 (2026-09-27 review: moving
-		# off a chromis and arriving, it sculled back from an overshoot 2.6 px/s faster in a tick);
-		# so does one over its last 30 px to a rock hold, unless it dodges the other tang
-		# (2026-09-27: there its velocity changed up to 6.0 px/s in a tick, 99 of 2461 ticks over 3).
-		if tang and (a.activity=="Resting" or landing and not _kin):
-			var was_v:=Vector2(a.get("vx",0.0),a.get("vy",0.0))
-			velocity=was_v+(velocity-was_v).limit_length(SEPARATE.jolt*1.2*delta)
 		var free: Vector2=p+velocity*delta
 		# Keep each fish in its own layer (the shoaling push once carried hatchetfish down).
-		var next: Vector2=free.clamp(Vector2(100,band[0]),Vector2(1180,band[1]))
+		var next: Vector2=free.clamp(Vector2(_swim_x.x,band[0]),Vector2(_swim_x.y,band[1]))
 		if next.distance_to(free)>RELOCATION:
 			a.relocated_at=state.elapsed
 		a.x=next.x
@@ -649,17 +523,58 @@ func _move(delta: float) -> void:
 		if next.distance_to(target)<5 and velocity.length()<7 and a.activity=="Schooling" and not follower:
 			a.activity="Resting"
 			a.decision_at=state.elapsed+motion_rng.randf_range(4,18)
-		if tang:
-			_tang_contact(a,next)
-			# Grazing, each peck tips the body toward the rock face (roll, rad).
-			var roll: float=0.0
-			if a.activity=="Grazing":
-				roll=TANG.roll*(0.5+0.5*maxf(0.0,sin(state.elapsed*TAU/TANG.peck+a.id)))
-			a.roll=move_toward(a.get("roll",0.0),roll,TANG.roll*2.0*delta)
+
+
+func _body(a: Dictionary) -> Vector2:
+	var b: Array=BODY[a.species]
+	return Vector2(b[0],b[1])*animal_scale(a)
+
+# Steers `desired` (px/s) so this swimmer's body keeps clear of the others (SEPARATE).
+func _avoid(a: Dictionary, p: Vector2, desired: Vector2, speed: float) -> Vector2:
+	_dodge=0.0
+	# A resting chromis stays put; the others go around it.
+	if a.activity=="Resting" and a.species=="green_chromis":
+		return desired
+	var own: Vector2=_bodies[a.id]
+	var v:=Vector2(a.get("vx",0.0),a.get("vy",0.0))
+	var push:=Vector2.ZERO
+	var margin: float=SEPARATE.margin
+	var look: float=SEPARATE.look
+	var gain: float=SEPARATE.gain
+	# For a chromis no other chromis counts (the school spaces itself).
+	for o: Dictionary in (_not_chromis if a.species=="green_chromis" else state.animals):
+		# Clownfish sharing their anemone nestle together (plan §3.1); they do not push each other out.
+		if o.id==a.id or a.species=="clownfish" and o.species=="clownfish" and o.home==a.home:
+			continue
+		var mixed: bool=o.species!=a.species
+		var r: Vector2=(own+_bodies[o.id])*0.5*margin*(1.17 if mixed else SEPARATE.same)
+		var rel: Vector2=p-Vector2(o.x,o.y)
+		var relv: Vector2=v-Vector2(o.get("vx",0.0),o.get("vy",0.0))
+		var t: float=clampf(-rel.dot(relv)/maxf(relv.length_squared(),0.0001),0.0,look)
+		var ahead: Vector2=rel+relv*t
+		var now: float=Vector2(rel.x/r.x,rel.y/r.y).length()
+		var q: float=minf(now,Vector2(ahead.x/r.x,ahead.y/r.y).length())
+		if q>=1.0:
+			continue
+		# Dodge up or down, away from the other (the upper fish rises; ids break a tie).
+		var up: float=signf(rel.y) if absf(rel.y)>1.0 else (1.0 if a.id>o.id else -1.0)
+		var side: float=signf(rel.x) if absf(rel.x)>1.0 else 0.0
+		push+=Vector2(side*0.5,up).normalized()*speed*gain*(1.0-q)
+		_dodge=maxf(_dodge,1.0-q)
+		# The younger id holds back as a meeting nears; inside the other's space nobody presses on
+		# toward it.
+		var yields: float=1.0 if a.id>o.id else 0.0
+		if now<SEPARATE.close or yields>0.0:
+			var n: Vector2=Vector2(rel.x/(r.x*r.x),rel.y/(r.y*r.y)).normalized()
+			var toward: float=-desired.dot(n)
+			if toward>0.0:
+				desired+=n*toward*(1.0 if now<SEPARATE.close else yields*clampf((1.0-q)*3.0,0.0,1.0))
+	return desired+push
+
 
 # Natural swimming (2026-09-25): the body turns at a limited rate, through facing the glass
 # (heading 0 = facing right, pi = facing left); the nose pitches up or down gently; speed along
-# the body follows burst-and-glide strokes (chromis) or smooth rowing (tang) against water drag,
+# the body follows burst-and-glide strokes (chromis) or smooth rowing (seahorse) against water drag,
 # with pectoral braking and, only at low speed, a little sculling that lets the fish settle
 # exactly. Returns the screen velocity (px/s); stores heading, pitch, speed, thrust and turn.
 func _swim(a: Dictionary, desired: Vector2, cap: float, cruise: float, cfg: Dictionary, delta: float, quick: bool, face: float) -> Vector2:
@@ -731,307 +646,6 @@ func _swim(a: Dictionary, desired: Vector2, cap: float, cruise: float, cfg: Dict
 		a.direction=signf(cos(psi))
 	return velocity
 
-# Between two tangs: anyone gives way to a grazing tang, one that just ate (chewing) gives way
-# to one that has not, and otherwise the younger id gives way.
-func _gives_way(a: Dictionary, o: Dictionary) -> bool:
-	if o.activity=="Grazing" or a.activity=="Grazing":
-		return o.activity=="Grazing"
-	var chewing: bool=state.elapsed<a.get("chew_until",-1.0)
-	if chewing!=(state.elapsed<o.get("chew_until",-1.0)):
-		return chewing
-	return a.id>o.id
-
-func _body(a: Dictionary) -> Vector2:
-	var b: Array=BODY[a.species]
-	return Vector2(b[0],b[1])*animal_scale(a)
-
-# Steers `desired` (px/s) so this swimmer's body keeps clear of the others (SEPARATE).
-func _avoid(a: Dictionary, p: Vector2, desired: Vector2, speed: float) -> Vector2:
-	_dodge=0.0
-	_kin=false
-	# A grazing tang holds its rock; a resting chromis stays put and the tang goes around it
-	# (_around, 2026-09-27).
-	if a.activity=="Grazing" or a.activity=="Resting" and a.species=="green_chromis":
-		return desired
-	var own: Vector2=_bodies[a.id]
-	var v:=Vector2(a.get("vx",0.0),a.get("vy",0.0))
-	var push:=Vector2.ZERO
-	var yielding: float=0.0
-	var margin: float=SEPARATE.margin
-	var tangs: float=SEPARATE.tangs
-	var look: float=SEPARATE.look
-	# Only other swimmers count, and for a chromis no other chromis (the school spaces itself).
-	for o: Dictionary in (_not_chromis if a.species=="green_chromis" else _swimmers):
-		if o.id==a.id:
-			continue
-		var mixed: bool=o.species!=a.species
-		var r: Vector2=(own+_bodies[o.id])*0.5*margin*(1.17 if mixed else tangs)
-		var rel: Vector2=p-Vector2(o.x,o.y)
-		var relv: Vector2=v-Vector2(o.get("vx",0.0),o.get("vy",0.0))
-		var t: float=clampf(-rel.dot(relv)/maxf(relv.length_squared(),0.0001),0.0,look)
-		var ahead: Vector2=rel+relv*t
-		var now: float=Vector2(rel.x/r.x,rel.y/r.y).length()
-		var q: float=minf(now,Vector2(ahead.x/r.x,ahead.y/r.y).length())
-		if q>=1.0:
-			continue
-		_kin=_kin or not mixed
-		# Dodge up or down, away from the other (the upper fish rises; ids break a tie).
-		var up: float=signf(rel.y) if absf(rel.y)>1.0 else (1.0 if a.id>o.id else -1.0)
-		var side: float=signf(rel.x) if absf(rel.x)>1.0 else 0.0
-		# A chromis darts clear of a tang (twice the push, dropping its own aim); a tang only
-		# eases around chromis (a third).
-		var gain: float=SEPARATE.gain*(_GIVE[a.species] if o.species!=a.species else 1.0)
-		push+=Vector2(side*0.5,up).normalized()*speed*gain*(1.0-q)
-		_dodge=maxf(_dodge,(1.0-q)*minf(gain,1.0))
-		if a.species=="green_chromis" and o.species=="yellow_tang":
-			yielding=maxf(yielding,1.0-q)
-		# The one that gives way (a chromis before a tang, the younger id of two tangs, anyone
-		# before a grazing tang) holds back as a meeting nears; inside the other's space nobody
-		# presses on toward it.
-		# (A tang only eases off, by half, for chromis ahead of it, and not when going for food;
-		# it holds back fully for a chromis that cannot get out of its way, _stuck, 2026-09-27.)
-		var yields: float=1.0 if a.species=="green_chromis" or not mixed and _gives_way(a,o) or mixed and _stuck(o,a) else 0.5 if mixed and a.activity!="Feeding" else 0.0
-		if now<SEPARATE.close and gain>=1.0 or yields>0.0:
-			var n: Vector2=Vector2(rel.x/(r.x*r.x),rel.y/(r.y*r.y)).normalized()
-			var toward: float=-desired.dot(n)
-			if toward>0.0:
-				desired+=n*toward*(1.0 if now<SEPARATE.close and gain>=1.0 else yields*clampf((1.0-q)*3.0,0.0,1.0))
-	return desired*(1.0-minf(0.8,yielding*2.0))+push
-
-# A chromis aiming inside a grazing tang's space (the _avoid ellipse) aims at its rim instead,
-# straight above or below, so arriving and giving way agree instead of bouncing the fish up and
-# down (2026-09-26: a grazing tang now holds half a body out from the rock, in open water).
-func _off_grazing_tangs(a: Dictionary, target: Vector2, band: Array) -> Vector2:
-	for o: Dictionary in _not_chromis:
-		if o.species!="yellow_tang" or o.activity!="Grazing":
-			continue
-		var r: Vector2=(_bodies[a.id]+_bodies[o.id])*0.5*SEPARATE.margin*1.17
-		var rel: Vector2=target-Vector2(o.x,o.y)
-		if Vector2(rel.x/r.x,rel.y/r.y).length()>=1.0:
-			continue
-		var rim: float=r.y*sqrt(maxf(0.0,1.0-rel.x*rel.x/(r.x*r.x)))+1.0
-		var up: float=o.y-rim
-		var down: float=o.y+rim
-		var above: bool=rel.y<0.0 if absf(rel.y)>1.0 else a.y<o.y
-		if above and up<band[0] or not above and down>band[1]:
-			above=not above
-		target.y=clampf(up if above else down,band[0],band[1])
-	return target
-
-# A chromis that cannot get out of tang `t`'s way: resting (it stays put), or with its band edge
-# or a tank wall less than SWIM.edge px away on the side away from the tang, where its own steering
-# fades out (the soft edges in _move), so it is pinned there (2026-09-27).
-func _stuck(c: Dictionary, t: Dictionary) -> bool:
-	if c.activity=="Resting":
-		return true
-	var band: Array=DEPTH.green_chromis
-	var dy: float=c.y-t.y
-	var up: float=signf(dy) if absf(dy)>1.0 else (1.0 if c.id>t.id else -1.0)
-	if ((c.y-band[0]) if up<0.0 else (band[1]-c.y))<SWIM.edge:
-		return true
-	var dx: float=c.x-t.x
-	return absf(dx)>1.0 and ((c.x-100.0) if dx<0.0 else (1180.0-c.x))<SWIM.edge
-
-# A tang aiming inside the space (the _avoid ellipse) of a chromis that cannot get out of its way
-# aims `SEPARATE.clear` px outside its rim instead, straight above or below, the side it is on
-# (or the other when that is out of its band); a resting one straight away from it (below).
-func _off_stuck_chromis(a: Dictionary, target: Vector2, band: Array) -> Vector2:
-	_away=0.0
-	for o: Dictionary in _swimmers:
-		if o.species!="green_chromis":
-			continue
-		var r: Vector2=(_bodies[a.id]+_bodies[o.id])*0.5*SEPARATE.margin*1.17
-		var rel: Vector2=target-Vector2(o.x,o.y)
-		if Vector2(rel.x/r.x,rel.y/r.y).length()>=1.0 or not _stuck(o,a):
-			continue
-		# A resting tang moves its spot straight out from the chromis, to just outside that space,
-		# when that stays clear of the walls (2026-09-27 review: straight up or down it has to swim
-		# forward, and it swam back over the chromis); otherwise above or below it.
-		if a.activity=="Resting":
-			_away=signf(a.x-o.x) if absf(a.x-o.x)>1.0 else a.direction
-		if a.activity=="Resting" and rel.length()>1.0:
-			var out: Vector2=Vector2(o.x,o.y)+rel*((1.0+SEPARATE.clear/r.y)/Vector2(rel.x/r.x,rel.y/r.y).length())
-			if out.x>=100.0+SWIM.edge and out.x<=1180.0-SWIM.edge and out.y>=band[0] and out.y<=band[1]:
-				target=out
-				continue
-		var rim: float=r.y*sqrt(maxf(0.0,1.0-rel.x*rel.x/(r.x*r.x)))+SEPARATE.clear
-		var above: bool=rel.y<0.0 if absf(rel.y)>1.0 else a.y<o.y
-		if above and o.y-rim<band[0] or not above and o.y+rim>band[1]:
-			above=not above
-		target.y=clampf(o.y-rim if above else o.y+rim,band[0],band[1])
-	return target
-
-# The big fish goes around the small one (2026-09-27, user decision): the velocity (px/s) that
-# bends a tang's course to `target` into a wide arc above or below the chromis ahead of it that
-# cannot get out of its way (_stuck), passing them `SEPARATE.clear` px outside the _avoid ellipse.
-# It passes all of them on one side (2026-09-27 review: taking each on its own side threaded it
-# between a school's fish, or crossed it in front of one): the side it has to rise or sink less
-# for, plus how far that pass reaches into the soft edge of its band (SWIM.edge), with a bonus of
-# SWIM.edge for the side it already bends toward, so the choice holds for the whole pass; a side
-# where the band cannot hold its body clear of a chromis's body at all is not taken while the
-# other can; when its course ends short of such a chromis, over or under it, it keeps to that
-# side. For each such chromis up to `SEPARATE.ahead` s ahead (its space reaching back over the
-# course) it must rise or sink by some distance before reaching the ellipse; it does so just in
-# time, easing in over the first 3 s and out as the chromis falls behind, and arriving then eases
-# it back to its course: one wide arc (in _move the bend changes by at most SEPARATE.ease px/s2,
-# so a chromis that settles just ahead does not start it with a jolt). It crosses at no more than half its
-# speed; when that could not get it clear of the chromis's body in time (a chromis met late, or
-# already close by) it also slows, to no less than half its speed (it rises and sinks by pitching
-# as it swims, so it keeps going).
-func _around(a: Dictionary, p: Vector2, target: Vector2, band: Array, speed: float, cruise: float) -> Vector2:
-	# (`speed`: how fast it is heading for its target, px/s; the arc is timed by it and fades out
-	# as the tang slows to arrive.)
-	# Beside such a chromis (within the width of its space, where no arc over or under it can
-	# help: a climb or dive past it, a short trip that starts under it), when its straight way to
-	# the target runs through that space it heads along the tangent of the space on the side nearer
-	# its way until the way is clear (2026-09-27 review: climbing or diving straight past a resting
-	# chromis, or setting off from under one to a spot over it, it crossed the chromis's body).
-	var cross:=Vector2.ZERO
-	var beside: Dictionary={}
-	var to: Vector2=target-p
-	var closest: float=INF
-	for o: Dictionary in (_swimmers if to.length()>1.0 else []):
-		if o.species!="green_chromis" or absf(p.x-o.x)>=(_bodies[a.id].x+_bodies[o.id].x)*0.5*SEPARATE.margin*1.17 or not _stuck(o,a):
-			continue
-		# (The _avoid ellipse itself: an arc passes SEPARATE.clear px outside it, clear of this.)
-		var e: Vector2=(_bodies[a.id]+_bodies[o.id])*0.5*SEPARATE.margin*1.17
-		var q: Vector2=(p-Vector2(o.x,o.y))/e
-		var way: Vector2=to/e
-		var d: float=q.length()
-		if d<=1.0 or (q+way*clampf(-q.dot(way)/way.length_squared(),0.0,1.0)).length()>=1.0:
-			continue
-		beside[o.id]=true
-		if d>=closest:
-			continue
-		closest=d
-		var back: Vector2=-q/d
-		var turn: float=signf(back.cross(way)) if absf(back.cross(way))>0.001 else -a.direction
-		var tangent: Vector2=back.rotated(turn*asin(1.0/d))
-		cross=(Vector2(tangent.x*e.x,tangent.y*e.y).normalized()-to.normalized())*speed
-	var dist: float=absf(target.x-p.x)
-	if dist<1.0:
-		return cross
-	var ahead: float=signf(target.x-p.x)
-	var go: float=maxf(minf(speed,cruise),0.5)
-	var reach: float=go*SEPARATE.ahead
-	var bend: float=a.get("around_y",0.0)
-	# The chromis in the way, and per side (0 sink below them, 1 rise above them): the most it must
-	# move, how far the pass reaches into the band's soft edge, and whether its body fits at all.
-	var ways: Array=[]
-	var need: Array[float]=[0.0,0.0]
-	var fits: Array[bool]=[true,true]
-	var must: int=-1
-	for o: Dictionary in _swimmers:
-		if o.species!="green_chromis":
-			continue
-		var r: Vector2=(_bodies[a.id]+_bodies[o.id])*0.5*SEPARATE.margin*1.17
-		var along: float=(o.x-p.x)*ahead
-		var lat: float=o.y-p.y
-		var rn: float=r.y+SEPARATE.clear
-		# Ahead within reach, its space reaching back over the course (2026-09-27 review: a tang
-		# on a short diagonal trip cut the corner of a chromis beyond the end of it).
-		var limit: float=minf(dist+r.x,reach+r.x)
-		if absf(lat)>=rn or along<-r.x or along>limit or beside.has(o.id) or not _stuck(o,a):
-			continue
-		ways.append([r,along,lat,rn,limit])
-		var body: Vector2=r/(SEPARATE.margin*1.17)
-		need[0]=maxf(need[0],lat+rn+maxf(0.0,SWIM.edge-minf(o.y+rn-band[0],band[1]-o.y-rn)))
-		need[1]=maxf(need[1],rn-lat+maxf(0.0,SWIM.edge-minf(o.y-rn-band[0],band[1]-o.y+rn)))
-		fits[0]=fits[0] and o.y+body.y<=band[1]
-		fits[1]=fits[1] and o.y-body.y>=band[0]
-		# Its course ends short of this chromis, over or under it (outside its space,
-		# _off_stuck_chromis): it keeps to that side.
-		if (o.x-target.x)*ahead>0.0 and absf(target.x-o.x)<r.x:
-			must=0 if target.y>o.y else 1
-	if ways.is_empty():
-		return cross
-	if absf(bend)>0.5:
-		need[0 if bend>0.0 else 1]-=SWIM.edge
-	var k: int=0 if need[0]<=need[1] else 1
-	if not fits[k] and fits[1-k]:
-		k=1-k
-	if must>=0:
-		k=must
-	var rate: float=0.0
-	var slow: float=0.0
-	for w: Array in ways:
-		var r: Vector2=w[0]
-		var along: float=w[1]
-		var lat: float=w[2]
-		var rn: float=w[3]
-		var limit: float=w[4]
-		var m: float=(lat+rn) if k==0 else (rn-lat)
-		var fade: float=clampf((limit-along)/maxf(go*3.0,r.x*0.5),0.0,1.0)*clampf((along+r.x)/r.x,0.0,1.0)
-		rate=maxf(rate,fade*m/maxf((along-r.x)/go,2.0))
-		# The most headway that still gets it clear of the chromis's body in time (the pair's
-		# half bodies without the margins, BODY), while the chromis is ahead.
-		var body: Vector2=r/(SEPARATE.margin*1.17)
-		var mb: float=(lat+body.y) if k==0 else (body.y-lat)
-		if mb>0.0:
-			var headway: float=maxf(0.0,along-body.x)*0.5*go/mb
-			slow=maxf(slow,fade*clampf(along/20.0,0.0,1.0)*clampf(go-headway,0.0,0.5*go))
-	return cross+Vector2(-ahead*slow,minf(rate,0.5*go)*(1.0 if k==0 else -1.0))
-
-# A tang that reaches the hold point of a rock spot starts grazing it; the contact point is
-# published only while it grazes.
-func _tang_contact(a: Dictionary, p: Vector2) -> void:
-	if a.activity=="Cruising" and p.distance_to(Vector2(a.tx,a.ty))<5:
-		var spot: Array=[]
-		for s: Array in TANG.spots:
-			if Vector2(a.tx,a.ty)==_tang_hold(s,animal_scale(a)):
-				spot=s
-		# At a rock spot it first turns to face the rock (it may have come round from the far side).
-		if not spot.is_empty() and cos(a.get("heading",0.0))*-spot[2]<0.9:
-			return
-		# An open-water trip ends here: choose the next move now instead of idling on the spot.
-		a.decision_at=minf(a.decision_at,state.elapsed)
-		for s: Array in TANG.spots:
-			if Vector2(a.tx,a.ty)==_tang_hold(s,animal_scale(a)):
-				a.activity="Grazing"
-				a.contact_x=s[0]
-				a.contact_y=s[1]
-				a.decision_at=state.elapsed+motion_rng.randf_range(TANG.graze_time[0],TANG.graze_time[1])
-	if a.activity=="Grazing" and a.has("contact_x"):
-		for s: Array in TANG.spots:
-			if s[0]==a.contact_x and s[1]==a.contact_y:
-				a.direction=-s[2]
-	else:
-		a.erase("contact_x")
-		a.erase("contact_y")
-
-static func _tang_hold(s: Array, scale: float = 1.0) -> Vector2:
-	return Vector2(s[0]+s[2]*TANG.reach*scale,s[1])
-
-# A tang's next move: a trip across the upper midwater, a trip to a free rock spot to graze,
-# or a rest (mostly at night, when trips are short).
-func _choose_tang(a: Dictionary) -> void:
-	var band: Array=DEPTH[a.species]
-	var night: bool=state.light_hour<7 or state.light_hour>19
-	var r: float=motion_rng.randf()
-	a.tx=a.x
-	a.ty=a.y
-	var free: Array=[]
-	if not night and r>=0.08 and r<0.08+TANG.graze:
-		for s: Array in TANG.spots:
-			var hold: Vector2=_tang_hold(s,animal_scale(a))
-			if not state.animals.any(func(o): return o.species==a.species and o.id!=a.id and absf(o.tx-hold.x)<TANG.clear[0] and absf(o.ty-hold.y)<TANG.clear[1]):
-				free.append(hold)
-	if r<(TANG.night_rest if night else 0.08):
-		a.activity="Resting"
-		a.decision_at=state.elapsed+motion_rng.randf_range(TANG.rest[0],TANG.rest[1])
-	elif not free.is_empty():
-		var hold: Vector2=free[motion_rng.randi_range(0,free.size()-1)]
-		a.activity="Cruising"
-		a.tx=hold.x
-		a.ty=hold.y
-		a.decision_at=state.elapsed+Vector2(a.x,a.y).distance_to(hold)/TANG.speed*1.5+10.0
-	else:
-		a.activity="Cruising"
-		a.tx=_roaming_x(a,150.0 if night else TANG.trip[1],0.0 if night else 0.35)
-		a.ty=motion_rng.randf_range(TANG.cruise[0],TANG.cruise[1])
-		a.decision_at=state.elapsed+Vector2(a.tx-a.x,a.ty-a.y).length()/TANG.speed+motion_rng.randf_range(3,8)
-	_look(a,band)
-
 # A fixed pseudo-random number in [0, 1) for (a, b): scheduling without drawing from an RNG.
 static func _hash01(a: int, b: int) -> float:
 	var h: int=((a*73856093)^(b*19349663))&0xFFFFFFF
@@ -1039,188 +653,84 @@ static func _hash01(a: int, b: int) -> float:
 	h=h^(h>>16)
 	return float(h&0xFFFF)/65536.0
 
-# Nearest free burrow site of the species' patch to the parent's burrow (or the patch
-# centre). No randomness.
-func _burrow(parent: int, species: String) -> Vector2:
-	var sites: Array = HOMES[species]
-	var taken: Array = []
-	var home: float = sites[0]
-	for e: Dictionary in state.animals:
-		if e.species==species:
-			taken.append(e.burrow_x)
-			if e.id==parent:
-				home=e.burrow_x
-	var best: float = sites[-1]
-	var gap: float = INF
-	for x: float in sites:
-		if x not in taken and absf(x-home)<gap:
-			best=x
-			gap=absf(x-home)
-	return Vector2(best,floor_y(best))
+# The homes a species can take in this scene's default decor, in order: the required slots first
+# (the anemone, the required hitch plant), then the others in scene order; for the royal gramma
+# the caves of its slots, then the scene's rock spots. Each {kind, slot, i, x, y, capacity}.
+func _home_spots(species: String) -> Array:
+	var out: Array=[]
+	var kind: String=HOME[species].kind
+	var decor: Dictionary=scene.default_decor()
+	for required: bool in [true,false]:
+		for s: Dictionary in scene.slots():
+			if (s.required!="")!=required:
+				continue
+			var fx: Dictionary=scene.effects(s.id,decor.get(s.id,""))
+			if kind=="anemone" and not fx.anemone.is_empty():
+				out.append({"kind":"anemone","slot":s.id,"i":0,"x":fx.anemone.cx,"y":fx.anemone.cy,"capacity":fx.anemone.capacity})
+			elif kind=="hitch":
+				for i in fx.hitches.size():
+					out.append({"kind":"hitch","slot":s.id,"i":i,"x":fx.hitches[i].x,"y":fx.hitches[i].y,"capacity":1})
+			elif kind=="shelter":
+				for i in fx.shelters.size():
+					if "royal_gramma" in fx.shelters[i].use:
+						out.append({"kind":"shelter","slot":s.id,"i":i,"x":fx.shelters[i].x,"y":fx.shelters[i].y,"capacity":1})
+	if kind=="shelter":
+		var rocks: Array[Vector2]=scene.rock_spots()
+		for i in rocks.size():
+			out.append({"kind":"rock","slot":"","i":i,"x":rocks[i].x,"y":rocks[i].y,"capacity":1})
+	return out
 
-# Firefish: hovering above the burrow by day, asleep in it at night, down for a moment when
-# a fish passes just above or a blenny moves past. `extend` is the pose the stage eases
-# toward (0 in, 1 out).
-func _burrower(a: Dictionary) -> void:
-	a.vx=0.0
-	a.vy=0.0
-	if state.light_hour<7 or state.light_hour>19:
-		a.activity="Sleeping"
-	else:
-		for o: Dictionary in state.animals:
-			var passing: bool=o.species in DEPTH or (o.species=="lawnmower_blenny" and o.activity in _BLENNY_MOVING)
-			if passing and absf(o.x-a.burrow_x)<FIRE.dx and a.burrow_y-o.y<FIRE.dy:
-				a.decision_at=state.elapsed+FIRE.seconds
-		a.activity="Hiding" if state.elapsed<a.decision_at else "Hovering"
-	var was_out: bool=a.get("extend",0.0)==1.0
-	a.extend=1.0 if a.activity=="Hovering" else 0.0
-	# Motion (2026-09-25): hovering it holds nearly still with small balancing fin work and pitch,
-	# and now and then flicks its dorsal spine (`flick`, about every FIRE.flick s); going down it
-	# dashes in at full thrust. x/y stay the burrow. Deterministic (no draw from motion_rng).
-	a.heading=0.0 if a.direction>0 else PI
-	a.speed=0.0
-	a.turn=0.0
-	a.flick=0.0
-	if a.extend==1.0:
-		var t: float=state.elapsed+float(a.id)*3.1
-		a.pitch=0.04*sin(t*0.9)+0.025*sin(t*2.3)
-		a.thrust=0.12+0.08*maxf(0.0,sin(t*1.7))
-		if _hash01(int(a.id),int(state.motion_ticks))<0.2/FIRE.flick:
-			a.flick=1.0
-	else:
-		a.pitch=0.0
-		a.thrust=1.0 if was_out else maxf(0.0,a.get("thrust",0.0)-0.5)
-	if a.extend==1.0 and not state.get("food",[]).is_empty() and SPECIES[a.species].reserve-a.energy>=FOOD.mass*0.8:
-		for f: Dictionary in state.food:
-			if not f.settled and absf(f.x-a.burrow_x)<FOOD.eel_dx and f.y>a.burrow_y-FOOD.eel_reach and f.y<a.burrow_y:
-				_eat(a,f)
-				break
+static func _home_key(h: Dictionary) -> String:
+	return "%s/%s/%d" % [h.kind,h.slot,h.i]
 
-# Perches, grazes and hops along the bed; pecks up settled food; sleeps where it is at night.
-func _blenny(a: Dictionary, delta: float) -> void:
-	var startled: bool=a.activity=="Startled" and state.elapsed<a.decision_at
-	# Resting where a firefish (perhaps a newborn) now hovers: move on at once.
-	if a.activity in _BLENNY_SETTLED and not is_nan(_burrow_at(a.x)):
-		a.decision_at=state.elapsed
-	if not startled and not _peck(a) and (state.elapsed>=a.decision_at or a.activity=="Startled"):
-		_choose_blenny(a)
-	# No sustained swimming (2026-09-25): it pivots on its pectorals to face the way, a tail
-	# flick launches it at full speed, it glides slowing (`glide` /s) and flicks again only
-	# while the landing is still beyond the glide; otherwise it perches perfectly still.
-	var top: float=_BLENNY_TOP.get(a.activity,0.0)
-	var psi: float=a.get("heading",0.0 if a.direction>0 else PI)
-	var left: float=a.tx-a.x
-	var s: float=a.get("speed",0.0)*exp(-BLENNY.glide*delta)
-	var step: float=0.0
-	var turned: float=psi
-	a.thrust=0.0
-	if top>0.0 and absf(left)>0.0:
-		turned=move_toward(psi,0.0 if left>0 else PI,BLENNY.turn*(2.0 if a.activity=="Startled" else 1.0)*delta)
-		if cos(turned)*signf(left)>0.7:
-			# How far a glide from speed v carries: v x `coast`.
-			var coast: float=delta*exp(-BLENNY.glide*delta)/(1.0-exp(-BLENNY.glide*delta))
-			if s<top*0.4 and absf(left)>s*coast+BLENNY.land*delta:
-				# Flick just hard enough to glide to the landing (at most the flick speed).
-				s=minf(top,absf(left)/coast)
-				a.thrust=s/top
-			step=clampf(left,-maxf(s,BLENNY.land)*delta,maxf(s,BLENNY.land)*delta)
-	a.turn=(turned-psi)/delta
-	a.heading=turned
-	a.speed=absf(step)/delta
-	a.pitch=0.0
-	var y: float=floor_y(a.x+step)
-	a.vx=step/delta
-	a.vy=(y-a.y)/delta
-	if absf(cos(turned))>0.05:
-		a.direction=signf(cos(turned))
-	a.x+=step
-	a.y=y
-	if a.has("food_id"):
-		for f: Dictionary in state.food:
-			if f.id==a.food_id and absf(a.x-f.x)<FOOD.eat:
-				_eat(a,f)
-				break
-	if a.activity=="Hopping" and a.x==a.tx:
-		a.activity="Perching"
-		a.decision_at=state.elapsed+motion_rng.randf_range(BLENNY.perch[0],BLENNY.perch[1])
-
-func _choose_blenny(a: Dictionary) -> void:
-	a.tx=a.x
-	a.ty=a.y
-	var r: float=motion_rng.randf()
-	var burrow: float=_burrow_at(a.x)
-	if not is_nan(burrow):
-		# Never perch, graze or sleep over a firefish burrow: hop clear of it first.
-		_hop(a,_clear_of_burrows(a.x,signf(a.x-burrow) if a.x!=burrow else a.direction))
-	elif state.light_hour<7 or state.light_hour>19:
-		a.activity="Sleeping"
-		a.decision_at=state.elapsed+motion_rng.randf_range(BLENNY.sleep[0],BLENNY.sleep[1])
-	elif r<0.45:
-		a.activity="Grazing"
-		a.decision_at=state.elapsed+motion_rng.randf_range(BLENNY.graze[0],BLENNY.graze[1])
-	elif r<0.75:
-		a.activity="Perching"
-		a.decision_at=state.elapsed+motion_rng.randf_range(BLENNY.perch[0],BLENNY.perch[1])
-	else:
-		var side: float=-1.0 if motion_rng.randf()<0.5 else 1.0
-		for o: Dictionary in state.animals:
-			if o.species=="lawnmower_blenny" and o.id!=a.id and absf(o.x-a.x)<BLENNY.space:
-				side=signf(a.x-o.x) if o.x!=a.x else side
-		var to: float=a.x+side*motion_rng.randf_range(BLENNY.hop[0],BLENNY.hop[1])
-		if to<130 or to>1150:
-			to=a.x-(to-a.x)
-		to=clampf(to,130,1150)
-		if not is_nan(_burrow_at(to)):
-			to=_clear_of_burrows(to,signf(to-a.x) if to!=a.x else side)
-		_hop(a,to)
-
-func _hop(a: Dictionary, to: float) -> void:
-	a.activity="Hopping"
-	a.tx=clampf(to,130,1150)
-	# Flicks and glides average about half the flick speed.
-	a.decision_at=state.elapsed+maxf(BLENNY.hop[1],absf(a.tx-a.x))/(BLENNY.hop_speed*0.5)+1.5
-
-# The occupied firefish burrow whose margin covers bed position x, or NAN.
-func _burrow_at(x: float) -> float:
+# The free home nearest the parent's (or the first home), no randomness. Past every capacity
+# (never within the caps, which fit the homes) the first home is shared.
+func _free_home(species: String, parent: int) -> Dictionary:
+	var spots: Array=_homes[species]
+	var used: Dictionary={}
+	var from:=Vector2(spots[0].x,spots[0].y)
 	for o: Dictionary in state.animals:
-		if o.species=="purple_firefish" and absf(x-o.burrow_x)<BLENNY.burrow_clear:
-			return o.burrow_x
-	return NAN
+		if o.species!=species or not o.has("home"):
+			continue
+		var key: String=_home_key(o.home)
+		used[key]=used.get(key,0)+1
+		if o.id==parent:
+			from=Vector2(o.home_x,o.home_y)
+	var best: Dictionary=spots[0]
+	var gap: float=INF
+	for s: Dictionary in spots:
+		var d: float=from.distance_to(Vector2(s.x,s.y))
+		if used.get(_home_key(s),0)<s.capacity and d<gap:
+			best=s
+			gap=d
+	return best
 
-# The nearest bed position from x toward `side` (the other way if the bed ends first) that is
-# clear of every occupied firefish burrow.
-func _clear_of_burrows(x: float, side: float) -> float:
-	for way: float in [side,-side]:
-		var to: float=x
-		for i in 8:
-			var b: float=_burrow_at(to)
-			if is_nan(b):
-				break
-			to=b+way*(BLENNY.burrow_clear+2.0)
-		if is_nan(_burrow_at(to)) and to>=130 and to<=1150:
-			return to
-	return x
+# A fixed spot of its own beside the home (by id, no draw), inside the band and the x bounds.
+func _near_home(species: String, home: Dictionary, id: int) -> Vector2:
+	var r: float=HOME[species].radius*0.5
+	var band: Array=_bands[species]
+	var x: float=home.x+(_hash01(id,1)*2.0-1.0)*r
+	var y: float=home.y+(_hash01(id,2)*2.0-1.0)*r*0.6
+	return Vector2(clampf(x,_roam_x.x,_roam_x.y),clampf(y,band[0],band[1]))
 
-# A hungry blenny hops to the nearest settled food within notice range and pecks it up.
-func _peck(a: Dictionary) -> bool:
-	var best: Dictionary={}
-	if SPECIES[a.species].reserve-a.energy>=FOOD.mass*0.8:
-		var gap: float=FOOD.notice
-		for f: Dictionary in state.get("food",[]):
-			if f.settled and absf(f.x-a.x)<gap:
-				best=f
-				gap=absf(f.x-a.x)
-	if best.is_empty():
-		a.erase("food_id")
-		if a.activity=="Feeding":
-			a.decision_at=state.elapsed
-			a.activity="Perching"
-		return false
-	a.activity="Feeding"
-	a.food_id=best.id
-	a.tx=clampf(best.x,130,1150)
-	a.ty=floor_y(a.tx)
-	return true
+# A new fish's next move (S4, the simplest behaviour): by day a swim to a point near its home, at
+# night a rest at its own spot beside it.
+func _choose_home(a: Dictionary) -> void:
+	var h: Dictionary=HOME[a.species]
+	var band: Array=_bands[a.species]
+	if state.light_hour<7 or state.light_hour>19:
+		var rest: Vector2=_near_home(a.species,{"x":a.home_x,"y":a.home_y},int(a.id))
+		a.activity="Resting"
+		a.tx=rest.x
+		a.ty=rest.y
+		a.decision_at=state.elapsed+motion_rng.randf_range(60.0,120.0)
+		return
+	var angle: float=motion_rng.randf()*TAU
+	var reach: float=h.radius*sqrt(motion_rng.randf())
+	a.activity="Hovering"
+	a.tx=clampf(a.home_x+cos(angle)*reach,_roam_x.x,_roam_x.y)
+	a.ty=clampf(a.home_y+sin(angle)*reach*0.6,band[0],band[1])
+	a.decision_at=state.elapsed+motion_rng.randf_range(h.dwell[0],h.dwell[1])
 
 # A school member holds its own slot beside the leader, mirrored with the leader's heading.
 func _follow(a: Dictionary, lead: Dictionary) -> void:
@@ -1229,8 +739,8 @@ func _follow(a: Dictionary, lead: Dictionary) -> void:
 	# The school's spacing breathes a little (slowly, +-`breathe`), side to side only: a vertical
 	# breath read as a slow bob while resting (2026-09-26, user: chromis jittered at night).
 	var breath: float=1.0+CHROMIS.breathe*sin(state.elapsed*0.23+float(a.id)*0.9)
-	var band: Array=DEPTH[a.species]
-	a.tx=clampf(lead.x+cos(k)*r*breath*lead.direction,130,1150)
+	var band: Array=_bands[a.species]
+	a.tx=clampf(lead.x+cos(k)*r*breath*lead.direction,_roam_x.x,_roam_x.y)
 	a.ty=clampf(lead.y+sin(k)*r*0.5,band[0],band[1])
 	# Settles within 20 px of its slot and keeps resting until 40 px off, so a resting fish does
 	# not flip to schooling (and a quick catch-up stroke) each time it drifts a little.
@@ -1243,7 +753,7 @@ func _follow(a: Dictionary, lead: Dictionary) -> void:
 func _choose_activity(a: Dictionary) -> void:
 	var r: float=motion_rng.randf()
 	var night: bool=state.light_hour<7 or state.light_hour>19
-	var band: Array=DEPTH[a.species]
+	var band: Array=_bands[a.species]
 	a.decision_at=state.elapsed+motion_rng.randf_range(18,45)
 	a.activity="Schooling"
 	a.tx=_roaming_x(a,290,0.42)
@@ -1254,12 +764,12 @@ func _choose_activity(a: Dictionary) -> void:
 		# At night the school rests where it is (a slow hover), instead of creeping to a new
 		# spot each choice and reversing up and down (2026-09-26).
 		if night:
-			a.tx=clampf(a.x,130,1150)
+			a.tx=clampf(a.x,_roam_x.x,_roam_x.y)
 			a.ty=clampf(a.y,band[0]+CHROMIS.spread[1]*0.5,band[1]-CHROMIS.spread[1]*0.5)
 	# Give trips enough time to reach a destination instead of repeatedly
 	# abandoning distant targets. Rest/feed choices keep their independent dwell time.
 	if a.activity=="Schooling":
-		var cruise: float=17.0
+		var cruise: float=SWIM[a.species].cruise
 		cruise*=0.82+0.36*float((int(a.id)*37)%101)/100.0
 		var distance: float=Vector2(a.tx-a.x,a.ty-a.y).length()
 		a.decision_at=state.elapsed+distance/cruise+motion_rng.randf_range(5,14)
@@ -1271,9 +781,7 @@ func _look(a: Dictionary, band: Array) -> void:
 		var spot:=Vector2(lure.x,clampf(lure.y,band[0],band[1]))
 		if Vector2(a.x,a.y).distance_to(spot)<LURE.range and motion_rng.randf()<LURE.chance:
 			a.activity="Curious"
-			# A big tang hangs back a body length further, leaving the chromis room to look.
-			var off: float=LURE.stand_off+(BODY.yellow_tang[0] if a.species=="yellow_tang" else 0.0)
-			a.tx=clampf(lure.x+(-1.0 if a.x<lure.x else 1.0)*off,130,1150)
+			a.tx=clampf(lure.x+(-1.0 if a.x<lure.x else 1.0)*LURE.stand_off,_roam_x.x,_roam_x.y)
 			a.ty=spot.y
 			a.decision_at=state.elapsed+motion_rng.randf_range(LURE.look[0],LURE.look[1])
 		# While the lure is fresh the leader keeps glancing at it.
@@ -1281,15 +789,18 @@ func _look(a: Dictionary, band: Array) -> void:
 			a.decision_at=minf(a.decision_at,state.elapsed+5.0)
 
 func _roaming_x(a: Dictionary, local_range: float, crossing_chance: float) -> float:
+	var lo: float=_roam_x.x
+	var hi: float=_roam_x.y
+	var mid: float=(lo+hi)*0.5
 	if motion_rng.randf()<crossing_chance:
 		# Occasionally visit the other side; each destination is still independently sampled.
-		return motion_rng.randf_range(760,1130) if a.x<640 else motion_rng.randf_range(150,520)
+		return motion_rng.randf_range(mid+120,hi-20) if a.x<mid else motion_rng.randf_range(lo+20,mid-120)
 	var direction: float=a.direction if motion_rng.randf()<0.65 else -a.direction
 	var destination: float=a.x+direction*motion_rng.randf_range(40,local_range)
 	# Reflect near the stream edges, avoiding repeated clamped targets at a wall.
-	if destination<130: destination=260-destination
-	if destination>1150: destination=2300-destination
-	return clampf(destination,130,1150)
+	if destination<lo: destination=2*lo-destination
+	if destination>hi: destination=2*hi-destination
+	return clampf(destination,lo,hi)
 
 func natural_light() -> float:
 	return clampf(sin((state.light_hour-6.0)/12.0*PI),0,1)
@@ -1358,9 +869,11 @@ func _ecology(offline: bool) -> void:
 			continue
 		var cfg: Dictionary = SPECIES[a.species]
 		a.age+=1.0/1440
+		# Never starves (FLOOR): metabolism is paid only down to the floor; the rest is not paid.
 		var required: float = cfg.cost/1440
-		var used: float = minf(a.energy,required)
-		var deficit: float = required-used
+		var floor_energy: float = cfg.reserve*FLOOR
+		var used: float = clampf(a.energy-floor_energy,0.0,required)
+		var unpaid: float = required-used
 		a.energy-=used
 		_excrete(used)
 		# R6 saturating intake, limited by the room left in reserve.
@@ -1371,17 +884,16 @@ func _ecology(offline: bool) -> void:
 		r[cfg.pool]-=food
 		a.energy+=food*0.8
 		r.detritus+=food*0.2
-		var growth: float = minf(maxf(0,cfg.body-a.body),minf(a.energy*0.002,cfg.body/(cfg.mature*1440)))
+		# (Growth never takes energy below the floor either; above it this is the old rule.)
+		var growth: float = minf(maxf(0,cfg.body-a.body),minf(minf(a.energy*0.002,cfg.body/(cfg.mature*1440)),maxf(0.0,a.energy-floor_energy)))
 		a.body+=growth
 		a.energy-=growth
 		a.hunger=clampf(1-a.energy/cfg.reserve,0,1)
-		if a.energy<=deficit+0.000001:
-			_remove(a,"starvation")
-			continue
-		if deficit>0:
-			a.energy-=deficit
-			_excrete(deficit)
-		if a.age>=a.lifespan:
+		if unpaid>0.0 or a.energy<floor_energy:
+			state.totals.floor_hits+=1
+		# Never dies out: the last of its species outlives its lifespan until a companion (a birth
+		# or the certain rescue, _migration) arrives.
+		if a.age>=a.lifespan and _has_company(a):
 			_remove(a,"old age")
 			continue
 		if a.age>=cfg.mature and a.sex=="female" and a.energy>cfg.reserve*0.74 and a.age-a.last_breed>=cfg.cooldown:
@@ -1394,17 +906,25 @@ func _ecology(offline: bool) -> void:
 		_sample()
 	_live=false
 
+func _has_company(a: Dictionary) -> bool:
+	for o: Dictionary in state.animals:
+		if o.species==a.species and o.id!=a.id:
+			return true
+	return false
+
 # Offline nobody chases food: drifting particles settle at once. Settled food turns to detritus.
 func _food_tick(offline: bool) -> void:
 	for f: Dictionary in state.food.duplicate():
 		if offline and not f.settled:
-			f.y=floor_y(f.x)-2
+			f.y=bed_y(f.x)-2
 			f.settled=true
 			f.settled_at=state.elapsed
 		if f.settled and state.elapsed-f.settled_at>=FOOD.decay:
 			state.resources.detritus+=f.mass
 			state.food.erase(f)
 
+# Young are born beside the parent (a chromis) or beside their own home (the others, which spawn
+# gives them); past the cap they disperse.
 func _breed(parent: Dictionary) -> void:
 	if parent.species not in ACTIVE_SPECIES:
 		return
@@ -1419,7 +939,9 @@ func _breed(parent: Dictionary) -> void:
 			_event("dispersal",parent,"A youngster of "+parent.name+" dispersed into the surrounding stream.")
 		else:
 			var child: Dictionary = spawn(parent.species,0,parent.id)
-			_bed_align(child,clampf(parent.x+rng.randf_range(-30,30),120,1150))
+			var base: float = child.home_x if child.has("home_x") else parent.x
+			child.x=clampf(base+rng.randf_range(-30,30),_roam_x.x,_roam_x.y)
+			child.tx=child.x
 			_event("birth",child,"A young "+cfg.label.to_lower()+" was born to "+parent.name+".",{"target":parent.id})
 
 func _remove(a: Dictionary, cause: String) -> void:
@@ -1440,23 +962,44 @@ func _remove(a: Dictionary, cause: String) -> void:
 		state.archive.pop_front()
 	state.animals.erase(a)
 
-# R10: rescue a nearly vanished species; otherwise rare arrivals. Adults never wander off.
+# R10: a species at or below RESCUE_AT gets a certain rescue (RESCUE_DELAY; state.rescue holds the
+# due time per species until it arrives or the species recovers); otherwise rare arrivals.
+# Adults never wander off.
 func _migration() -> void:
 	var c: Dictionary = counts()
+	var due: Dictionary = state.get("rescue",{})
 	for species: String in ACTIVE_SPECIES:
-		if c[species]<=RESCUE_AT and rng.randf()<RESCUE_RATE:
-			_arrive(species)
-			c[species]+=1
+		if c[species]>RESCUE_AT:
+			due.erase(species)
+		elif not due.has(species):
+			due[species]=state.elapsed+rng.randf_range(RESCUE_DELAY[0],RESCUE_DELAY[1])
+		elif state.elapsed>=due[species]:
+			due.erase(species)
+			if not _arrive(species).is_empty():
+				c[species]+=1
+	if due.is_empty():
+		state.erase("rescue")
+	else:
+		state.rescue=due
 	if rng.randf()<ARRIVAL_RATE:
 		var species: String = ACTIVE_SPECIES[rng.randi_range(0,ACTIVE_SPECIES.size()-1)]
 		if c[species]<CAP[species] and state.animals.size()<habitat_cap():
 			_arrive(species)
 
+# An adult comes in at a scene exit (the x bounds on that side): a chromis at the depth spawn gave
+# it, the others at the exit's depth inside their band; then it swims home.
 func _arrive(species: String) -> Dictionary:
 	var a: Dictionary = spawn(species,SPECIES[species].mature+rng.randf_range(0,20))
 	if a.is_empty():
 		return a
-	_bed_align(a,1150.0 if rng.randf()<0.5 else 130.0)
+	var exits: Array[Vector2]=scene.exits()
+	var exit: Vector2=exits[-1] if rng.randf()<0.5 else exits[0]
+	var band: Array=_bands[species]
+	a.x=clampf(exit.x,_roam_x.x,_roam_x.y)
+	if a.has("home"):
+		a.y=clampf(exit.y,band[0],band[1])
+	a.tx=a.x
+	a.ty=a.y
 	state.ledger["in"]+=a.body+a.energy
 	_event("arrival",a,"A "+SPECIES[species].label.to_lower()+" arrived from upstream.")
 	return a
@@ -1469,7 +1012,7 @@ func _sample() -> void:
 	if state.history.size()>400:
 		state.history.pop_front()
 
-# The combined habitat caps (17 for the four-species reef, 2026-09-25).
+# The combined habitat caps (18 for the reef v3 cast, 2026-09-28).
 static func habitat_cap() -> int:
 	var total: int = 0
 	for species: String in CAP:
@@ -1520,12 +1063,15 @@ func restore(saved: Dictionary) -> bool:
 	motion_rng.state=int(state.motion_rng)
 	state.erase("rng")
 	state.erase("motion_rng")
+	_use_scene(state.scene)
 	lure={}
 	return true
 
 static func validate(saved: Dictionary) -> bool:
 	var version: Variant = saved.get("version",-1)
 	if not version is int or version!=VERSION:
+		return false
+	if not saved.get("scene") is String or not ReefScene.ids().has(saved.scene):
 		return false
 	for key: String in ["seed","next_id","motion_ticks","ecology_ticks"]:
 		if not saved.get(key) is int or saved[key]<0:
@@ -1539,6 +1085,8 @@ static func validate(saved: Dictionary) -> bool:
 		return false
 	if not _valid_food(saved):
 		return false
+	if saved.has("rescue") and (not saved.rescue is Dictionary or not saved.rescue.keys().all(func(k): return k in ACTIVE_SPECIES) or not saved.rescue.values().all(func(t): return _number(t) and t>=0)):
+		return false
 	var next_event: int = saved.next_event
 	for key: String in ["rng","motion_rng"]:
 		if not saved.get(key) is String or not saved[key].is_valid_int():
@@ -1551,7 +1099,7 @@ static func validate(saved: Dictionary) -> bool:
 	for group: String in ["resources","ledger","totals"]:
 		if not saved.get(group) is Dictionary:
 			return false
-		var keys: Array = {"resources":POOLS,"ledger":["initial","in","out"],"totals":["birth","death","arrival","departure","dispersal"]}[group]
+		var keys: Array = {"resources":POOLS,"ledger":["initial","in","out"],"totals":["birth","death","arrival","departure","dispersal","floor_hits"]}[group]
 		for key: String in keys:
 			if not _number(saved[group].get(key)) or saved[group][key]<0:
 				return false
@@ -1568,14 +1116,11 @@ static func validate(saved: Dictionary) -> bool:
 				return false
 		if a.has("food_id") and not a.food_id is int:
 			return false
-		for key: String in ["vx","vy","relocated_at","extend","contact_x","contact_y","chew_until","avoid_x","avoid_y","around_x","around_y","heading","pitch","speed","thrust","turn","roll","flick"]:
+		for key: String in ["vx","vy","relocated_at","avoid_x","avoid_y","heading","pitch","speed","thrust","turn"]:
 			if a.has(key) and not _number(a[key]):
 				return false
-		if a.get("extend",0)<0 or a.get("extend",0)>1:
-			return false
-		if a.species=="purple_firefish" and (not _number(a.get("burrow_x")) or not _number(a.get("burrow_y"))):
-			return false
-		if a.species=="purple_firefish" and (not _number(a.get("hover_y")) or a.hover_y<0):
+		# The new fish carry their home (HOME): {kind, slot, i} and its point home_x/home_y.
+		if HOME.has(a.species) and not _valid_home(a):
 			return false
 		if a in saved.animals and (not _number(a.get("lifespan")) or a.lifespan<=0):
 			return false
@@ -1593,6 +1138,12 @@ static func validate(saved: Dictionary) -> bool:
 		if not _number(count) or count<0:
 			return false
 	return true
+
+static func _valid_home(a: Dictionary) -> bool:
+	var h: Variant=a.get("home")
+	if not h is Dictionary or not h.get("kind") in ["anemone","hitch","shelter","rock"] or not h.get("slot") is String or not h.get("i") is int or h.i<0:
+		return false
+	return _number(a.get("home_x")) and _number(a.get("home_y"))
 
 # Optional since 2026-09-23 (feeding); saves without them have no food.
 static func _valid_food(saved: Dictionary) -> bool:

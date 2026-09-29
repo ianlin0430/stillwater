@@ -8,8 +8,9 @@ extends SceneTree
 #   "stream_in":{pool:rate,...},"opening_age":{"fish":[lo,hi],species:[lo,hi],...}}
 # stream_in and opening_age replace the whole constant, so give every key the world reads.
 # "floor":f (S2, 2026-09-28) instruments the world, changing nothing it does: it counts the
-# animal-minutes in which energy ends a minute below f x reserve (floor_hits) and the lowest
-# energy/reserve per species (min_energy). --seeds=a,b,c runs several seeds in one process, one
+# animal-minutes in which energy ends a minute below f x reserve or metabolism went unpaid
+# (floor_hits; since S4 the world has its own never-starve floor, StreamWorld.FLOOR) and the
+# lowest energy/reserve per species (min_energy). --seeds=a,b,c runs several seeds in one process, one
 # JSON line each; --mid=D adds the same measures taken after day D ("at_D").
 
 func _initialize() -> void:
@@ -75,20 +76,22 @@ static func patched_source(cfg: Dictionary) -> String:
 		src=rx.sub(src,"${1}"+str(cfg.initial[k]))
 	return src
 
-# Measurement only: two probe variables and one counting line before the starvation check.
-# Returns "" (so compile fails loudly) if the world source no longer has the anchors.
+# Measurement only: two probe variables and one counting line after the minute's metabolism,
+# intake and growth (S4: after the hunger line; the world pays metabolism only down to its floor
+# and `unpaid` is what it could not pay). Returns "" (so compile fails loudly) if the world
+# source no longer has the anchors.
 static func _instrument(src: String, floor_share: float) -> String:
 	var state_line: String="var state: Dictionary\n"
-	var check_line: String="\t\tif a.energy<=deficit+0.000001:\n"
-	if src.count(state_line)!=1 or src.count(check_line)!=1:
+	var check_line: String="\t\ta.hunger=clampf(1-a.energy/cfg.reserve,0,1)\n"
+	if src.count(state_line)!=1 or src.count(check_line)!=1 or not src.contains("var unpaid: float"):
 		printerr("probe: floor instrumentation anchors not found in stream_world.gd")
 		return ""
 	src=src.replace(state_line,state_line+"var probe_floor_hits: Dictionary = {}\nvar probe_min_energy: Dictionary = {}\n")
-	var count: String="\t\tvar probe_left: float = (a.energy-deficit)/cfg.reserve\n"
+	var count: String="\t\tvar probe_left: float = a.energy/cfg.reserve\n"
 	count+="\t\tprobe_min_energy[a.species]=minf(probe_min_energy.get(a.species,INF),probe_left)\n"
-	count+="\t\tif probe_left<"+str(floor_share)+":\n"
+	count+="\t\tif probe_left<"+str(floor_share)+" or unpaid>0.0:\n"
 	count+="\t\t\tprobe_floor_hits[a.species]=probe_floor_hits.get(a.species,0)+1\n"
-	return src.replace(check_line,count+check_line)
+	return src.replace(check_line,check_line+count)
 
 static func compile(src: String) -> GDScript:
 	var script:=GDScript.new()

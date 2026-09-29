@@ -1,6 +1,6 @@
 extends SceneTree
 # Scene data files (data/scenes/*.json, data/decor.json) and their loader scripts/reef_scene.gd
-# (docs/plans/2026-09-28-redesign-backend.md §2, slice S1). The world does not read them yet.
+# (docs/plans/2026-09-28-redesign-backend.md §2, slice S1). The world reads them since S4.
 const SCENES: Array[String] = ["reef","shipwreck"]
 const SPECIES: Array[String] = ["green_chromis","clownfish","seahorse","royal_gramma"]
 # Upper ends of the caps the S2 probe may choose (plan §4.2 coarse screen: clown 2–3,
@@ -53,12 +53,14 @@ func _initialize() -> void:
 	var reef: RefCounted=RS.open("reef")
 	check(reef!=null,"reef scene opens")
 	if reef!=null:
-		# The first reef bed samples today's StreamWorld.floor_y, so nothing moves when the world switches to it.
+		# Since S4 the world reads its terrain from the scene (the reef by default): the bed (static
+		# floor_y for the frontend, bed_y of a world) and every species' depth band.
+		var w:=StreamWorld.new(42,1000)
 		var worst: float=0.0
 		for i in 129:
-			worst=maxf(worst,absf(reef.floor_y(i*10.0)-StreamWorld.floor_y(i*10.0)))
-		check(worst<1.0,"reef floor_y within 1 px of StreamWorld.floor_y every 10 px (worst %.3f)" % worst)
-		check(reef.band("green_chromis")==Vector2(StreamWorld.DEPTH.green_chromis[0],StreamWorld.DEPTH.green_chromis[1]),"reef chromis band equals today's DEPTH")
+			worst=maxf(worst,absf(reef.floor_y(i*10.0)-StreamWorld.floor_y(i*10.0))+absf(reef.floor_y(i*10.0)-w.bed_y(i*10.0)))
+		check(w.state.scene=="reef" and worst==0.0,"A new world is in the reef scene and its bed is the reef bed")
+		check(SPECIES.all(func(k: String) -> bool: return reef.band(k)==Vector2(w.band(k)[0],w.band(k)[1])),"The world's depth bands are the reef scene's")
 		check(reef.bounds().surface_y==StreamWorld.FOOD.surface,"reef surface equals FOOD.surface")
 	check(RS.open("nowhere")==null,"an unknown scene id opens nothing")
 	for id: String in SCENES:
