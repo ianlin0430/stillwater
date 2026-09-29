@@ -64,7 +64,7 @@ const ARRIVAL_RATE: float = 1.0/504.0
 # play, so only a fish found outside its band, e.g. from an edited save, is snapped back and marked.
 const RELOCATION: float = 3.0
 # Terrain comes from the scene file (ReefScene, data/scenes/<id>.json): bed, depth bands, x bounds,
-# exits and homes. S4 always uses this scene with its default decor (switching comes in S11).
+# exits, obstacles and homes. A new world starts in this scene (switching comes in S11).
 const DEFAULT_SCENE: String = "reef"
 # Homes of the new fish (S4, the simplest behaviour; the full behaviours are S6-S8): each lives at
 # a home from the scene's decor - the clownfish share the anemone (up to its capacity), a seahorse
@@ -114,6 +114,25 @@ const SWIM: Dictionary = {
 	"royal_gramma":{"cruise":13.0,"turn":3.5,"pitch":0.6,"pitch_rate":0.7,"drag":0.9,"push":2.0,"gap":0.3,"brake":22.0,"scull":5.0,"drift":0.15},
 	"startle_speed":2.4,"startle_turn":4.0,"turn_gain":3.0,"edge":40.0,"ramp":2.0}
 const SEPARATE: Dictionary = {"margin":1.2,"look":5.0,"gain":1.6,"close":1.05,"same":1.25}
+# Obstacles (S5, 2026-09-29; plan §3.2; user 2026-09-28: decor is an obstacle the fish go around,
+# never through, and every move is smooth and natural, not realistic). The obstacles are the
+# scene's terrain plus each slot's decor (ReefScene.obstacles, axis-aligned ellipses). Each swimmer:
+# - aims clear of them (_aim): a target inside an obstacle widened by `body` x its half body (so a
+#   body clear of that overlaps the obstacle by at most a fifth) is moved out to its edge;
+# - swims straight at its aim when the straight line is clear; when an obstacle is in the way it
+#   follows a route round (_navigate, NAV), steering at the furthest point of the route it can see,
+#   which slides along the route as the view opens: one smooth arc round each obstacle;
+# - never has its centre inside one (_keep_out): a step that would cross an edge slides along it.
+# Beside its own home (its home point inside the widened ellipse: a gramma at its cave, a seahorse
+# on the cave rock's hitch) a fish keeps only its centre `pad` px out. A fish found inside an
+# obstacle (decor set down over it) swims straight out the short way at `escape` x its cruise,
+# never snapped. What else steers it (spacing, making way for other fish) never pushes it into an
+# obstacle: within `hold` beyond its widened radii the part heading in fades out, and inside them it
+# eases back out, by `out` x cruise x how deep it is (_hold_off).
+const OBSTACLE: Dictionary = {"pad":4.0,"body":0.8,"escape":0.6,"hold":0.35,"out":1.0}
+# Routes round obstacles (S5): planned on a grid of `cell` px (A*), again only once the aim moves
+# more than `replan` px (or the fish has been pushed that far off its route).
+const NAV: Dictionary = {"cell":10.0,"replan":24.0}
 const NAMES: Dictionary = {"green_chromis":["Jade","Mint","Lagoon","Kelp","Glass","Pearl"],"clownfish":["Poppy","Ember"],"seahorse":["Drift","Kelpie"],"royal_gramma":["Violet","Dusk"]}
 var rng := RandomNumberGenerator.new()
 var motion_rng := RandomNumberGenerator.new()
@@ -124,6 +143,12 @@ var lure: Dictionary = {}
 var _live: bool = false
 # How urgently the last _avoid() call had to dodge (0 = clear, up to 1). Scratch, never saved.
 var _dodge: float = 0.0
+# How close the last _around() call found the obstacle in the way (0 = clear, 1 = at its edge or
+# inside), and whether the fish was inside one. Scratch, never saved.
+var _close: float = 0.0
+var _escaping: bool = false
+# The direction of the route leg the last _navigate() call steered along (ZERO when none).
+var _leg: Vector2 = Vector2.ZERO
 # Per-tick scratch that _move() fills before moving anyone (2026-09-27, speed only; never saved):
 # the non-chromis animals in state.animals order and each animal's _body() by id. Within a motion
 # tick no animal is added or removed and no species or age changes.
@@ -137,14 +162,34 @@ var _swim_x: Vector2
 var _roam_x: Vector2
 var _feed_x: Vector2
 var _homes: Dictionary = {}
+# The obstacles of the scene with its current decor (ReefScene.obstacles): terrain first, then each
+# slot's, as {cx, cy, rx, ry}. Re-read whenever the scene or the decor changes; never saved.
+var _obstacles: Array = []
+# Navigation scratch (S5, never saved): the water grid per species and size, and each fish's
+# route by id (both planned again, the same, after a restore or a decor change).
+var _grids: Dictionary = {}
+var _routes: Dictionary = {}
 # The default scene, for the static floor_y (frontend callers).
 static var _default_scene: ReefScene = null
+# Every scene, read once, for validate() (static) and the new world's decor.
+static var _scenes: Dictionary = {}
 
-func _init(world_seed: int = 240921, wall_time: float = 0) -> void:
+static func _scene_of(scene_id: String) -> ReefScene:
+	if not _scenes.has(scene_id):
+		_scenes[scene_id]=ReefScene.open(scene_id)
+	return _scenes[scene_id]
+
+func _init(world_seed: int = 240921, wall_time: float = 0, scene_id: String = DEFAULT_SCENE) -> void:
 	rng.seed = world_seed
 	motion_rng.seed = world_seed + 7919
-	state = {"version":VERSION,"seed":world_seed,"scene":DEFAULT_SCENE,"elapsed":0.0,"ecology_remainder":0.0,"motion_remainder":0.0,"motion_ticks":0,"ecology_ticks":0,"next_id":1,"next_event":1,"wall_checkpoint":wall_time,"animals":[],"archive":[],"events":[],"history":[],"resources":OPENING.duplicate(),"ledger":{"initial":0.0,"in":0.0,"out":0.0},"totals":{"birth":0,"death":0,"arrival":0,"departure":0,"dispersal":0,"floor_hits":0},"causes":{},"light_hour":12.0}
-	_use_scene(DEFAULT_SCENE)
+	if not ReefScene.ids().has(scene_id):
+		scene_id=DEFAULT_SCENE
+	# Decor (S5): each scene's slots {slot_id: style or ""}, every scene starting at its defaults.
+	var decor: Dictionary={}
+	for id: String in ReefScene.ids():
+		decor[id]=_scene_of(id).default_decor()
+	state = {"version":VERSION,"seed":world_seed,"scene":scene_id,"decor":decor,"elapsed":0.0,"ecology_remainder":0.0,"motion_remainder":0.0,"motion_ticks":0,"ecology_ticks":0,"next_id":1,"next_event":1,"wall_checkpoint":wall_time,"animals":[],"archive":[],"events":[],"history":[],"resources":OPENING.duplicate(),"ledger":{"initial":0.0,"in":0.0,"out":0.0},"totals":{"birth":0,"death":0,"arrival":0,"departure":0,"dispersal":0,"floor_hits":0},"causes":{},"light_hour":12.0}
+	_use_scene(scene_id)
 	for species: String in ACTIVE_SPECIES:
 		var n: int = int(SPECIES[species].initial)
 		var lo: float = OPENING_AGE.get(species,OPENING_AGE.fish)[0]
@@ -166,8 +211,9 @@ func _init(world_seed: int = 240921, wall_time: float = 0) -> void:
 			animal.sex = "female" if i%2==0 else "male"
 			if species=="green_chromis":
 				# The opening school, together in midwater.
-				animal.x=560.0+i*40.0
-				animal.y=280.0+(i%2)*30
+				var at: Vector2=_clear_spot(species,Vector2(560.0+i*40.0,280.0+(i%2)*30))
+				animal.x=at.x
+				animal.y=at.y
 			animal.tx=animal.x
 			animal.ty=animal.y
 	state.ledger.initial = material()
@@ -184,8 +230,61 @@ func _use_scene(scene_id: String) -> void:
 	for species: String in ACTIVE_SPECIES:
 		var band: Vector2=scene.band(species)
 		_bands[species]=[band.x,band.y]
+	_use_decor()
+
+# Reads the obstacles and the homes of the current scene's decor (never saved).
+func _use_decor() -> void:
+	_obstacles=scene.obstacles(state.decor[state.scene])
+	_grids.clear()
+	_routes.clear()
 	for species: String in HOME:
 		_homes[species]=_home_spots(species)
+
+# Puts `style` in `slot` of the current scene (S5; plan §5.1, H4): one of the slot's styles, or ""
+# to empty a slot that is not required (the anemone and the hitch plant change style but are never
+# cleared). False, changing nothing, for anything else. Decor is presentation and habitat, never
+# ecology: it adds no food and changes no cap, draws from neither rng and moves nobody at once. A
+# fish whose home went moves to the free home nearest it (the anemone's new centre, another hitch,
+# cave or rock spot) and swims there; one the new decor covers swims out (_move), never snapped.
+func set_decor(slot: String, style: String) -> bool:
+	if not scene.allows(slot,style):
+		return false
+	var decor: Dictionary=state.decor[state.scene]
+	if decor[slot]==style:
+		return true
+	decor[slot]=style
+	_use_decor()
+	for a: Dictionary in state.animals:
+		# (Each fish plans its way round afresh.)
+		_forget_around(a)
+	_rehome()
+	return true
+
+# After a decor change: a fish keeps its home if the decor still has it (moving with it when it
+# moved, e.g. a new anemone style); the others, in id order, take the free home nearest the old
+# one and choose their next move now. No rng draw.
+func _rehome() -> void:
+	var lost: Array=[]
+	for a: Dictionary in state.animals:
+		if not a.has("home"):
+			continue
+		var same: Dictionary={}
+		for h: Dictionary in _homes[a.species]:
+			if _home_key(h)==_home_key(a.home):
+				same=h
+		if same.is_empty():
+			lost.append(a)
+		elif a.home_x!=same.x or a.home_y!=same.y:
+			a.home_x=same.x
+			a.home_y=same.y
+			a.decision_at=minf(a.decision_at,state.elapsed)
+	for a: Dictionary in lost:
+		# (Not counted as taken while it looks: its old key matches no home now.)
+		var h: Dictionary=_nearest_free(a.species,Vector2(a.home_x,a.home_y))
+		a.home={"kind":h.kind,"slot":h.slot,"i":h.i}
+		a.home_x=h.x
+		a.home_y=h.y
+		a.decision_at=minf(a.decision_at,state.elapsed)
 
 # Depth band [top, bottom] of a species in this world's scene.
 func band(species: String) -> Array:
@@ -217,7 +316,7 @@ func spawn(species: String, age: float = 0, parent: int = 0) -> Dictionary:
 		return {}
 	var cfg: Dictionary = SPECIES[species]
 	var home: Dictionary = _free_home(species,parent) if HOME.has(species) else {}
-	var p: Vector2 = _near_home(species,home,state.next_id) if not home.is_empty() else _place(species)
+	var p: Vector2 = _clear_spot(species,_near_home(species,home,state.next_id) if not home.is_empty() else _place(species))
 	var a: Dictionary = {"id":state.next_id,"species":species,"name":cfg.label+" "+str(state.next_id),"sex":"female" if rng.randf()<0.5 else "male","age":age,"parent":parent,"born":state.elapsed,"body":cfg.body*(0.45 if age<cfg.mature else 1.0),"energy":cfg.reserve*(0.35 if age<cfg.mature else 0.67),"x":p.x,"y":p.y,"tx":p.x,"ty":p.y,"direction":1.0 if p.x<640 else -1.0,"activity":"Resting","decision_at":0.0,"last_breed":-cfg.cooldown,"recent":[],"hunger":0.0}
 	a.lifespan=cfg.lifespan*rng.randf_range(0.85,1.15)
 	if not home.is_empty():
@@ -439,13 +538,18 @@ func _move(delta: float) -> void:
 		# Its band, but never so low that the body dips into the bed (a scene's band may reach below
 		# the bed where the sand rises, e.g. the royal gramma's; S4 audit_space).
 		var band: Array=[_bands[species][0],minf(_bands[species][1],bed_y(p.x)-_bodies[a.id].y*0.5)]
-		var target:=Vector2(a.tx,a.ty)
-		# (Targets are always in the band; an edited one is aimed at the band edge.)
-		var offset: Vector2=Vector2(target.x,clampf(target.y,band[0],band[1]))-p
+		# (Targets are always in the band; an edited one is aimed at the band edge. One inside an
+		# obstacle is aimed at its edge, S5.)
+		var radii: PackedVector2Array=_radii_of(a)
+		var target: Vector2=_aim(a,radii)
+		var offset: Vector2=target-p
 		# A resting fish already within `hold` px of its spot's depth never corrects its depth:
 		# nudged aside (spacing) it glides straight back, level (2026-09-26).
 		var resting: bool=a.activity=="Resting"
-		if resting and absf(offset.y)<CHROMIS.hold:
+		# (Twice that beside an obstacle, where its spot is moved to the obstacle's edge and slides up
+		# and down the edge as the slot breathes, S5.)
+		var pushed: bool=target.distance_squared_to(Vector2(a.tx,clampf(a.ty,band[0],band[1])))>0.01
+		if resting and absf(offset.y)<CHROMIS.hold*(2.0 if pushed else 1.0):
 			offset.y=0.0
 		var gap: float=offset.length()
 		var cfg: Dictionary=SWIM[species]
@@ -464,10 +568,32 @@ func _move(delta: float) -> void:
 		var hovering: bool=resting and gap<CHROMIS.hold
 		if hovering:
 			arrive=Vector2.ZERO
+		# Around the obstacle in the way, if any (S5): the same pace, along the way round.
+		var way: Vector2=Vector2.ZERO
+		_close=0.0
+		_leg=Vector2.ZERO
+		_escaping=false
+		if hovering:
+			_forget_around(a)
+		else:
+			way=_around(a,p,target,band,radii)
+		# A way steeper than its nose can pitch is climbed (or sunk) slowly: no faster than it can
+		# scull up the difference, with its forward stroke kept to the level part (_swim `climbing`).
+		# (Near an obstacle, within 1.3 x its widened radii, it rises and sinks by sculling only, never
+		# by swimming on forward: a climb does not carry it into the obstacle.)
+		var climbing: bool=_close>0.0
+		if way!=Vector2.ZERO:
+			var steep: float=absf(way.y)-absf(way.x)*sin(cfg.pitch)
+			if steep>0.0 and not _escaping:
+				climbing=true
+				_close=1.0
+				top=minf(top,cfg.scull/steep)
+			arrive=way*(maxf(top,OBSTACLE.escape*cruise) if _escaping else top)
 		# Everything else steering adds on top of arriving: rise and fall, spacing, dodging.
 		var desired:=Vector2.ZERO
 		# A gentle rise and fall while travelling, fading out on approach; no per-frame randomness.
-		if a.activity=="Schooling" and not follower and gap>35:
+		# (Not while going around an obstacle: the arc is its rise and fall.)
+		if a.activity=="Schooling" and not follower and gap>35 and way==Vector2.ZERO:
 			var bend: float=sin(state.elapsed*(0.28+float(int(a.id)%5)*0.025)+a.id*1.73)
 			desired.y+=bend*speed*cfg.drift*minf(1,gap/100)
 		# School members keep their spacing; bodies keep apart across the pool (_avoid).
@@ -493,26 +619,44 @@ func _move(delta: float) -> void:
 		var steer: Vector2=was.lerp(change,0.3)
 		a.avoid_x=steer.x
 		a.avoid_y=steer.y
-		_dodge=minf(1.0,steer.length()/cruise)
+		_dodge=maxf(minf(1.0,steer.length()/cruise),_close)
 		desired+=steer
+		# Nor does it push a body into an obstacle (S5): near one's widened edge the part heading in
+		# fades out.
+		desired=_hold_off(p,desired,radii,cruise)
 		# Soft edges: what steering adds toward a band edge or a side wall eases off over the last
 		# `edge` px (arriving already stops at its in-band target).
 		desired.y*=clampf(((p.y-band[0]) if desired.y<0 else (band[1]-p.y))/SWIM.edge,0.0,1.0)
 		desired.x*=clampf(((p.x-_swim_x.x) if desired.x<0 else (_swim_x.y-p.x))/SWIM.edge,0.0,1.0)
-		desired+=arrive
+		# (Climbing or sinking near an obstacle it sculls up or down faster than it swims along, so
+		# there its way in is held off too: it never sinks onto a rock it is passing over.)
+		desired+=_hold_off(p,arrive,radii,0.0) if climbing and not _escaping else arrive
 		# Which way to face: a resting fish settled on its spot keeps its facing, a school member
 		# settled in its slot faces the way the leader does (so the school turns almost together).
 		var face: float=0.0
 		if hovering:
 			face=a.direction
-		elif follower and gap<40:
+		elif way!=Vector2.ZERO:
+			# On a route round an obstacle it faces along its leg; only a clearly sideways leg turns
+			# it round (S5).
+			var leg: Vector2=_leg if not _escaping else way
+			face=signf(leg.x) if absf(leg.x)>=0.45 else a.direction
+		elif follower and gap<40 and _close==0.0:
+			# (A school member settled in its slot faces with the leader, unless an obstacle is near.)
 			face=lead.direction
-		var velocity: Vector2=_swim(a,desired,speed,cruise,cfg,delta,a.activity=="Startled",face)
+		var velocity: Vector2=_swim(a,desired,speed,cruise,cfg,delta,a.activity=="Startled",face,climbing)
 		var free: Vector2=p+velocity*delta
 		# Keep each fish in its own layer (the shoaling push once carried hatchetfish down).
-		var next: Vector2=free.clamp(Vector2(_swim_x.x,band[0]),Vector2(_swim_x.y,band[1]))
+		var lo:=Vector2(_swim_x.x,band[0])
+		var hi:=Vector2(_swim_x.y,band[1])
+		var next: Vector2=free.clamp(lo,hi)
 		if next.distance_to(free)>RELOCATION:
 			a.relocated_at=state.elapsed
+		# Its centre never enters an obstacle: a step across an edge slides along it (S5).
+		var kept: Vector2=_keep_out(p,next,lo,hi)
+		if kept!=next:
+			velocity=(kept-p)/delta
+			next=kept
 		a.x=next.x
 		a.y=next.y
 		a.vx=velocity.x
@@ -579,7 +723,7 @@ func _avoid(a: Dictionary, p: Vector2, desired: Vector2, speed: float) -> Vector
 # the body follows burst-and-glide strokes (chromis) or smooth rowing (seahorse) against water drag,
 # with pectoral braking and, only at low speed, a little sculling that lets the fish settle
 # exactly. Returns the screen velocity (px/s); stores heading, pitch, speed, thrust and turn.
-func _swim(a: Dictionary, desired: Vector2, cap: float, cruise: float, cfg: Dictionary, delta: float, quick: bool, face: float) -> Vector2:
+func _swim(a: Dictionary, desired: Vector2, cap: float, cruise: float, cfg: Dictionary, delta: float, quick: bool, face: float, climbing: bool = false) -> Vector2:
 	var psi: float=a.heading if a.has("heading") else (0.0 if a.direction>0 else PI)
 	var theta: float=a.get("pitch",0.0)
 	var s: float=a.speed if a.has("speed") else Vector2(a.get("vx",0.0),a.get("vy",0.0)).length()
@@ -603,7 +747,8 @@ func _swim(a: Dictionary, desired: Vector2, cap: float, cruise: float, cfg: Dict
 	psi=turned
 	# Headway: less while turning, hardly any while still facing away from the way to go.
 	# Headway: what lies ahead of the body (none while still facing away), and some to climb or dive.
-	var along: float=maxf(0.0,desired.x*cos(psi))+absf(desired.y)*0.6
+	# (Climbing round an obstacle steeper than it can pitch, S5: only the level part; it sculls the rest.)
+	var along: float=maxf(0.0,desired.x*cos(psi))+(0.0 if climbing else absf(desired.y)*0.6)
 	along=minf(along,cruise*SWIM.startle_speed)
 	var full: float=cfg.push*cfg.drag*maxf(cruise,1.0)
 	var thrust: float=a.get("thrust",0.0)
@@ -655,13 +800,13 @@ static func _hash01(a: int, b: int) -> float:
 	h=h^(h>>16)
 	return float(h&0xFFFF)/65536.0
 
-# The homes a species can take in this scene's default decor, in order: the required slots first
+# The homes a species can take in this scene's current decor, in order: the required slots first
 # (the anemone, the required hitch plant), then the others in scene order; for the royal gramma
 # the caves of its slots, then the scene's rock spots. Each {kind, slot, i, x, y, capacity}.
 func _home_spots(species: String) -> Array:
 	var out: Array=[]
 	var kind: String=HOME[species].kind
-	var decor: Dictionary=scene.default_decor()
+	var decor: Dictionary=state.decor[state.scene]
 	for required: bool in [true,false]:
 		for s: Dictionary in scene.slots():
 			if (s.required!="")!=required:
@@ -689,15 +834,21 @@ static func _home_key(h: Dictionary) -> String:
 # (never within the caps, which fit the homes) the first home is shared.
 func _free_home(species: String, parent: int) -> Dictionary:
 	var spots: Array=_homes[species]
-	var used: Dictionary={}
 	var from:=Vector2(spots[0].x,spots[0].y)
+	for o: Dictionary in state.animals:
+		if o.id==parent and o.species==species and o.has("home"):
+			from=Vector2(o.home_x,o.home_y)
+	return _nearest_free(species,from)
+
+# The free home nearest `from` (a home is taken up to its capacity), else the first home.
+func _nearest_free(species: String, from: Vector2) -> Dictionary:
+	var spots: Array=_homes[species]
+	var used: Dictionary={}
 	for o: Dictionary in state.animals:
 		if o.species!=species or not o.has("home"):
 			continue
 		var key: String=_home_key(o.home)
 		used[key]=used.get(key,0)+1
-		if o.id==parent:
-			from=Vector2(o.home_x,o.home_y)
 	var best: Dictionary=spots[0]
 	var gap: float=INF
 	for s: Dictionary in spots:
@@ -714,6 +865,411 @@ func _near_home(species: String, home: Dictionary, id: int) -> Vector2:
 	var x: float=clampf(home.x+(_hash01(id,1)*2.0-1.0)*r,_roam_x.x,_roam_x.y)
 	var y: float=home.y+(_hash01(id,2)*2.0-1.0)*r*0.6
 	return Vector2(x,_in_water(species,x,y))
+
+# Obstacle helpers (S5). The radii fish a keeps its centre out of each obstacle (in _obstacles
+# order) when aiming and steering: widened by OBSTACLE.body x its half body, or only by
+# OBSTACLE.pad where its own home lies inside that (a gramma at its cave, a seahorse on the cave
+# rock's hitch: there only its centre keeps out). a = {} (a new fish being placed) keeps `pad` px.
+func _radii_of(a: Dictionary) -> PackedVector2Array:
+	var out:=PackedVector2Array()
+	out.resize(_obstacles.size())
+	var half:=Vector2.ZERO
+	if not a.is_empty():
+		half=(_bodies[a.id] if _bodies.has(a.id) else _body(a))*0.5*OBSTACLE.body
+	for i in _obstacles.size():
+		var o: Dictionary=_obstacles[i]
+		var r:=Vector2(o.rx+half.x,o.ry+half.y)
+		if a.is_empty() or a.has("home_x") and Vector2((a.home_x-o.cx)/r.x,(a.home_y-o.cy)/r.y).length_squared()<1.0:
+			r=Vector2(o.rx+OBSTACLE.pad,o.ry+OBSTACLE.pad)
+		out[i]=r
+	return out
+
+# t moved out of every obstacle (radii): to the edge straight out from the centre, or sideways
+# when that would leave the band [top, bottom]; kept in the band and the swimming width. Up to three
+# rounds for obstacles that touch; if it is then still inside one's widened edge it stays there,
+# and if inside the obstacle itself, `fallback` (a Vector2.INF fallback keeps it: a fish's route
+# then ends as near as it gets, _navigate).
+func _clear_of(t: Vector2, band: Array, radii: PackedVector2Array, fallback: Vector2) -> Vector2:
+	for k in 3:
+		var moved: bool=false
+		for i in _obstacles.size():
+			var o: Dictionary=_obstacles[i]
+			var r: Vector2=radii[i]
+			var n:=Vector2((t.x-o.cx)/r.x,(t.y-o.cy)/r.y)
+			var q: float=n.length()
+			if q>=1.0:
+				continue
+			moved=true
+			var dir: Vector2=n/q if q>0.0001 else Vector2(0.0,-1.0)
+			var out:=Vector2(o.cx+dir.x*r.x*1.001,o.cy+dir.y*r.y*1.001)
+			if out.y<band[0] or out.y>band[1]:
+				out=Vector2(o.cx+(1.0 if t.x>=o.cx else -1.0)*r.x*sqrt(maxf(0.0,1.0-n.y*n.y))*1.001,t.y)
+			t=Vector2(clampf(out.x,_swim_x.x,_swim_x.y),clampf(out.y,band[0],band[1]))
+		if not moved:
+			return t
+	for o: Dictionary in _obstacles:
+		if fallback!=Vector2.INF and Vector2((t.x-o.cx)/(o.rx+OBSTACLE.pad),(t.y-o.cy)/(o.ry+OBSTACLE.pad)).length_squared()<1.0:
+			return fallback
+	return t
+
+# A new fish's spot (spawn, birth, arrival, the opening school) kept `pad` px clear of every
+# obstacle, in its band above the bed.
+func _clear_spot(species: String, p: Vector2) -> Vector2:
+	var band: Array=[_bands[species][0],minf(_bands[species][1],bed_y(p.x)-BODY[species][1]*0.5)]
+	return _clear_of(p,band,_radii_of({}),p)
+
+# Where fish a aims this tick: its target, in its band (above the sand there, its body clear of it)
+# and clear of the obstacles (_radii_of) as far as it can be. (a.tx/a.ty are left as chosen.)
+func _aim(a: Dictionary, radii: PackedVector2Array = PackedVector2Array()) -> Vector2:
+	if radii.is_empty():
+		radii=_radii_of(a)
+	var band: Array=[_bands[a.species][0],minf(_bands[a.species][1],bed_y(a.tx)-(_bodies[a.id] if _bodies.has(a.id) else _body(a)).y*0.5)]
+	return _clear_of(Vector2(a.tx,clampf(a.ty,band[0],band[1])),band,radii,Vector2.INF)
+
+# v without the part that heads into an obstacle, over the last `hold` of its widened radii (radii)
+# and inside them; inside them it also eases out, up to `out` x cruise at the obstacle's own edge.
+func _hold_off(p: Vector2, v: Vector2, radii: PackedVector2Array, cruise: float) -> Vector2:
+	for i in _obstacles.size():
+		var o: Dictionary=_obstacles[i]
+		var r: Vector2=radii[i]*(1.0+OBSTACLE.hold)
+		var P:=Vector2((p.x-o.cx)/r.x,(p.y-o.cy)/r.y)
+		var q: float=P.length()
+		if q>=1.0 or q<0.0001:
+			continue
+		var n:=Vector2(P.x/r.x,P.y/r.y).normalized()
+		var into: float=v.dot(n)
+		if into<0.0:
+			v-=n*into*clampf((1.0-q)/(1.0-1.0/(1.0+OBSTACLE.hold)),0.0,1.0)
+		var inner: float=q*(1.0+OBSTACLE.hold)
+		if inner<1.0:
+			v+=n*OBSTACLE.out*cruise*(1.0-inner)
+	return v
+
+func _forget_around(a: Dictionary) -> void:
+	for key: String in ["nav_x","nav_y","nav_tx","nav_ty","nav_k"]:
+		a.erase(key)
+
+# The nearest obstacle (index, or -1) the straight line p -> t runs into: the line passes inside
+# its widened ellipse (radii; from inside one, deeper in). `skip` is left out.
+func _blocker(p: Vector2, t: Vector2, radii: PackedVector2Array, skip: int) -> int:
+	var way: Vector2=t-p
+	var length: float=way.length()
+	var first: int=-1
+	var nearest: float=INF
+	for i in _obstacles.size():
+		if i==skip:
+			continue
+		var o: Dictionary=_obstacles[i]
+		var r: Vector2=radii[i]
+		# (Quick reject: the line's box misses the ellipse's box.)
+		if minf(p.x,t.x)>o.cx+r.x or maxf(p.x,t.x)<o.cx-r.x or minf(p.y,t.y)>o.cy+r.y or maxf(p.y,t.y)<o.cy-r.y:
+			continue
+		var P:=Vector2((p.x-o.cx)/r.x,(p.y-o.cy)/r.y)
+		var d:=Vector2(way.x/r.x,way.y/r.y)
+		var s: float=clampf(-P.dot(d)/maxf(d.length_squared(),1.0e-12),0.0,1.0)
+		if (P+d*s).length()>=minf(1.0,P.length())-0.001:
+			continue
+		if length*s<nearest:
+			nearest=length*s
+			first=i
+	return first
+
+# The way (a unit vector) fish a at p swims toward t when an obstacle is in the straight way, or
+# ZERO when none is (see OBSTACLE, NAV). Sets _close and _escaping.
+func _around(a: Dictionary, p: Vector2, t: Vector2, band: Array, radii: PackedVector2Array) -> Vector2:
+	var close: float=INF
+	for i in _obstacles.size():
+		var o: Dictionary=_obstacles[i]
+		var raw:=Vector2((p.x-o.cx)/o.rx,(p.y-o.cy)/o.ry)
+		if raw.length_squared()<1.0:
+			# Decor set down over it: straight out the short way, up rather than into the sand.
+			_forget_around(a)
+			_close=1.0
+			_escaping=true
+			var out:=Vector2(raw.x/o.rx,raw.y/o.ry) if raw.length_squared()>0.000001 else Vector2(0.0,-1.0)
+			if out.y>0.0 and o.cy+o.ry>band[1] or out.y<0.0 and o.cy-o.ry<band[0]:
+				out.y=-out.y
+			return out.normalized()
+		close=minf(close,Vector2((p.x-o.cx)/radii[i].x,(p.y-o.cy)/radii[i].y).length())
+	_close=clampf((1.3-close)/0.5,0.0,1.0)
+	# (Within `replan` px it is arriving, not travelling.)
+	if p.distance_to(t)<NAV.replan or _blocker(p,t,radii,-1)<0:
+		_forget_around(a)
+		return Vector2.ZERO
+	var to: Vector2=_navigate(a,p,t,radii)
+	return (to-p).normalized() if p.distance_squared_to(to)>0.0001 else Vector2.ZERO
+
+# The point fish a at p steers at on its route to t: the furthest point along the route it can see
+# (the straight line to it clear of every widened obstacle), found by walking on from the last one
+# and halving the next leg, so it slides smoothly round each obstacle. The route is planned from
+# where the fish was when its aim last moved more than `replan` px (nav_x/nav_y to nav_tx/nav_ty,
+# saved, so a restored world plans the same route), or again from where it is when it has been
+# pushed off the route; nav_k is the leg it is on. A route that cannot
+# reach t (no way through for its body) ends as near as it gets, and the fish takes that end as its
+# target.
+func _navigate(a: Dictionary, p: Vector2, t: Vector2, radii: PackedVector2Array) -> Vector2:
+	if not a.has("nav_tx") or t.distance_to(Vector2(a.nav_tx,a.nav_ty))>NAV.replan:
+		a.nav_x=p.x
+		a.nav_y=p.y
+		a.nav_tx=t.x
+		a.nav_ty=t.y
+		a.nav_k=0
+	var route: PackedVector2Array=_route(a)
+	# Pushed off its route (another fish making it give way) so that it no longer sees the end of
+	# its leg: it plans again from here, once it is `replan` px from where it planned last.
+	var leg: int=clampi(int(a.nav_k),0,route.size()-2)
+	if _blocker(p,route[leg+1],radii,-1)>=0 and p.distance_to(Vector2(a.nav_x,a.nav_y))>NAV.replan:
+		a.nav_x=p.x
+		a.nav_y=p.y
+		a.nav_k=0
+		route=_route(a)
+	var end: Vector2=route[route.size()-1]
+	if end.distance_to(Vector2(a.nav_tx,a.nav_ty))>1.0:
+		# Out of reach: settle for the end of the route.
+		a.tx=end.x
+		a.ty=end.y
+		a.nav_tx=end.x
+		a.nav_ty=end.y
+	# Always at least the end of its leg; on along the next legs as far as it sees.
+	var k: int=clampi(int(a.nav_k),0,route.size()-2)
+	while k+2<route.size() and _blocker(p,route[k+2],radii,-1)<0:
+		k+=1
+	a.nav_k=k
+	if k+2>=route.size():
+		_leg=(route[k+1]-route[k]).normalized()
+		return route[k+1]
+	var lo: float=0.0
+	var hi: float=1.0
+	for n in 4:
+		var mid: float=(lo+hi)*0.5
+		if _blocker(p,route[k+1].lerp(route[k+2],mid),radii,-1)<0:
+			lo=mid
+		else:
+			hi=mid
+	_leg=(route[k+2]-route[k+1]).normalized() if lo>0.0 else (route[k+1]-route[k]).normalized()
+	return route[k+1].lerp(route[k+2],lo)
+
+# The planned route of fish a (from nav_x/nav_y to nav_tx/nav_ty, for its species and size), kept
+# for as long as those stay the same (never saved: planned again the same after a restore).
+func _route(a: Dictionary) -> PackedVector2Array:
+	var cls: String=a.species+"/"+str(animal_scale(a))
+	var key: Array=[a.nav_x,a.nav_y,a.nav_tx,a.nav_ty,cls]
+	var kept: Dictionary=_routes.get(a.id,{})
+	if kept.get("key",[])!=key:
+		kept={"key":key,"route":_plan(cls,a.species,animal_scale(a),Vector2(a.nav_x,a.nav_y),Vector2(a.nav_tx,a.nav_ty))}
+		_routes[a.id]=kept
+	return kept.route
+
+# The water a fish of this species and size can use, on a grid of NAV.cell px: 0 open, 1 within an
+# obstacle widened by OBSTACLE.body x its half body (a route only leaves such an edge, never goes
+# deeper into it, except to end there), 2 no water for it (an obstacle widened by `pad`, outside its
+# band or the swimming width, the sand). The second array holds how deep in the widened edge a cell
+# lies (the least normalised distance, below 1). Built when first needed, for the current decor.
+func _grid(cls: String, species: String, scale: float) -> Array:
+	if _grids.has(cls):
+		return _grids[cls]
+	var c: float=NAV.cell
+	var w: int=int(1280.0/c)
+	var h: int=int(720.0/c)
+	var body: Vector2=Vector2(BODY[species][0],BODY[species][1])*scale
+	var half: Vector2=body*0.5*OBSTACLE.body
+	var g:=PackedByteArray()
+	g.resize(w*h)
+	var depth:=PackedFloat32Array()
+	depth.resize(w*h)
+	depth.fill(1.0)
+	for gx in w:
+		var x: float=(gx+0.5)*c
+		var top: float=_bands[species][0]
+		var bottom: float=minf(_bands[species][1],bed_y(x)-body.y*0.5)
+		var near: Array=_obstacles.filter(func(o): return absf(x-o.cx)<o.rx+half.x)
+		for gy in h:
+			var y: float=(gy+0.5)*c
+			var v: int=0
+			if x<_swim_x.x or x>_swim_x.y or y<top or y>bottom:
+				v=2
+			else:
+				for o: Dictionary in near:
+					var dx: float=(x-o.cx)/(o.rx+OBSTACLE.pad)
+					var dy: float=(y-o.cy)/(o.ry+OBSTACLE.pad)
+					if dx*dx+dy*dy<1.0:
+						v=2
+						break
+					dx=(x-o.cx)/(o.rx+half.x)
+					dy=(y-o.cy)/(o.ry+half.y)
+					if dx*dx+dy*dy<1.0:
+						v=1
+						depth[gy*w+gx]=minf(depth[gy*w+gx],sqrt(dx*dx+dy*dy))
+			g[gy*w+gx]=v
+	_grids[cls]=[g,depth]
+	return _grids[cls]
+
+# A route from `from` to `to` over the grid (A*, 8 neighbours, no corner cutting; ties by cell
+# order, so always the same), pulled straight between cells that see each other. Through open
+# water, or out of a widened edge (never deeper into one), and into the one its end lies in. Ends at
+# `to`, or when `to` cannot be reached, at the reachable cell nearest it.
+func _plan(cls: String, species: String, scale: float, from: Vector2, to: Vector2) -> PackedVector2Array:
+	var grid: Array=_grid(cls,species,scale)
+	var g: PackedByteArray=grid[0]
+	var depth: PackedFloat32Array=grid[1]
+	var c: float=NAV.cell
+	var w: int=int(1280.0/c)
+	var h: int=int(720.0/c)
+	var start: int=clampi(int(from.y/c),0,h-1)*w+clampi(int(from.x/c),0,w-1)
+	var goal: int=clampi(int(to.y/c),0,h-1)*w+clampi(int(to.x/c),0,w-1)
+	var cost:=PackedFloat32Array()
+	cost.resize(w*h)
+	cost.fill(INF)
+	var prev:=PackedInt32Array()
+	prev.resize(w*h)
+	prev.fill(-1)
+	var done:=PackedByteArray()
+	done.resize(w*h)
+	var heap_n: Array=[]
+	var heap_k: Array=[]
+	var gx: int=goal%w
+	var gy: int=goal/w
+	cost[start]=0.0
+	_push(heap_n,heap_k,start,_octile(start%w-gx,start/w-gy))
+	var best: int=start
+	var best_h: float=INF
+	while not heap_n.is_empty():
+		var cell: int=_pop(heap_n,heap_k)
+		if done[cell]==1:
+			continue
+		done[cell]=1
+		var cx: int=cell%w
+		var cy: int=cell/w
+		var left: float=_octile(cx-gx,cy-gy)
+		if left<best_h:
+			best=cell
+			best_h=left
+		if cell==goal:
+			break
+		for d in 8:
+			var dx: int=STEP_X[d]
+			var dy: int=STEP_Y[d]
+			var nx: int=cx+dx
+			var ny: int=cy+dy
+			if nx<0 or ny<0 or nx>=w or ny>=h:
+				continue
+			var n: int=ny*w+nx
+			if done[n]==1 or g[n]==2:
+				continue
+			if g[n]==1 and n!=goal and depth[n]<depth[cell]-0.001:
+				continue
+			if dx!=0 and dy!=0 and (g[cy*w+nx]==2 or g[ny*w+cx]==2):
+				continue
+			var step: float=cost[cell]+(1.41421356 if dx!=0 and dy!=0 else 1.0)
+			if step<cost[n]:
+				cost[n]=step
+				prev[n]=cell
+				_push(heap_n,heap_k,n,step+_octile(nx-gx,ny-gy)+n*1.0e-9)
+	var cells: Array[Vector2]=[]
+	var at: int=best
+	while at!=-1:
+		cells.push_front(_centre(at,w))
+		at=prev[at]
+	cells[0]=from
+	if best==goal:
+		cells[-1]=to
+	# Pulled straight: from each kept point on to the furthest cell it sees past every obstacle
+	# (widened as for this species and size; out of one it starts in counts as seeing).
+	var radii:=PackedVector2Array()
+	var half: Vector2=Vector2(BODY[species][0],BODY[species][1])*scale*0.5*OBSTACLE.body
+	for o: Dictionary in _obstacles:
+		radii.append(Vector2(o.rx+half.x,o.ry+half.y))
+	var points: Array[Vector2]=[from]
+	var i: int=0
+	while i<cells.size()-1:
+		var j: int=i+1
+		while j+1<cells.size() and _blocker(points[-1],cells[j+1],radii,-1)<0:
+			j+=1
+		points.append(cells[j])
+		i=j
+	# (A route is at least a leg long.)
+	if points.size()<2:
+		points.append(to if best==goal else points[0])
+	return PackedVector2Array(points)
+
+func _centre(cell: int, w: int) -> Vector2:
+	return Vector2((cell%w+0.5)*NAV.cell,(cell/w+0.5)*NAV.cell)
+
+static func _octile(dx: int, dy: int) -> float:
+	var x: int=absi(dx)
+	var y: int=absi(dy)
+	return maxi(x,y)+0.41421356*mini(x,y)
+
+# A binary min-heap of cells keyed by cost (Arrays: shared with the caller).
+const STEP_X: Array[int] = [1,-1,0,0,1,1,-1,-1]
+const STEP_Y: Array[int] = [0,0,1,-1,1,-1,1,-1]
+static func _push(nodes: Array, keys: Array, n: int, k: float) -> void:
+	nodes.append(n)
+	keys.append(k)
+	var i: int=nodes.size()-1
+	while i>0:
+		var up: int=(i-1)/2
+		if keys[up]<=k:
+			break
+		nodes[i]=nodes[up]
+		keys[i]=keys[up]
+		i=up
+	nodes[i]=n
+	keys[i]=k
+
+static func _pop(nodes: Array, keys: Array) -> int:
+	var top: int=nodes[0]
+	var last: int=nodes.size()-1
+	var n: int=nodes[last]
+	var k: float=keys[last]
+	nodes.resize(last)
+	keys.resize(last)
+	if last==0:
+		return top
+	var i: int=0
+	while true:
+		var child: int=i*2+1
+		if child>=last:
+			break
+		if child+1<last and keys[child+1]<keys[child]:
+			child+=1
+		if keys[child]>=k:
+			break
+		nodes[i]=nodes[child]
+		keys[i]=keys[child]
+		i=child
+	nodes[i]=n
+	keys[i]=k
+	return top
+
+# The step p -> next (kept in lo..hi) with its centre out of every obstacle p is out of: across an
+# edge it slides along the edge instead (the part across is dropped). If that still ends inside
+# one (between two that touch), it stays at p.
+func _keep_out(p: Vector2, next: Vector2, lo: Vector2, hi: Vector2) -> Vector2:
+	var moved: bool=false
+	for o: Dictionary in _obstacles:
+		var c:=Vector2(o.cx,o.cy)
+		var r:=Vector2(o.rx,o.ry)
+		var P1: Vector2=(next-c)/r
+		if P1.length_squared()>=1.0:
+			continue
+		var P0: Vector2=(p-c)/r
+		if P0.length_squared()<1.0:
+			continue
+		var d: Vector2=P1-P0
+		var aa: float=maxf(d.length_squared(),1.0e-12)
+		var b: float=P0.dot(d)
+		var hit: float=clampf((-b-sqrt(maxf(0.0,b*b-aa*(P0.length_squared()-1.0))))/aa,0.0,1.0)
+		var at: Vector2=P0+d*hit
+		var tangent:=Vector2(-at.y,at.x)
+		var q: Vector2=at+tangent*(d*(1.0-hit)).dot(tangent)/maxf(tangent.length_squared(),1.0e-12)
+		next=(c+q/maxf(q.length(),0.000001)*1.0005*r).clamp(lo,hi)
+		moved=true
+	if moved:
+		for o: Dictionary in _obstacles:
+			if Vector2((next.x-o.cx)/o.rx,(next.y-o.cy)/o.ry).length_squared()<1.0 and Vector2((p.x-o.cx)/o.rx,(p.y-o.cy)/o.ry).length_squared()>=1.0:
+				return p
+	return next
 
 # y kept in the species' band and an adult body's half height above the bed at x.
 func _in_water(species: String, x: float, y: float) -> float:
@@ -949,8 +1505,11 @@ func _breed(parent: Dictionary) -> void:
 		else:
 			var child: Dictionary = spawn(parent.species,0,parent.id)
 			var base: float = child.home_x if child.has("home_x") else parent.x
-			child.x=clampf(base+rng.randf_range(-30,30),_roam_x.x,_roam_x.y)
+			var at: Vector2=_clear_spot(child.species,Vector2(clampf(base+rng.randf_range(-30,30),_roam_x.x,_roam_x.y),child.y))
+			child.x=at.x
+			child.y=at.y
 			child.tx=child.x
+			child.ty=child.y
 			_event("birth",child,"A young "+cfg.label.to_lower()+" was born to "+parent.name+".",{"target":parent.id})
 
 func _remove(a: Dictionary, cause: String) -> void:
@@ -1004,9 +1563,10 @@ func _arrive(species: String) -> Dictionary:
 	var exits: Array[Vector2]=scene.exits()
 	var exit: Vector2=exits[-1] if rng.randf()<0.5 else exits[0]
 	var band: Array=_bands[species]
-	a.x=clampf(exit.x,_roam_x.x,_roam_x.y)
-	if a.has("home"):
-		a.y=clampf(exit.y,band[0],band[1])
+	var at:=Vector2(clampf(exit.x,_roam_x.x,_roam_x.y),clampf(exit.y,band[0],band[1]) if a.has("home") else a.y)
+	at=_clear_spot(species,at)
+	a.x=at.x
+	a.y=at.y
 	a.tx=a.x
 	a.ty=a.y
 	state.ledger["in"]+=a.body+a.energy
@@ -1082,6 +1642,12 @@ static func validate(saved: Dictionary) -> bool:
 		return false
 	if not saved.get("scene") is String or not ReefScene.ids().has(saved.scene):
 		return false
+	# Decor (S5): every scene's, each naming exactly its slots with styles they allow.
+	if not saved.get("decor") is Dictionary or saved.decor.size()!=ReefScene.ids().size():
+		return false
+	for id: String in ReefScene.ids():
+		if not _scene_of(id).valid_decor(saved.decor.get(id)):
+			return false
 	for key: String in ["seed","next_id","motion_ticks","ecology_ticks"]:
 		if not saved.get(key) is int or saved[key]<0:
 			return false
@@ -1128,6 +1694,9 @@ static func validate(saved: Dictionary) -> bool:
 		for key: String in ["vx","vy","relocated_at","avoid_x","avoid_y","heading","pitch","speed","thrust","turn"]:
 			if a.has(key) and not _number(a[key]):
 				return false
+		# On a route round an obstacle (S5): planned from nav_x/nav_y to nav_tx/nav_ty, on leg nav_k.
+		if a.has("nav_tx") and (not ["nav_x","nav_y","nav_tx","nav_ty"].all(func(k): return _number(a.get(k))) or not a.get("nav_k") is int or a.nav_k<0):
+			return false
 		# The new fish carry their home (HOME): {kind, slot, i} and its point home_x/home_y.
 		if HOME.has(a.species) and not _valid_home(a):
 			return false

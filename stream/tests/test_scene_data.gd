@@ -142,9 +142,40 @@ func scene_checks(RS: GDScript, id: String) -> void:
 			open=clear
 			y+=2.0
 		check(open,id+": band of "+sp+" keeps an open horizontal channel with every obstacle placed")
+	decor_api_checks(s,id)
 	# Exits sit off screen, one each side.
 	var ex: Array=s.exits()
 	check(ex.size()>=2 and ex.any(func(p): return p.x<0.0) and ex.any(func(p): return p.x>1280.0),id+": exits on both sides, off screen")
+
+# S5 query API (plan §3.2, §6.4): which styles a slot allows, the obstacles of a decor, and the
+# named decor sets the tests and long runs use: "default", "min" (required slots only) and "max"
+# (every slot filled with its style of the largest obstacle area).
+func area(s: RefCounted, slot_id: String, style: String) -> float:
+	var total: float=0.0
+	for o: Dictionary in s.effects(slot_id,style).obstacles:
+		total+=PI*o.rx*o.ry
+	return total
+
+func decor_api_checks(s: RefCounted, id: String) -> void:
+	if not s.has_method("preset"):
+		check(false,id+": ReefScene.preset, allows and obstacles exist (S5)")
+		return
+	check(s.preset("default")==s.default_decor(),id+": the default preset is the slots' defaults")
+	var lo: Dictionary=s.preset("min")
+	var hi: Dictionary=s.preset("max")
+	for slot: Dictionary in s.slots():
+		check(s.allows(slot.id,"")==(slot.required==""),id+": slot "+slot.id+" may be emptied only when not required")
+		check(slot.styles.all(func(st): return s.allows(slot.id,st)) and not s.allows(slot.id,"no_such_style") and not s.allows("no_such_slot",slot.styles[0]),id+": slot "+slot.id+" allows exactly its styles")
+		check(lo[slot.id]==(slot.default if slot.required!="" else ""),id+": min keeps "+slot.id+" only if required")
+		var best: float=0.0
+		for st: String in slot.styles:
+			best=maxf(best,area(s,slot.id,st))
+		check(s.allows(slot.id,hi[slot.id]) and hi[slot.id]!="" and area(s,slot.id,hi[slot.id])==best,id+": max fills "+slot.id+" with its largest obstacle ("+hi[slot.id]+")")
+	check(lo.size()==s.slots().size() and hi.size()==s.slots().size() and s.preset("nothing").is_empty(),id+": presets name every slot; an unknown preset is empty")
+	var want: Array=s.terrain_obstacles()
+	for slot: Dictionary in s.slots():
+		want.append_array(s.effects(slot.id,hi[slot.id]).obstacles)
+	check(s.obstacles(hi)==want and s.obstacles(lo)==s.terrain_obstacles(),id+": obstacles() is the terrain plus each slot's decor")
 
 func finish() -> void:
 	print(JSON.stringify({"checks":checks,"failures":failures}))

@@ -178,6 +178,7 @@ func _initialize() -> void:
 	lure_checks()
 	chromis_checks()
 	new_cast_checks()
+	decor_checks()
 	var acceptance=preload("res://tests/ecology_acceptance.gd")
 	# Gates derived from the configured cast (docs/ecology.md "Reef v3 cast sizing", criterion C6,
 	# written before the S2 probe), 180 days: the 6 chromis openers must reach old age, the earliest
@@ -946,3 +947,82 @@ func new_cast_checks() -> void:
 		l.advance_live(0.2)
 		curious=curious or l.state.animals.any(func(x): return x.has("home") and x.activity=="Curious")
 	check(not curious,"The new fish ignore the cursor lure")
+
+# Decor (S5, plan §5.1 and H4; user decisions 2026-09-28): state.decor holds each scene's slots
+# {slot_id: style or ""}; set_decor(slot, style) changes the current scene's. A required slot (the
+# anemone, the hitch plant) takes any of its styles but is never cleared; an optional slot takes
+# one of its styles or "". Decor never adds food nor changes a cap: without feeding the ecology is
+# the same whatever the decor (plan §4.5), and set_decor draws from neither rng nor moves anyone.
+func decor_checks() -> void:
+	var w: Variant=StreamWorld.new(42,1000)
+	if not w.has_method("set_decor"):
+		check(false,"StreamWorld.set_decor exists (S5)")
+		return
+	var reef: Variant=ReefScene.open("reef")
+	var ship: Variant=ReefScene.open("shipwreck")
+	check(w.state.decor=={"reef":reef.default_decor(),"shipwreck":ship.default_decor()},"A new world holds each scene's default decor")
+	var before: Dictionary=w.export_state()
+	check(not w.set_decor("anemone",""),"The required anemone cannot be cleared")
+	check(not w.set_decor("hitch_plant",""),"The required hitch plant cannot be cleared")
+	check(not w.set_decor("anemone","seagrass_tall"),"A slot refuses a style it does not list")
+	check(not w.set_decor("s1","wreck_bow"),"An optional slot refuses a style it does not list")
+	check(not w.set_decor("s9","shell") and not w.set_decor("","") ,"An unknown slot is refused")
+	check(var_to_bytes(w.export_state())==var_to_bytes(before),"A refused change changes nothing")
+	var at: Array=w.state.animals.map(func(x): return Vector2(x.x,x.y))
+	check(w.set_decor("anemone","anemone_pink") and w.set_decor("hitch_plant","gorgonian") and w.set_decor("s1","") and w.set_decor("s2","table_coral") and w.set_decor("s3","branch_coral"),"Required slots change style; optional slots take a style or empty")
+	check(w.state.decor.reef=={"anemone":"anemone_pink","hitch_plant":"gorgonian","s1":"","s2":"table_coral","s3":"branch_coral"} and w.state.decor.shipwreck==ship.default_decor(),"Only the current scene's decor changes")
+	check(w.state.animals.map(func(x): return Vector2(x.x,x.y))==at and w.state.animals.all(func(x): return not x.has("relocated_at")),"Changing decor moves nobody at once")
+	check([w.rng.state,w.motion_rng.state]==[int(before.rng),int(before.motion_rng)],"Changing decor draws from neither rng")
+	# Homes follow the decor: the clownfish to the pink anemone, the seahorses onto the gorgonian,
+	# the gramma whose cave went (s1 emptied) to a free cave or rock spot, nobody sharing.
+	var pink: Dictionary=reef.effects("anemone","anemone_pink").anemone
+	check(of(w,"clownfish").all(func(x): return x.home_x==pink.cx and x.home_y==pink.cy),"The clownfish home is the new anemone")
+	var hitches: Array=reef.effects("hitch_plant","gorgonian").hitches
+	check(of(w,"seahorse").all(func(x): return x.home.slot=="hitch_plant" and hitches[x.home.i]==Vector2(x.home_x,x.home_y)) and distinct_homes(of(w,"seahorse")),"Each seahorse holds a hitch point of the new plant")
+	var obs: Array=reef.obstacles(w.state.decor.reef)
+	var clear: Callable=func(x: Dictionary) -> bool: return obs.all(func(o): return Vector2((x.home_x-o.cx)/o.rx,(x.home_y-o.cy)/o.ry).length()>=1.0)
+	check(of(w,"royal_gramma").all(func(x): return x.home.slot!="s1") and distinct_homes(of(w,"royal_gramma")) and w.state.animals.filter(func(x): return x.has("home")).all(clear),"No gramma keeps the cave that went; every home is clear of the obstacles")
+	# Saved, validated, restored.
+	var saved: Dictionary=w.export_state()
+	var back: Variant=StreamWorld.new()
+	check(StreamWorld.validate(saved) and back.restore(saved) and back.state.decor==w.state.decor,"Decor is saved and restored")
+	w.state.light_hour=12.0
+	back.state.light_hour=12.0
+	w.advance_live(300)
+	back.advance_live(300)
+	check(same(w,back),"A restored world with changed decor moves on exactly the same")
+	for bad: Variant in [null,[],{},{"reef":w.state.decor.reef},{"reef":w.state.decor.reef,"shipwreck":ship.default_decor(),"lagoon":{}}]:
+		var v: Dictionary=w.export_state()
+		if bad==null:
+			v.erase("decor")
+		else:
+			v.decor=bad
+		check(not StreamWorld.validate(v),"Malformed decor rejected: %s" % str(bad).left(60))
+	var edits: Array=[["anemone",""],["hitch_plant",""],["anemone","shell"],["s1","wreck_bow"],["s2",7]]
+	for e: Array in edits:
+		var v: Dictionary=w.export_state()
+		v.decor.reef[e[0]]=e[1]
+		check(not StreamWorld.validate(v),"Invalid decor %s=%s rejected" % [e[0],str(e[1])])
+	var v2: Dictionary=w.export_state()
+	v2.decor.reef.erase("s3")
+	check(not StreamWorld.validate(v2),"A decor missing a slot is rejected")
+	v2=w.export_state()
+	v2.decor.reef.s4=""
+	check(not StreamWorld.validate(v2),"A decor with an unknown slot is rejected")
+	# Decor never changes the ecology: same seed, no feeding, default / min / max decor of both
+	# scenes: 30 days offline then 2 hours live, the same totals, causes, history, pools and
+	# population (plan §4.5; the cloud matrix relies on it).
+	var runs: Dictionary={}
+	for scene_id: String in ["reef","shipwreck"]:
+		for preset: String in ["default","min","max"]:
+			var cls: Variant=StreamWorld
+			var r: Variant=cls.new(11,1000,scene_id)
+			var d: Dictionary=r.scene.preset(preset)
+			for slot: String in d:
+				r.set_decor(slot,d[slot])
+			r.state.light_hour=12.0
+			offline(r,StreamWorld.DAY*30)
+			r.advance_live(7200)
+			runs[scene_id+"/"+preset]=var_to_bytes([r.state.totals,r.state.causes,r.state.history,r.state.resources,r.counts(),r.rng.state,r.state.animals.map(func(x): return [x.id,x.species,x.energy,x.age,x.body])])
+	var base: PackedByteArray=runs["reef/default"]
+	check(runs.values().all(func(x): return x==base),"Without feeding the decor and scene change nothing in the ecology (%s)" % str(runs.keys().filter(func(k): return runs[k]!=base)))

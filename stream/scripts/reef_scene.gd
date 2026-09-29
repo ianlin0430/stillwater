@@ -132,6 +132,58 @@ func default_decor() -> Dictionary:
 		out[s.id]=s.default
 	return out
 
+# True when `style` may go in `slot_id`: one of the slot's styles, or "" (empty) for a slot that is
+# not required. The anemone and the hitch plant change style but are never cleared (S5).
+func allows(slot_id: String, style: String) -> bool:
+	var s: Dictionary=slot(slot_id)
+	if s.is_empty():
+		return false
+	return s.styles.has(style) if style!="" else s.required==""
+
+# True when `decor` names exactly this scene's slots, each with a style it allows.
+func valid_decor(decor: Variant) -> bool:
+	if not decor is Dictionary or decor.size()!=data.get("slots",[]).size():
+		return false
+	for s: Dictionary in slots():
+		if not decor.get(s.id) is String or not allows(s.id,decor[s.id]):
+			return false
+	return true
+
+# Every obstacle with this decor ({slot_id: style}), world coordinates: the terrain's, then each
+# slot's in scene order.
+func obstacles(decor: Dictionary) -> Array:
+	var out: Array=terrain_obstacles()
+	for s: Dictionary in slots():
+		out.append_array(effects(s.id,decor.get(s.id,"")).obstacles)
+	return out
+
+# A named decor, {slot_id: style or ""}: "default" (each slot's default), "min" (the required
+# slots at their default, the others empty) or "max" (every slot holding its style of the largest
+# obstacle area, the earlier listed on a tie; a required slot whose styles have none keeps its
+# default). The extremes going around obstacles is tested on (plan §6.4). {} for another name.
+func preset(name: String) -> Dictionary:
+	var out: Dictionary={}
+	for s: Dictionary in slots():
+		match name:
+			"default":
+				out[s.id]=s.default
+			"min":
+				out[s.id]=s.default if s.required!="" else ""
+			"max":
+				var best: String=s.default
+				var most: float=-1.0
+				for style: String in s.styles:
+					var area: float=0.0
+					for o: Dictionary in effects(s.id,style).obstacles:
+						area+=PI*o.rx*o.ry
+					if area>most and (area>0.0 or s.required==""):
+						best=style
+						most=area
+				out[s.id]=best
+			_:
+				return {}
+	return out
+
 # Structure errors (empty when the scene and the decor it uses are well formed).
 # Geometry against the species caps is checked by tests/test_scene_data.gd.
 func validate() -> Array[String]:
