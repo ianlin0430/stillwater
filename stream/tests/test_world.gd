@@ -1010,8 +1010,9 @@ func decor_checks() -> void:
 	v2.decor.reef.s4=""
 	check(not StreamWorld.validate(v2),"A decor with an unknown slot is rejected")
 	# Decor never changes the ecology: same seed, no feeding, default / min / max decor of both
-	# scenes: 30 days offline then 2 hours live, the same totals, causes, history, pools and
-	# population (plan §4.5; the cloud matrix relies on it).
+	# scenes: 10 days offline then 2 hours live, the same totals, causes, history, pools and
+	# population (plan §4.5; the cloud matrix relies on it; the 180-day version is the cast_probe
+	# decor run, docs/ecology.md "S5").
 	var runs: Dictionary={}
 	for scene_id: String in ["reef","shipwreck"]:
 		for preset: String in ["default","min","max"]:
@@ -1021,7 +1022,7 @@ func decor_checks() -> void:
 			for slot: String in d:
 				r.set_decor(slot,d[slot])
 			r.state.light_hour=12.0
-			offline(r,StreamWorld.DAY*30)
+			offline(r,StreamWorld.DAY*10)
 			r.advance_live(7200)
 			runs[scene_id+"/"+preset]=var_to_bytes([r.state.totals,r.state.causes,r.state.history,r.state.resources,r.counts(),r.rng.state,r.state.animals.map(func(x): return [x.id,x.species,x.energy,x.age,x.body])])
 	var base: PackedByteArray=runs["reef/default"]

@@ -132,7 +132,7 @@ const SEPARATE: Dictionary = {"margin":1.2,"look":5.0,"gain":1.6,"close":1.05,"s
 const OBSTACLE: Dictionary = {"pad":4.0,"body":0.8,"escape":0.6,"hold":0.35,"out":1.0}
 # Routes round obstacles (S5): planned on a grid of `cell` px (A*), again only once the aim moves
 # more than `replan` px (or the fish has been pushed that far off its route).
-const NAV: Dictionary = {"cell":10.0,"replan":24.0}
+const NAV: Dictionary = {"cell":10.0,"replan":24.0,"leave":3.0}
 const NAMES: Dictionary = {"green_chromis":["Jade","Mint","Lagoon","Kelp","Glass","Pearl"],"clownfish":["Poppy","Ember"],"seahorse":["Drift","Kelpie"],"royal_gramma":["Violet","Dusk"]}
 var rng := RandomNumberGenerator.new()
 var motion_rng := RandomNumberGenerator.new()
@@ -581,7 +581,7 @@ func _move(delta: float) -> void:
 		# scull up the difference, with its forward stroke kept to the level part (_swim `climbing`).
 		# (Near an obstacle, within 1.3 x its widened radii, it rises and sinks by sculling only, never
 		# by swimming on forward: a climb does not carry it into the obstacle.)
-		var climbing: bool=_close>0.0
+		var climbing: bool=_close>0.0 and (way!=Vector2.ZERO or follower)
 		if way!=Vector2.ZERO:
 			var steep: float=absf(way.y)-absf(way.x)*sin(cfg.pitch)
 			if steep>0.0 and not _escaping:
@@ -623,7 +623,8 @@ func _move(delta: float) -> void:
 		desired+=steer
 		# Nor does it push a body into an obstacle (S5): near one's widened edge the part heading in
 		# fades out.
-		desired=_hold_off(p,desired,radii,cruise)
+		# (On a route it does not ease out: the route already leads out of the widened edge.)
+		desired=_hold_off(p,desired,radii,cruise if way==Vector2.ZERO else 0.0)
 		# Soft edges: what steering adds toward a band edge or a side wall eases off over the last
 		# `edge` px (arriving already stops at its in-band target).
 		desired.y*=clampf(((p.y-band[0]) if desired.y<0 else (band[1]-p.y))/SWIM.edge,0.0,1.0)
@@ -890,7 +891,9 @@ func _radii_of(a: Dictionary) -> PackedVector2Array:
 # and if inside the obstacle itself, `fallback` (a Vector2.INF fallback keeps it: a fish's route
 # then ends as near as it gets, _navigate).
 func _clear_of(t: Vector2, band: Array, radii: PackedVector2Array, fallback: Vector2) -> Vector2:
-	for k in 3:
+	# (Three rounds straight out; then, for a spot squeezed between two, three rounds straight up
+	# or down, the nearer way that stays in the band.)
+	for k in 6:
 		var moved: bool=false
 		for i in _obstacles.size():
 			var o: Dictionary=_obstacles[i]
@@ -900,10 +903,17 @@ func _clear_of(t: Vector2, band: Array, radii: PackedVector2Array, fallback: Vec
 			if q>=1.0:
 				continue
 			moved=true
-			var dir: Vector2=n/q if q>0.0001 else Vector2(0.0,-1.0)
-			var out:=Vector2(o.cx+dir.x*r.x*1.001,o.cy+dir.y*r.y*1.001)
-			if out.y<band[0] or out.y>band[1]:
-				out=Vector2(o.cx+(1.0 if t.x>=o.cx else -1.0)*r.x*sqrt(maxf(0.0,1.0-n.y*n.y))*1.001,t.y)
+			var out: Vector2
+			if k<3:
+				var dir: Vector2=n/q if q>0.0001 else Vector2(0.0,-1.0)
+				out=Vector2(o.cx+dir.x*r.x*1.03,o.cy+dir.y*r.y*1.03)
+				if out.y<band[0] or out.y>band[1]:
+					out=Vector2(o.cx+(1.0 if t.x>=o.cx else -1.0)*r.x*sqrt(maxf(0.0,1.0-n.y*n.y))*1.03,t.y)
+			else:
+				var half: float=r.y*sqrt(maxf(0.0,1.0-n.x*n.x))*1.03
+				var up: float=o.cy-half
+				var down: float=o.cy+half
+				out=Vector2(t.x,up if up>=band[0] and (t.y-up<=down-t.y or down>band[1]) else down)
 			t=Vector2(clampf(out.x,_swim_x.x,_swim_x.y),clampf(out.y,band[0],band[1]))
 		if not moved:
 			return t
@@ -931,6 +941,9 @@ func _aim(a: Dictionary, radii: PackedVector2Array = PackedVector2Array()) -> Ve
 func _hold_off(p: Vector2, v: Vector2, radii: PackedVector2Array, cruise: float) -> Vector2:
 	for i in _obstacles.size():
 		var o: Dictionary=_obstacles[i]
+		# (Not beside its own home, where only its centre keeps out: a gramma at its cave.)
+		if radii[i].x<=o.rx+OBSTACLE.pad+0.001:
+			continue
 		var r: Vector2=radii[i]*(1.0+OBSTACLE.hold)
 		var P:=Vector2((p.x-o.cx)/r.x,(p.y-o.cy)/r.y)
 		var q: float=P.length()
@@ -968,7 +981,16 @@ func _blocker(p: Vector2, t: Vector2, radii: PackedVector2Array, skip: int) -> i
 		var d:=Vector2(way.x/r.x,way.y/r.y)
 		var s: float=clampf(-P.dot(d)/maxf(d.length_squared(),1.0e-12),0.0,1.0)
 		if (P+d*s).length()>=minf(1.0,P.length())-0.001:
-			continue
+			# (From inside the widened edge a line may run level or out, but never across the
+			# obstacle itself.)
+			if P.length()>=1.0:
+				continue
+			var R0:=Vector2((p.x-o.cx)/o.rx,(p.y-o.cy)/o.ry)
+			var D:=Vector2(way.x/o.rx,way.y/o.ry)
+			var u: float=clampf(-R0.dot(D)/maxf(D.length_squared(),1.0e-12),0.0,1.0)
+			if R0.length_squared()<1.0 or (R0+D*u).length()>=1.0:
+				continue
+			s=u
 		if length*s<nearest:
 			nearest=length*s
 			first=i
@@ -1031,8 +1053,10 @@ func _navigate(a: Dictionary, p: Vector2, t: Vector2, radii: PackedVector2Array)
 		a.nav_tx=end.x
 		a.nav_ty=end.y
 	# Always at least the end of its leg; on along the next legs as far as it sees.
+	# (At the end of its leg it goes on to the next even if its view is cut: the route was planned
+	# for its size, the corner it cannot see round is one it is already at.)
 	var k: int=clampi(int(a.nav_k),0,route.size()-2)
-	while k+2<route.size() and _blocker(p,route[k+2],radii,-1)<0:
+	while k+2<route.size() and (_blocker(p,route[k+2],radii,-1)<0 or p.distance_to(route[k+1])<NAV.cell*0.5):
 		k+=1
 	a.nav_k=k
 	if k+2>=route.size():
@@ -1062,8 +1086,8 @@ func _route(a: Dictionary) -> PackedVector2Array:
 
 # The water a fish of this species and size can use, on a grid of NAV.cell px: 0 open, 1 within an
 # obstacle widened by OBSTACLE.body x its half body (a route only leaves such an edge, never goes
-# deeper into it, except to end there), 2 no water for it (an obstacle widened by `pad`, outside its
-# band or the swimming width, the sand). The second array holds how deep in the widened edge a cell
+# deeper into it, except to end there), 2 no water for it (within `pad` of an obstacle, outside its
+# band or the swimming width, the sand: only crossed on the way out of such a spot), 3 an obstacle. The second array holds how deep in the widened edge a cell
 # lies (the least normalised distance, below 1). Built when first needed, for the current decor.
 func _grid(cls: String, species: String, scale: float) -> Array:
 	if _grids.has(cls):
@@ -1085,21 +1109,23 @@ func _grid(cls: String, species: String, scale: float) -> Array:
 		var near: Array=_obstacles.filter(func(o): return absf(x-o.cx)<o.rx+half.x)
 		for gy in h:
 			var y: float=(gy+0.5)*c
-			var v: int=0
-			if x<_swim_x.x or x>_swim_x.y or y<top or y>bottom:
-				v=2
-			else:
-				for o: Dictionary in near:
-					var dx: float=(x-o.cx)/(o.rx+OBSTACLE.pad)
-					var dy: float=(y-o.cy)/(o.ry+OBSTACLE.pad)
-					if dx*dx+dy*dy<1.0:
-						v=2
-						break
-					dx=(x-o.cx)/(o.rx+half.x)
-					dy=(y-o.cy)/(o.ry+half.y)
-					if dx*dx+dy*dy<1.0:
-						v=1
-						depth[gy*w+gx]=minf(depth[gy*w+gx],sqrt(dx*dx+dy*dy))
+			var v: int=2 if x<_swim_x.x or x>_swim_x.y or y<top or y>bottom else 0
+			for o: Dictionary in near:
+				var dx: float=(x-o.cx)/o.rx
+				var dy: float=(y-o.cy)/o.ry
+				if dx*dx+dy*dy<1.0:
+					v=3
+					break
+				dx=(x-o.cx)/(o.rx+OBSTACLE.pad)
+				dy=(y-o.cy)/(o.ry+OBSTACLE.pad)
+				if dx*dx+dy*dy<1.0:
+					v=2
+					continue
+				dx=(x-o.cx)/(o.rx+half.x)
+				dy=(y-o.cy)/(o.ry+half.y)
+				if dx*dx+dy*dy<1.0 and v<2:
+					v=1
+					depth[gy*w+gx]=minf(depth[gy*w+gx],sqrt(dx*dx+dy*dy))
 			g[gy*w+gx]=v
 	_grids[cls]=[g,depth]
 	return _grids[cls]
@@ -1154,11 +1180,16 @@ func _plan(cls: String, species: String, scale: float, from: Vector2, to: Vector
 			if nx<0 or ny<0 or nx>=w or ny>=h:
 				continue
 			var n: int=ny*w+nx
-			if done[n]==1 or g[n]==2:
+			# (Out of a cell with no water for it, only where it started, beside its own home or
+			# pressed to a band edge, it may cross such cells for `leave` cells to get out; never an
+			# obstacle itself.)
+			var out: bool=g[cell]>=2 and cost[cell]<=NAV.leave
+			var closed: int=3 if out else 2
+			if done[n]==1 or g[n]>=closed:
 				continue
-			if g[n]==1 and n!=goal and depth[n]<depth[cell]-0.001:
+			if g[n]==1 and n!=goal and depth[n]<(0.0 if out else depth[cell])-0.001:
 				continue
-			if dx!=0 and dy!=0 and (g[cy*w+nx]==2 or g[ny*w+cx]==2):
+			if dx!=0 and dy!=0 and (g[cy*w+nx]>=closed or g[ny*w+cx]>=closed):
 				continue
 			var step: float=cost[cell]+(1.41421356 if dx!=0 and dy!=0 else 1.0)
 			if step<cost[n]:
