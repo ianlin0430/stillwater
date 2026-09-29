@@ -282,6 +282,19 @@ Result: **32/32 seeds pass at 180 days and at 365 days.** 180 days: floor hits 0
 | 123456 | 0 | 11.86 (40.1) | 12–18 (16.4) | 19 / 11 | 24 | 8/3/4/3 | 5/2/2/2 | 0 |
 | 999983 | 0 | 14.15 (39.4) | 12–18 (16.4) | 23 / 8 | 26 | 8/2/4/3 | 6/2/2/2 | 0 |
 
+
+### S5: decor does not change the ecology (2026-09-30)
+
+S5 made decor slots and obstacles real (`state.decor`, `set_decor`, fish route round obstacles). Decor is presentation and habitat only: no food, no cap, no ecology RNG draw (homes are assigned by distance, positions pushed clear of obstacles without any draw). Criterion (plan Q3, written before the run): offline, no feeding, 180 days, all 32 `WIDE` seeds, each non-default scene/decor gives the same result as the reef with its default decor, and that result still passes C1–C6.
+
+Command (from `stream/`, one seed per process, six at a time; configs add `"scene"` and `"decor"` to `tools/probes/2026-09-28-s4-rerun.json`, e.g. `{"name":"mf1.2-8/3/4/3","floor":0.1,"scene":"shipwreck","decor":"max"}`):
+
+```
+godot --headless --path . --script tools/cast_probe.gd -- --config=<cfg>.json --seeds=<seed> --days=180
+python3 tools/probes/s2_sweep.py judge <32 lines>.jsonl
+```
+
+Result: for reef `min`, reef `max`, shipwreck `min` and shipwreck `max` the whole JSON line (every count, pool minimum and mean, sizes by day, births, deaths, arrivals, floor hits, residual; timing aside) is **identical** to reef `default` on **32/32** seeds. C1–C6: **32/32 pass** for every one of the five (worst seed 13, microfauna minimum 10.89; tightest retained births/arrivals 7/6 on seed 202; population 12–18) — the same numbers as the S4 re-run. `tests/test_world.gd` also checks it (6 scene/decor sets, 10 days offline and 2 hours live, byte-identical ecology).
 ## Sizing (offline probe before committing numbers)
 
 Superseded for the reef v3 cast by the section above; kept as the record of the earlier casts.
