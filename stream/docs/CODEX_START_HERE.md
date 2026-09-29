@@ -1,5 +1,10 @@
 # 給 Codex 的指令
 
+> **2026-09-29 S4 換陣容已完成、在分支 `s4-cast-swap`（`2f9f72a`，接在 main 之上），只差你一個測試修正就能合併**：backend 已改成只送 `green_chromis`、`clownfish`、`seahorse`、`royal_gramma`。在這個分支上，除了 `test_frontend` 的兩條「Cruising fish render within 25% of true speed」（一般版與 jittered 版）以外，所有前後端測試都綠。這兩條失敗是因為測試靠黃金吊的平穩巡游找樣本（速度 >8 px/s、連續 13 格變化 <3%），新陣容沒有這樣的魚。
+> - 請**修測試的情境、不要改門檻**（使用者規則：不為過關放寬門檻）：在測試裡安排一條穩定巡游的魚當樣本，例如把一隻 chromis 或海馬的 `tx` 設到遠處、`decision_at` 設很後面，讓牠穩定游過 ≥60 格。
+> - 請在 `s4-cast-swap` 分支上測（`git worktree add <路徑> s4-cast-swap`），修好後 commit 在 main 上（只 commit `tests/test_frontend.gd`），並告訴 Claude；Claude 會把 S4 合併進 main 並跑全部測試。
+> - S4 新欄位：新魚有 `home{kind,slot,i}`、`home_x`、`home_y`；state 有 `scene`、可缺的 `rescue`、`totals.floor_hits`。活動暫時是 `Hovering`／`Resting`／`Feeding`／`Startled`（S6–S8 會換成各魚專屬）。BODY 用你在 PROVENANCE 給的保守值。S4 合併後，你就可以移除 tang／firefish／blenny 的前端與測試，並更新 CI core job 的前端測試清單。
+
 > **2026-09-29 使用者決定畫風統一（最優先）**：使用者看了兩個場景的疊圖後說「統一成沉船花園那種畫風」。
 > - **礁岩場景重畫**成沉船花園 v2 的風格：色塊平塗、低碎紋、飽和的珊瑚色、同樣的像素粗細與光線處理。構圖可以保留（左側大岩礁、右側小岩礁、中間沙地），但畫法照沉船花園。
 > - **裝飾**（12 款）與**四種魚**也要跟這個畫風一致；有不搭的款式請一起調，並出一張「兩個場景＋裝飾＋四種魚」的總覽圖給使用者核可。
