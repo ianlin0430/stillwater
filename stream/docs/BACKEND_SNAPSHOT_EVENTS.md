@@ -2,6 +2,7 @@
 
 更新：2026-09-27（大魚繞小魚：休息中、或被夾在水層邊緣／牆邊的綠光鰓雀鯛不再讓黃金吊，由黃金吊從上方或下方繞一個大弧；同日 review 修正：整群走同一側、垂直經過時沿切線繞開、休息的黃金吊會游離休息 chromis、黃金吊轉向與速度不再突跳，新增 `around_x`/`around_y`；見「身體不重疊」「綠光鰓雀鯛休息」）。2026-09-26 晚（黃金吊啃食改成側面：身體中心離嘴半個身長 `TANG.reach`＝61 px × 體型，岩石點剩 4 個；綠光鰓雀鯛會避開啃食中黃金吊的身體；綠光鰓雀鯛休息時平穩懸停、不再上下抖，見「黃金吊」「自然游動欄位」）。2026-09-26（自然游動欄位 heading/pitch/speed/thrust/turn/roll/flick、身體不重疊、blenny 避開紫雷達洞口；見「自然游動欄位」）。2026-09-25（最終四物種：花園鰻移除；紫雷達洞口重新排開；黃金吊岩石點互斥；新增 `ate` 事件）。實作在 `scripts/stream_world.gd`，測試 `tests/test_presentation.gd`、`tests/test_world.gd`（`eel_checks`、`feeding_checks`、`blenny_checks`、`firefish_checks`、`chromis_checks`、`tang_checks`、`reef_cast_checks`）。
 > **2026-09-28 存檔 v3（S3，`8965125`）**：新存檔 `user://reef.world`，外層格式 `stillwater-reef-3`，world `version`＝3，只接受 v3，沒有任何舊格式升級。偏好設定若還記著舊的 `stream.world`（格式 `stillwater-stream-1`），`StreamStore.load_or_create` 不解開、不改、不刪它，改用同資料夾的 `reef.world` 並在回傳加 `legacy:true`（不再產生 `stream-recovery-*.world`）。state 裡拿掉的欄位：`reef_cast`、`totals.molt`、`totals.predation`、個體的 `next_molt`／`molting_until`／`shelter`。魚種仍是舊的四種，S4 才換成新陣容。
+> **2026-09-29 裝飾與障礙物（S5）**：新增 `state.decor` 與 `world.set_decor(slot, style) -> bool`，障礙物繞行；見下方「裝飾與障礙物」。
 > **2026-09-28 換陣容（S4）**：`ACTIVE_SPECIES` = `green_chromis`、`clownfish`、`seahorse`、`royal_gramma`（這個順序；`counts()` 就是這四個鍵）。黃金吊、紫雷達、草食鳚的後端程式全部刪除，`SPECIES` 只有這四種，含舊魚種的 v3 存檔 `validate()` 會拒絕（S3 之後沒有正式版存檔含舊魚）。上限 8/3/4/3＝18、開場 6/2/2/2＝12。新增：state 的 `scene`（字串，目前一律 `"reef"`）、可缺的 `rescue`（{物種: 救援到達時間}）、`totals.floor_hits`；新魚的 `home`／`home_x`／`home_y`（見文末「珊瑚礁 v3 陣容」）。拿掉的個體欄位：`burrow_x/burrow_y/hover_y/extend/flick`（紫雷達）、`contact_x/contact_y/roll/chew_until/around_x/around_y`（黃金吊）。沙床、水層、x 範圍、出入口改從場景檔讀（`ReefScene`，`data/scenes/reef.json`）：`world.bed_y(x)`、`world.band(species)`；靜態的 `StreamWorld.floor_y(x)` 保留給前端，等於預設場景的床面。**不會餓死、不會死光**兩個保證見「珊瑚礁 v3 陣容」。
 
 前端契約（Codex）見 `FRONTEND_BACKEND_CONTRACT.md`；本檔只描述 backend 提供什麼。
@@ -241,6 +242,27 @@ events 只保留 160 筆；若 `events_after` 最舊一筆 `seq > cursor+1`，�
 - **不會餓死**（`StreamWorld.FLOOR`＝0.1）：能量有下限 0.1×reserve；代謝只付到下限，付不起的就不付（不從任何池子扣，帳本仍平衡）；成長也不會把能量拉到下限以下；繁殖要 0.74×reserve，所以在下限時不會繁殖。碰到下限的「隻×分鐘」記在 `totals.floor_hits`（平常應該是 0）。死因不再有 `starvation`。
 - **不會死光**：某種魚只剩最後一隻時，到了壽命也先不老死，等到有同伴（出生或救援）才走；某種魚 ≤ `RESCUE_AT`（1）時，每小時檢查排一個救援（一次亂數，2–22 小時後），24 小時內必到；排定的時間存在 state 的 `rescue`，數量回升就取消。
 - 事件照舊（`begin/birth/dispersal/arrival/death/ate/fed`）；`death.cause` 只會是 `"old age"`。
+
+## 裝飾與障礙物（2026-09-29，S5；給 Codex 的 H4）
+
+**狀態**：`state.decor` = `{"reef": {slot_id: style 或 ""}, "shipwreck": {slot_id: style 或 ""}}`。**每個場景各記一份**（切場景時用自己那份，S11），新世界兩份都是場景檔各槽的 `default`。目前場景是 `state.scene`，所以畫面該用 `snapshot.decor[snapshot.scene]`。一定存在、會存檔，`validate()` 會檢查：兩個場景都要有、每份剛好是該場景的所有槽、每個值是該槽 `styles` 裡的一款或 `""`，必備槽（`required` 是 `anemone`／`hitch`）不能是 `""`。缺 `decor` 的存檔（只有 S4 分支上產生過）不收。
+
+**換裝飾**：`world.set_decor(slot: String, style: String) -> bool`。
+- 合法：`style` 是該槽的一款；或 `""`（清空）但只限非必備槽。其他（未知槽、不在清單的款式、清空海葵或必備水草）回 `false`，**什麼都不改**。和現值相同回 `true`、不做事。
+- 只改目前場景那一份；不產生事件、不進日誌；不抽任何亂數（`rng`、`motion_rng` 都不動）；**不瞬間移動任何魚**，不設 `relocated_at`。
+- 家跟著換：家還在（例如海葵換款式、同一個勾點編號還在）就更新 `home_x/home_y`；家沒了（例如洞所在的槽清空）就改成離舊家最近的空位（范魚沒洞就用 `rock`），然後自己游過去。
+- 剛放下的障礙物蓋住的魚：**自己平順游出來**（朝最短的方向、不往沙裡鑽），不瞬移；實測 3 種魚都在 1.4–4 秒內出來、每步不超過正常游速上限、出來後不再進去。
+- 查詢（前端也用，別自己解析）：`ReefScene.allows(slot, style)`、`valid_decor(decor)`、`obstacles(decor)`（地形＋各槽裝飾的障礙橢圓，世界座標）、`preset("default"|"min"|"max")`（`min`＝只有必備槽、其他清空；`max`＝每槽都放障礙面積最大的那款）。
+
+**障礙物效果**（每一隻會游的魚都一樣）：
+- 障礙＝場景 `terrain_obstacles` ＋ 目前裝飾各槽 `obstacles`（軸對齊橢圓）。魚的**中心永遠不在障礙橢圓裡**（硬保證：一步會跨過邊就沿邊滑，不算重定位）。
+- 瞄準點若落在「障礙＋0.8×半個身體」內，就推到外緣；直線被擋就沿**規劃好的路線**繞（10 px 格子上的 A*，只在目標移動超過 24 px 或被推離路線時重算），並朝「路線上看得到的最遠點」游，所以是一道連續的弧；太陡（超過魚能抬頭的角度）就放慢、用胸鰭慢慢升降。
+- 家旁邊的例外：魚自己的家點在某障礙的加寬範圍內（范魚在洞口、海馬勾在岩石上的勾點）時，對那塊障礙只保留中心 4 px 距離，可以貼著它。
+- 其他魚的推擠、魚群間距不會把魚推進障礙（靠近時往內的分量會淡掉）。
+- **新的存檔欄位（前端不必讀）**：繞行中的魚有 `nav_x/nav_y/nav_tx/nav_ty`（數字，路線的起點與終點）與 `nav_k`（整數，走到第幾段）；沒在繞時不存在。只是為了讀檔後繼續走同一條路（逐位元重現），畫面不需要用。
+- 游動欄位（`heading/pitch/speed/thrust/turn/vx/vy`）意義不變；滑邊那一步的 `vx/vy` 是實際位移。
+
+**生態**：裝飾只影響位置與動作，不加食物、不改上限、不抽生態亂數；不餵食時，不同場景／裝飾的生態結果逐位元相同（`test_world` 的 decor 檢查、`cast_probe` 32 個 seed 180 天，見 `ecology.md`「S5」）。
 
 ## 已移除：舊珊瑚礁陣容（2026-09-24/25；S4 起 backend 不再產生，以下只是紀錄）
 

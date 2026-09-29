@@ -498,7 +498,7 @@
 - 完成：上列後端測試全綠；`long_run.gd --mode=offline --days=180 --seeds=<WIDE 全部> --year=false` 印 `ACCEPTANCE PASS`；`--mode=live --days=1 --seeds=42` 的 `audit_space` 0 違規。
 - Codex：**H3（最重要的交接）**——這片一落地，後端就不再送 tang/firefish/blenny。落地前要 Codex 先讓 stage 在「看到不認得的物種」時不當掉（畫佔位或不畫），並同意前端測試在那之後由 Codex 更新；`core` job 裡的 `test_frontend`、`test_reef_animation` 可能暫時紅，要事先講好（Q5 附帶）。
 
-**S5 裝飾障礙物與繞行、`set_decor`**
+**S5 裝飾障礙物與繞行、`set_decor`**　〔進度：2026-09-29/30 完成於分支 `s4-cast-swap`（疊在 S4 上）。`state.decor`（每場景一份）、`set_decor()`、`ReefScene.allows/valid_decor/obstacles/preset`。做法與草案不同：單一橢圓切線繞行會卡在重疊橢圓的縫裡（沉船場景），改成「直線可見就直走，否則走 10 px 格子 A* 路線、朝路線上看得到的最遠點游」；軟門檻的加寬用 0.8×半身。使用者 2026-09-29 的要求取代 §5.1 的「被新障礙蓋住就推到外緣」：改為自己平順游出來、不瞬移。`test_natural_motion` 的障礙檢查（2 場景 × min/max × 8 seed × 23 分鐘）：中心入侵 0、身體重疊最大 0.199、卡住 0、多餘翻身 0、繞行不比開放水域抖。`long_run.gd` 加 `--scene/--decor`（分段續跑暫不支援，S14）與障礙入侵審計。數字見 `ecology.md`「S5」與交接報告〕
 - 目標：§3.2；`state.decor`、`set_decor()`；chromis 繞障礙。
 - 檔案：`scripts/stream_world.gd`、`tests/test_natural_motion.gd`、`tests/test_world.gd`、`tests/long_run.gd`（`audit_space` 加障礙）。
 - 先寫的失敗測試：`test_natural_motion`：「`max` 裝飾組合、8 個 seed、白天 15 分鐘，任何魚的中心在障礙橢圓內的 tick 數＝0」。
