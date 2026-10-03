@@ -113,7 +113,7 @@ const SWIM: Dictionary = {
 	"seahorse":{"cruise":4.0,"turn":1.0,"pitch":0.2,"pitch_rate":0.3,"drag":0.6,"push":2.0,"gap":0.0,"respond":0.8,"row":0.05,"stroke":1.2,"brake":4.0,"scull":3.0,"drift":0.1},
 	"royal_gramma":{"cruise":13.0,"turn":3.5,"pitch":0.6,"pitch_rate":0.7,"drag":0.9,"push":2.0,"gap":0.3,"brake":22.0,"scull":5.0,"drift":0.15},
 	"startle_speed":2.4,"startle_turn":4.0,"turn_gain":3.0,"edge":40.0,"ramp":2.0}
-const SEPARATE: Dictionary = {"margin":1.2,"look":5.0,"gain":1.6,"close":1.05,"same":1.25}
+const SEPARATE: Dictionary = {"margin":1.2,"look":5.0,"gain":1.6,"close":1.05,"same":1.25,"perch":1.15}
 # Obstacles (S5, 2026-09-29; plan §3.2; user 2026-09-28: decor is an obstacle the fish go around,
 # never through, and every move is smooth and natural, not realistic). The obstacles are the
 # scene's terrain plus each slot's decor (ReefScene.obstacles, axis-aligned ellipses). Each swimmer:
@@ -129,7 +129,7 @@ const SEPARATE: Dictionary = {"margin":1.2,"look":5.0,"gain":1.6,"close":1.05,"s
 # never snapped. What else steers it (spacing, making way for other fish) never pushes it into an
 # obstacle: within `hold` beyond its widened radii the part heading in fades out, and inside them it
 # eases back out, by `out` x cruise x how deep it is (_hold_off).
-const OBSTACLE: Dictionary = {"pad":4.0,"body":0.8,"escape":0.6,"hold":0.35,"out":1.0}
+const OBSTACLE: Dictionary = {"pad":4.0,"body":0.8,"escape":0.6,"hold":0.35,"out":1.0,"ahead":1.0,"ahead_on":false}
 # Routes round obstacles (S5): planned on a grid of `cell` px (A*), again only once the aim moves
 # more than `replan` px (or the fish has been pushed that far off its route).
 # (S5-fix) A cell with less than `room` x the body height of open water around it costs up to
@@ -151,6 +151,7 @@ var _dodge: float = 0.0
 # inside), and whether the fish was inside one. Scratch, never saved.
 var _close: float = 0.0
 var _escaping: bool = false
+var debug_id: int = -1
 # The direction of the route leg the last _navigate() call steered along (ZERO when none).
 var _leg: Vector2 = Vector2.ZERO
 # Per-tick scratch that _move() fills before moving anyone (2026-09-27, speed only; never saved):
@@ -657,13 +658,14 @@ func _move(delta: float) -> void:
 		elif way!=Vector2.ZERO:
 			# On a route round an obstacle it faces along its leg; only a clearly sideways leg turns
 			# it round (S5).
-			# (S5-fix: the way to the point it steers at comes first; the leg alone had kept a
-			# seahorse facing away when the last leg ran straight down, so it never swam on.)
 			var leg: Vector2=_leg if not _escaping else way
-			face=signf(way.x) if absf(way.x)>=0.45 else (signf(leg.x) if absf(leg.x)>=0.45 else a.direction)
+			# (S5-fix: when the leg runs up or down but the way it swims runs clearly sideways, the
+			# way: a seahorse on a vertical leg had kept facing away from where it swam, and stalled.)
+			face=signf(leg.x) if absf(leg.x)>=0.45 else (signf(way.x) if absf(way.x)>=0.45 else a.direction)
 		elif follower and gap<40 and _close==0.0:
 			# (A school member settled in its slot faces with the leader, unless an obstacle is near.)
 			face=lead.direction
+		if a.id==debug_id: print("DBG t%.1f way %s arrive %s desired %s climbing %s close %.2f face %.0f" % [state.elapsed,str(way),str(arrive),str(desired),str(climbing),_close,face])
 		var velocity: Vector2=_swim(a,desired,speed,cruise,cfg,delta,a.activity=="Startled",face,climbing)
 		var free: Vector2=p+velocity*delta
 		# Keep each fish in its own layer (the shoaling push once carried hatchetfish down).
@@ -713,7 +715,10 @@ func _avoid(a: Dictionary, p: Vector2, desired: Vector2, speed: float) -> Vector
 		if o.id==a.id or a.species=="clownfish" and o.species=="clownfish" and o.home==a.home:
 			continue
 		var mixed: bool=o.species!=a.species
-		var r: Vector2=(own+_bodies[o.id])*0.5*margin*(1.17 if mixed else SEPARATE.same)
+		# (S5-fix: two seahorses keep only SEPARATE.perch apart, enough that their bodies never
+		# overlap by a fifth: hitch points on one plant lie closer than the general spacing, and a
+		# seahorse kept off its own hitch by its neighbour hovered above it for minutes.)
+		var r: Vector2=(own+_bodies[o.id])*0.5*(SEPARATE.perch if a.species=="seahorse" and o.species=="seahorse" else margin*(1.17 if mixed else SEPARATE.same))
 		var rel: Vector2=p-Vector2(o.x,o.y)
 		var relv: Vector2=v-Vector2(o.get("vx",0.0),o.get("vy",0.0))
 		var t: float=clampf(-rel.dot(relv)/maxf(relv.length_squared(),0.0001),0.0,look)
@@ -731,7 +736,10 @@ func _avoid(a: Dictionary, p: Vector2, desired: Vector2, speed: float) -> Vector
 		# toward it. What it held back it swims along the other's edge instead, on its dodging side
 		# (or, passing above or below, on toward where it was going): it goes round, it does not
 		# wait (S5-fix; holding back alone left two fish face to face for minutes).
-		var yields: float=1.0 if a.id>o.id else 0.0
+		# (S5-fix: a swimming chromis gives way to the slower fish, not they to the school: shoved
+		# down by a passing school, a clownfish ended up under a ledge and turned round and back.)
+		var schooling: bool=a.species=="green_chromis"
+		var yields: float=(1.0 if a.id>o.id else 0.0) if schooling==(o.species=="green_chromis") else (1.0 if schooling else 0.0)
 		if now<SEPARATE.close or yields>0.0:
 			var n: Vector2=Vector2(rel.x/(r.x*r.x),rel.y/(r.y*r.y)).normalized()
 			var toward: float=-desired.dot(n)
@@ -1006,7 +1014,11 @@ func _hold_off(p: Vector2, v: Vector2, radii: PackedVector2Array, cruise: float)
 			continue
 		var n:=Vector2(P.x/r.x,P.y/r.y).normalized()
 		var into: float=v.dot(n)
-		if into<0.0:
+		# (S5-fix: only a way that would take it inside the widened edge within OBSTACLE.ahead s is
+		# held off; one that passes the edge, as a route round the obstacle does, is left alone: holding
+		# that off too had a clownfish creeping round a rock's tip at 1 px/s.)
+		var at: Vector2=p+v*OBSTACLE.ahead
+		if into<0.0 and (not OBSTACLE.ahead_on or Vector2((at.x-o.cx)/radii[i].x,(at.y-o.cy)/radii[i].y).length_squared()<1.0):
 			v-=n*into*clampf((1.0-q)/(1.0-1.0/(1.0+OBSTACLE.hold)),0.0,1.0)
 		var inner: float=q*(1.0+OBSTACLE.hold)
 		if inner<1.0:
@@ -1105,6 +1117,10 @@ func _around(a: Dictionary, p: Vector2, t: Vector2, band: Array, radii: PackedVe
 		_forget_around(a)
 		return Vector2.ZERO
 	var to: Vector2=_navigate(a,p,t,radii)
+	# (S5-fix) A route that ends where it is (nothing nearer its aim to reach) is no route: it hovers.
+	if p.distance_to(Vector2(a.nav_tx,a.nav_ty))<NAV.replan:
+		_forget_around(a)
+		return Vector2.ZERO
 	return (to-p).normalized() if p.distance_squared_to(to)>0.0001 else Vector2.ZERO
 
 # The point fish a at p steers at on its route to t: the furthest point along the route it can see
@@ -1146,7 +1162,10 @@ func _navigate(a: Dictionary, p: Vector2, t: Vector2, radii: PackedVector2Array)
 		k+=1
 	a.nav_k=k
 	if k+2>=route.size():
-		_leg=(route[k+1]-route[k]).normalized()
+		# (On the last leg, the way it actually swims to the end: having seen past a corner it may
+		# cut straight across; the last leg itself had run straight down and kept a seahorse facing
+		# away from where it swam, so it never swam on, S5-fix.)
+		_leg=(route[k+1]-p).normalized() if p.distance_squared_to(route[k+1])>1.0 else (route[k+1]-route[k]).normalized()
 		return route[k+1]
 	var lo: float=0.0
 	var hi: float=1.0
@@ -1286,8 +1305,13 @@ func _grid(cls: String, species: String, scale: float) -> Array:
 	lane.fill(-1)
 	var narrow:=PackedByteArray()
 	narrow.resize(w*h)
-	var span_x: float=NAV.lane*body.x
-	var span_y: float=NAV.lane*body.y
+	# (The same spans for every species, from the largest body of the cast: a passage is one fish
+	# at a time when two of the largest could not pass in it.)
+	var big:=Vector2.ZERO
+	for sp: String in BODY:
+		big=Vector2(maxf(big.x,BODY[sp][0]),maxf(big.y,BODY[sp][1]))
+	var span_x: float=NAV.lane*big.x
+	var span_y: float=NAV.lane*big.y
 	var reach_x: int=int(ceil(span_x/c))
 	var reach_y: int=int(ceil(span_y/c))
 	for gy in h:
