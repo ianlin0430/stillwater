@@ -3,6 +3,7 @@ extends Node2D
 # Read-only frontend. All coordinates are 1280x720 world coordinates.
 # No StreamWorld methods, ecological RNG, save writes, or biological side effects.
 const ROOTS: Array[Vector2]=[Vector2(70,620),Vector2(115,612),Vector2(175,614),Vector2(1090,615),Vector2(1150,610),Vector2(1200,620)]
+var painted_ground: bool=false
 var clock: float=0
 var redraw_clock: float=0
 var touch_clock: float=-10
@@ -100,14 +101,15 @@ func advance(delta: float) -> void:
 
 func _draw() -> void:
 	if bends.size()!=ROOTS.size(): return
-	for i in ROOTS.size(): _plant(i)
+	if not painted_ground:
+		for i in ROOTS.size(): _plant(i)
 	# Independent patches expose resource changes without replacing the painted distance.
-	var moss_count: int=int(clampf(resources.biofilm/2.0,0,28))
+	var moss_count: int=0 if painted_ground else int(clampf(resources.biofilm/2.0,0,28))
 	for i in moss_count:
 		var x: float=(105 if i%2==0 else 1000)+float((i*59)%160)
 		var y: float=(400 if i%2==0 else 550)+float((i*17)%65)
 		draw_rect(Rect2(x,y,7+i%4*2,3+i%3*2),Color("7e8e45") if i%3 else Color("a0a45a"))
-	for i in int(clampf(resources.detritus,0,18)):
+	for i in (0 if painted_ground else int(clampf(resources.detritus,0,18))):
 		var p:=Vector2(165+float((i*137)%960),645+float((i*13)%29))
 		for impulse: Dictionary in impulses:
 			var distance: float=p.distance_to(impulse.point)

@@ -21,6 +21,7 @@ var natural_light: float = 1.0
 var viewing_light: bool = false
 var dimmer: CanvasModulate
 var background: Sprite2D
+var scene_view: ReefSceneView
 var snapshot: Dictionary = {}
 var water_clock: float = 0
 var motes: Node2D
@@ -46,20 +47,19 @@ static func create_rig(species: String) -> ReefRig:
 
 func _ready() -> void:
 	texture_filter=CanvasItem.TEXTURE_FILTER_NEAREST
-	background=Sprite2D.new()
-	background.texture=preload("res://assets/reef/background-v1.png")
-	background.centered=false
-	background.scale=Vector2(1280.0/background.texture.get_width(),720.0/background.texture.get_height())
-	background.z_index=-20
+	scene_view=ReefSceneView.new()
+	scene_view.scene_id=scene.id()
+	add_child(scene_view)
+	background=scene_view.background
 	water_material=ShaderMaterial.new()
 	water_material.shader=preload("res://scripts/stream_water.gdshader")
 	background.material=water_material
-	add_child(background)
 	motes=Node2D.new()
 	motes.set_script(preload("res://scripts/stream_motes.gd"))
 	motes.z_index=2
 	add_child(motes)
 	habitat=preload("res://scripts/stream_habitat.gd").new()
+	habitat.painted_ground=true
 	habitat.z_index=0
 	add_child(habitat)
 	events_layer=preload("res://scripts/stream_events.gd").new()
@@ -77,6 +77,10 @@ func apply_snapshot(value: Dictionary) -> void:
 	if scene_id!=scene.id():
 		var next_scene:=ReefScene.open(scene_id)
 		scene=next_scene if next_scene!=null else ReefScene.open("reef")
+	# S5/S11 snapshots store a separate slot map for each scene. Legacy snapshots
+	# have no decor field, so render the shared data defaults until cutover.
+	var choices: Dictionary=value.get("decor",{}).get(scene.id(),{})
+	scene_view.configure(scene,choices)
 	events_layer.scene=scene
 	var latest: int=value.get("next_event",1)-1
 	var reset: bool=scene_changed or event_cursor<0 or latest<event_cursor or float(value.elapsed)<smoother.elapsed or (not snapshot.is_empty() and value.get("seed")!=snapshot.get("seed"))
@@ -156,6 +160,7 @@ func animate(delta: float) -> void:
 	water_material.set_shader_parameter("water_clock",water_clock)
 	motes.advance(delta)
 	habitat.advance(delta)
+	scene_view.advance(delta)
 	smoother.advance(delta)
 	for id: int in rigs.keys():
 		var rig: Node2D = rigs[id]
