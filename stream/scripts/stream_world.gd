@@ -1123,7 +1123,7 @@ func _lane_at(lane: PackedInt32Array, p: Vector2) -> int:
 	return lane[gy*w+gx]
 
 func _forget_around(a: Dictionary) -> void:
-	for key: String in ["nav_x","nav_y","nav_tx","nav_ty","nav_k","nav_vx","nav_vy"]:
+	for key: String in ["nav_x","nav_y","nav_tx","nav_ty","nav_k","nav_f","nav_vx","nav_vy"]:
 		a.erase(key)
 
 # The nearest obstacle (index, or -1) the straight line p -> t runs into: the line passes inside
@@ -1204,6 +1204,7 @@ func _navigate(a: Dictionary, p: Vector2, t: Vector2, radii: PackedVector2Array)
 		a.nav_tx=t.x
 		a.nav_ty=t.y
 		a.nav_k=0
+		a.nav_f=0
 		a.erase("nav_vx")
 		a.erase("nav_vy")
 	var route: PackedVector2Array=_route(a)
@@ -1217,6 +1218,7 @@ func _navigate(a: Dictionary, p: Vector2, t: Vector2, radii: PackedVector2Array)
 		a.nav_x=p.x
 		a.nav_y=p.y
 		a.nav_k=0
+		a.nav_f=0
 		if via.distance_to(Vector2(a.nav_tx,a.nav_ty))>1.0:
 			a.nav_vx=via.x
 			a.nav_vy=via.y
@@ -1249,7 +1251,12 @@ func _navigate(a: Dictionary, p: Vector2, t: Vector2, radii: PackedVector2Array)
 			lo=mid
 		else:
 			hi=mid
-	_leg=(route[k+2]-route[k+1]).normalized() if lo>0.0 else (route[k+1]-route[k]).normalized()
+	# (S5-fix: it faces along the furthest leg it has steered along on this route, never back to an
+	# earlier one: as the view round a corner opened and closed the facing had switched between the
+	# two legs, turning it round and back. nav_f is saved; a new or re-planned route starts at 0.)
+	var f: int=maxi(int(a.get("nav_f",0)),k+1 if lo>0.0 else k)
+	a.nav_f=f
+	_leg=(route[f+1]-route[f]).normalized()
 	var to: Vector2=route[k+1].lerp(route[k+2],lo)
 	# (S5-fix: a leg of a step or two, the last nudge into a target, does not set its facing; the
 	# way it swims does: a 7 px leg back had turned a chromis round eight times.)
