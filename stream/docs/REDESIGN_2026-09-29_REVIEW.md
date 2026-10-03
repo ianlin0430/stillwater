@@ -1,8 +1,8 @@
 # S4 暫停期間：H1、裝飾、H5 與場景預覽
 
-> 2026-10-03 更新：下方 v1 裝飾紀錄保留作歷史；目前 review 已改用 v2，統一成沉船花園畫風。S4 在 `s4-cast-swap`，尚未合併 main。測試修正與接手事項見 `CODEX_2026-10-03_HANDOFF.md`。
+> 2026-10-03 更新：使用者已核可統一畫風；正式 stage 現已共用 v2 背景／裝飾與沉船場景（e1ec70c）。下方預覽階段和 v1 裝飾紀錄保留作歷史。S4 在 `s4-cast-swap`，尚未合併 main。測試修正與接手事項見 `CODEX_2026-10-03_HANDOFF.md`。
 
-## 最新交付：統一畫風（等待使用者核可）
+## 統一畫風交付（2026-10-03 使用者已核可）
 
 - 礁岩 `assets/reef/background-v2.png` 保留構圖，以沉船花園 v2 的藍灰岩塊、飽和珊瑚與簡化沙地重畫；沉船原圖保留。12 款裝飾改為 `*-v2.png`。四種魚保留已核可的造型和配色，放在同一張總覽驗收。
 - `artifacts/unified-style-review/overview.png`：兩個場景與實際預設裝飾、12 款裝飾、四種魚。獨立裝飾／魚為 1.65×；場景縮成雙欄。`reef-165.png`、`shipwreck-165.png` 另提供場景的 1.65× 實際裁景。
@@ -24,7 +24,7 @@
 
 `scenes/reef_visual.tscn`、`scenes/shipwreck_visual.tscn` 共用 `ReefSceneView`，從 JSON 載入背景、槽位及預設裝飾，沒有保存或建立 world。`tools/scene_transition_review.gd` 以 0.75 秒淡出至黑，遮住時切場景，再 0.75 秒淡入；同四個魚節點保留。錄製時 assert 切換當格完全遮住且四魚仍在。
 
-`artifacts/scene-transition-review/scene-transition-165.mp4`：10 秒、60 FPS、1.65×，礁岩 → 沉船 → 礁岩。這是視覺資源與轉場驗收；正式 `set_scene()`／重新分配魚位置等待 S11 合併。正式 stage 目前仍直接使用 background-v1，沒有載入新裝飾／H5 rig；待核可再接線。
+`artifacts/scene-transition-review/scene-transition-165.mp4`：10 秒、60 FPS、1.65×，礁岩 → 沉船 → 礁岩。這是視覺資源與轉場驗收；正式 `set_scene()`／重新分配魚位置等待 S11 合併。2026-10-03 核可後正式 stage 已載入 v2 背景與槽位裝飾（e1ec70c）；H5 rig 仍等待 S6–S8，正式切換操作等待 S11。
 
 ```sh
 godot --headless --path stream --script tests/test_h5_review.gd -- --qa
