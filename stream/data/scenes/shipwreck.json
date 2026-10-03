@@ -1,7 +1,7 @@
 {
 	"id": "shipwreck",
 	"version": 1,
-	"note": "H1 2026-09-29: shipwreck-v2 structural geometry at 1280x720; foreground sand plane follows hull/arch feet. Arch is multiple solids, leaving its opening free. Background v3 lighting pass must retain geometry. All home capacities preserved.",
+	"note": "H1 2026-09-29: shipwreck-background-v2 is the approved style reference for both scenes. Sand plane follows foreground contact points. Arch is split into crown and feet so the visible opening stays clear. Decor coordinates retain all ecological capacities.",
 	"background": "res://assets/aquascape/shipwreck-background-v2.png",
 	"bounds": {
 		"swim_x": [100, 1180],
