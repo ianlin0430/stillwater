@@ -175,6 +175,8 @@ func run(seed_value: int, scene_id: String, preset: String, bare: bool) -> Dicti
 					close.append(oi)
 				if bq<1.0 and not beside_home(w,a,o):
 					r.soft=maxf(r.soft,1.0-bq)
+					if verbose and not bare and bq<0.8:
+						print("SOFT seed %d %s/%s id %d %s t%.1f at %s obs %d overlap %.3f act %s going %s aim %s" % [seed_value,scene_id,preset,a.id,a.species,t,str(p.round()),oi,1.0-bq,a.activity,str(a.has("nav_tx")),str(w._aim(a).round())])
 			if a.has("relocated_at"):
 				r.relocated+=1
 			var going: bool=a.has("nav_tx")
@@ -208,7 +210,7 @@ func run(seed_value: int, scene_id: String, preset: String, bare: bool) -> Dicti
 						episode[a.id]=e
 					if flipped:
 						e.n+=1
-						if verbose and e.n>e.allow:
+						if verbose and not bare and e.n>e.allow:
 							print("FLIP seed %d %s/%s id %d %s t%.1f at %s n%d allow%d route %s" % [seed_value,scene_id,preset,a.id,a.species,t,str(p.round()),e.n,e.allow,str(Array(w._route(a)).map(func(v): return v.round()))])
 				# Hesitation: a second flip within 10 s near the same obstacle.
 				if flipped and (going or trying):
@@ -251,7 +253,7 @@ func run(seed_value: int, scene_id: String, preset: String, bare: bool) -> Dicti
 						var obstacle: bool=s.going>0 or s.near*2>s.n
 						if obstacle:
 							r.noprog_obstacle+=1
-						if verbose:
+						if verbose and not bare:
 							print("NOPROG seed %d %s/%s id %d %s t%.0f at %s aim %s home %s going%d near%d homeT%d obstacle=%s" % [seed_value,scene_id,preset,a.id,a.species,t,str(p.round()),str(aim.round()),str(Vector2(a.get("home_x",-1),a.get("home_y",-1))),s.going,s.near,s.home,str(obstacle)])
 						if r.noprog_list.size()<8:
 							r.noprog_list.append("seed %d id %d %s t%.0f at %s going%d near%d obstacle=%s" % [seed_value,a.id,a.species,t,str(p.round()),s.going,s.near,str(obstacle)])

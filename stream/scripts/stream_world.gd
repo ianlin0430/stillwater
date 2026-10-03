@@ -132,7 +132,11 @@ const SEPARATE: Dictionary = {"margin":1.2,"look":5.0,"gain":1.6,"close":1.05,"s
 const OBSTACLE: Dictionary = {"pad":4.0,"body":0.8,"escape":0.6,"hold":0.35,"out":1.0}
 # Routes round obstacles (S5): planned on a grid of `cell` px (A*), again only once the aim moves
 # more than `replan` px (or the fish has been pushed that far off its route).
-const NAV: Dictionary = {"cell":10.0,"replan":24.0,"leave":3.0}
+# (S5-fix) A cell with less than `room` x the body height of open water around it costs up to
+# 1 + `narrow` times a step in open water.
+# `lane`: a passage narrower than lane x the body (length across, height up and down) is one
+# fish at a time (_must_wait).
+const NAV: Dictionary = {"cell":10.0,"replan":24.0,"leave":3.0,"room":1.0,"narrow":3.0,"lane":1.4}
 const NAMES: Dictionary = {"green_chromis":["Jade","Mint","Lagoon","Kelp","Glass","Pearl"],"clownfish":["Poppy","Ember"],"seahorse":["Drift","Kelpie"],"royal_gramma":["Violet","Dusk"]}
 var rng := RandomNumberGenerator.new()
 var motion_rng := RandomNumberGenerator.new()
@@ -577,6 +581,14 @@ func _move(delta: float) -> void:
 			_forget_around(a)
 		else:
 			way=_around(a,p,target,band,radii)
+		# One at a time through a passage too narrow for two (S5-fix): about to enter one that
+		# another fish is in, or is entering first, coming the other way, it waits at the mouth.
+		var waiting: bool=false
+		if not hovering and not _escaping and gap>NAV.replan:
+			waiting=_must_wait(a,p,way if way!=Vector2.ZERO else offset/gap)
+			if waiting:
+				way=Vector2.ZERO
+				arrive=Vector2.ZERO
 		# A way steeper than its nose can pitch is climbed (or sunk) slowly: no faster than it can
 		# scull up the difference, with its forward stroke kept to the level part (_swim `climbing`).
 		# (Near an obstacle, within 1.3 x its widened radii, it rises and sinks by sculling only, never
@@ -632,16 +644,23 @@ func _move(delta: float) -> void:
 		# (Climbing or sinking near an obstacle it sculls up or down faster than it swims along, so
 		# there its way in is held off too: it never sinks onto a rock it is passing over.)
 		desired+=_hold_off(p,arrive,radii,0.0) if climbing and not _escaping else arrive
+		# (S5-fix) And all of it together never carries a body deeper into an obstacle, and eases it
+		# back out inside the widened edge, wherever it is going: a dodge round another fish beside a
+		# mast had pressed a chromis to a 0.47 overlap along the mast's side.
+		if not _escaping:
+			desired=_hold_off(p,desired,radii,cruise)
 		# Which way to face: a resting fish settled on its spot keeps its facing, a school member
 		# settled in its slot faces the way the leader does (so the school turns almost together).
 		var face: float=0.0
-		if hovering:
+		if hovering or waiting:
 			face=a.direction
 		elif way!=Vector2.ZERO:
 			# On a route round an obstacle it faces along its leg; only a clearly sideways leg turns
 			# it round (S5).
+			# (S5-fix: the way to the point it steers at comes first; the leg alone had kept a
+			# seahorse facing away when the last leg ran straight down, so it never swam on.)
 			var leg: Vector2=_leg if not _escaping else way
-			face=signf(leg.x) if absf(leg.x)>=0.45 else a.direction
+			face=signf(way.x) if absf(way.x)>=0.45 else (signf(leg.x) if absf(leg.x)>=0.45 else a.direction)
 		elif follower and gap<40 and _close==0.0:
 			# (A school member settled in its slot faces with the leader, unless an obstacle is near.)
 			face=lead.direction
@@ -709,13 +728,24 @@ func _avoid(a: Dictionary, p: Vector2, desired: Vector2, speed: float) -> Vector
 		push+=Vector2(side*0.5,up).normalized()*speed*gain*(1.0-q)
 		_dodge=maxf(_dodge,1.0-q)
 		# The younger id holds back as a meeting nears; inside the other's space nobody presses on
-		# toward it.
+		# toward it. What it held back it swims along the other's edge instead, on its dodging side
+		# (or, passing above or below, on toward where it was going): it goes round, it does not
+		# wait (S5-fix; holding back alone left two fish face to face for minutes).
 		var yields: float=1.0 if a.id>o.id else 0.0
 		if now<SEPARATE.close or yields>0.0:
 			var n: Vector2=Vector2(rel.x/(r.x*r.x),rel.y/(r.y*r.y)).normalized()
 			var toward: float=-desired.dot(n)
 			if toward>0.0:
-				desired+=n*toward*(1.0 if now<SEPARATE.close else yields*clampf((1.0-q)*3.0,0.0,1.0))
+				var k: float=1.0 if now<SEPARATE.close else yields*clampf((1.0-q)*3.0,0.0,1.0)
+				var along:=Vector2(-n.y,n.x)
+				# (Meeting above or below, it slides off to the side it is already on, ids breaking a
+				# tie; never back the way it is heading: that would turn it round.)
+				var aside: float=side if side!=0.0 else (1.0 if a.id>o.id else -1.0)
+				if absf(along.y)>0.3 and signf(along.y)!=up or absf(along.y)<=0.3 and signf(along.x)!=aside:
+					along=-along
+				if along.x*desired.x<0.0 and absf(desired.x)>0.45*desired.length():
+					along.x=0.0
+				desired+=(n+along)*toward*k
 	return desired+push
 
 
@@ -826,7 +856,32 @@ func _home_spots(species: String) -> Array:
 		var rocks: Array[Vector2]=scene.rock_spots()
 		for i in rocks.size():
 			out.append({"kind":"rock","slot":"","i":i,"x":rocks[i].x,"y":rocks[i].y,"capacity":1})
-	return out
+	# (S5-fix) Only homes an adult can swim to from the main water: a spot in a pocket closed off
+	# for its body (shipwreck rock spot 1 with the minimum decor) left the fish trying for it all
+	# day. Kept all if none opens onto it.
+	var open: Array=out.filter(func(h): return _opens(species,Vector2(h.x,h.y)))
+	return open if not open.is_empty() else out
+
+# Whether an adult of the species can reach point p (moved clear of the obstacles and into its
+# band as its aim would be) from the main water: a cell of the main water within 2 cells of it.
+func _opens(species: String, p: Vector2) -> bool:
+	var grid: Array=_grid(species+"/"+str(1.0),species,1.0)
+	var part: PackedInt32Array=grid[3]
+	var w: int=int(1280.0/NAV.cell)
+	var h: int=int(720.0/NAV.cell)
+	var half: float=BODY[species][1]*0.5
+	var band: Array=[_bands[species][0],minf(_bands[species][1],bed_y(p.x)-half)]
+	var radii:=PackedVector2Array()
+	for o: Dictionary in _obstacles:
+		radii.append(Vector2(o.rx,o.ry)+Vector2(BODY[species][0],BODY[species][1])*0.5*OBSTACLE.body)
+	var t: Vector2=_clear_of(Vector2(p.x,clampf(p.y,band[0],band[1])),band,radii,Vector2.INF)
+	var gx: int=int(t.x/NAV.cell)
+	var gy: int=int(t.y/NAV.cell)
+	for y in range(maxi(0,gy-2),mini(h,gy+3)):
+		for x in range(maxi(0,gx-2),mini(w,gx+3)):
+			if part[y*w+x]==grid[4]:
+				return true
+	return false
 
 static func _home_key(h: Dictionary) -> String:
 	return "%s/%s/%d" % [h.kind,h.slot,h.i]
@@ -957,6 +1012,37 @@ func _hold_off(p: Vector2, v: Vector2, radii: PackedVector2Array, cruise: float)
 		if inner<1.0:
 			v+=n*OBSTACLE.out*cruise*(1.0-inner)
 	return v
+
+# Whether fish a at p, heading `dir`, waits before a narrow passage (S5-fix, _grid lanes): the
+# point a body length ahead lies in a passage it is not already in, and another fish (not a fellow
+# chromis) that is not travelling its way is in that passage and under way, or is about to enter it
+# with a lower id. A fish standing still in a passage does not close it (it is passed, not waited for).
+func _must_wait(a: Dictionary, p: Vector2, dir: Vector2) -> bool:
+	var cls: String=a.species+"/"+str(animal_scale(a))
+	var lane: PackedInt32Array=_grid(cls,a.species,animal_scale(a))[5]
+	var look: float=_bodies[a.id].x
+	var ahead: int=_lane_at(lane,p+dir*look)
+	if ahead<0 or ahead==_lane_at(lane,p):
+		return false
+	for o: Dictionary in state.animals:
+		if o.id==a.id or a.species=="green_chromis" and o.species=="green_chromis":
+			continue
+		var v:=Vector2(o.get("vx",0.0),o.get("vy",0.0))
+		var moving: float=v.length()
+		if moving<1.0 or v.dot(dir)>0.5*moving:
+			continue
+		var at:=Vector2(o.x,o.y)
+		if _lane_at(lane,at)==ahead or o.id<a.id and _lane_at(lane,at+v/moving*_bodies[o.id].x)==ahead:
+			return true
+	return false
+
+func _lane_at(lane: PackedInt32Array, p: Vector2) -> int:
+	var w: int=int(1280.0/NAV.cell)
+	var gx: int=int(p.x/NAV.cell)
+	var gy: int=int(p.y/NAV.cell)
+	if gx<0 or gy<0 or gx>=w or gy>=int(720.0/NAV.cell):
+		return -1
+	return lane[gy*w+gx]
 
 func _forget_around(a: Dictionary) -> void:
 	for key: String in ["nav_x","nav_y","nav_tx","nav_ty","nav_k"]:
@@ -1127,7 +1213,122 @@ func _grid(cls: String, species: String, scale: float) -> Array:
 					v=1
 					depth[gy*w+gx]=minf(depth[gy*w+gx],sqrt(dx*dx+dy*dy))
 			g[gy*w+gx]=v
-	_grids[cls]=[g,depth]
+	# (S5-fix) How much room each open cell has: its distance in px to the nearest cell that is
+	# not open water (two-pass chamfer), so routes keep to the middle of the water (NAV.room)...
+	var room:=PackedFloat32Array()
+	room.resize(w*h)
+	for i in w*h:
+		room[i]=0.0 if g[i]!=0 else INF
+	for gy in h:
+		for gx in w:
+			var i: int=gy*w+gx
+			if room[i]==0.0:
+				continue
+			var best: float=room[i]
+			if gx>0: best=minf(best,room[i-1]+c)
+			if gy>0:
+				best=minf(best,room[i-w]+c)
+				if gx>0: best=minf(best,room[i-w-1]+c*1.41421356)
+				if gx<w-1: best=minf(best,room[i-w+1]+c*1.41421356)
+			room[i]=best
+	for gy in range(h-1,-1,-1):
+		for gx in range(w-1,-1,-1):
+			var i: int=gy*w+gx
+			if room[i]==0.0:
+				continue
+			var best: float=room[i]
+			if gx<w-1: best=minf(best,room[i+1]+c)
+			if gy<h-1:
+				best=minf(best,room[i+w]+c)
+				if gx<w-1: best=minf(best,room[i+w+1]+c*1.41421356)
+				if gx>0: best=minf(best,room[i+w-1]+c*1.41421356)
+			room[i]=best
+	# ...and which piece of open water each open cell belongs to (8 neighbours, no corner cutting),
+	# the largest piece being the main water (a home only counts if it opens onto it, _home_spots).
+	var part:=PackedInt32Array()
+	part.resize(w*h)
+	part.fill(-1)
+	var sizes: Array[int]=[]
+	for i in w*h:
+		if g[i]!=0 or part[i]>=0:
+			continue
+		var label: int=sizes.size()
+		var stack: Array[int]=[i]
+		part[i]=label
+		var n: int=0
+		while not stack.is_empty():
+			var cell: int=stack.pop_back()
+			n+=1
+			var cx: int=cell%w
+			var cy: int=cell/w
+			for d in 8:
+				var nx: int=cx+STEP_X[d]
+				var ny: int=cy+STEP_Y[d]
+				if nx<0 or ny<0 or nx>=w or ny>=h:
+					continue
+				var nb: int=ny*w+nx
+				if g[nb]!=0 or part[nb]>=0:
+					continue
+				if STEP_X[d]!=0 and STEP_Y[d]!=0 and (g[cy*w+nx]!=0 or g[ny*w+cx]!=0):
+					continue
+				part[nb]=label
+				stack.append(nb)
+		sizes.append(n)
+	var main: int=-1
+	for k in sizes.size():
+		if main<0 or sizes[k]>sizes[main]:
+			main=k
+	# (S5-fix) Passages too narrow for two fish of this size to pass: open cells whose open span
+	# across (left-right or up-down, to the first cell that is not open water) is under NAV.lane x
+	# the body's length or height; labelled by connected piece (-1 elsewhere).
+	var lane:=PackedInt32Array()
+	lane.resize(w*h)
+	lane.fill(-1)
+	var narrow:=PackedByteArray()
+	narrow.resize(w*h)
+	var span_x: float=NAV.lane*body.x
+	var span_y: float=NAV.lane*body.y
+	var reach_x: int=int(ceil(span_x/c))
+	var reach_y: int=int(ceil(span_y/c))
+	for gy in h:
+		for gx in w:
+			var i: int=gy*w+gx
+			if g[i]!=0:
+				continue
+			var l: int=0
+			while l<reach_x and gx-l-1>=0 and g[i-l-1]==0: l+=1
+			var r: int=0
+			while r<reach_x and gx+r+1<w and g[i+r+1]==0: r+=1
+			if l<reach_x and r<reach_x and gx-l-1>=0 and gx+r+1<w and (l+r+1)*c<span_x:
+				narrow[i]=1
+				continue
+			var u: int=0
+			while u<reach_y and gy-u-1>=0 and g[i-(u+1)*w]==0: u+=1
+			var dn: int=0
+			while dn<reach_y and gy+dn+1<h and g[i+(dn+1)*w]==0: dn+=1
+			if u<reach_y and dn<reach_y and gy-u-1>=0 and gy+dn+1<h and (u+dn+1)*c<span_y:
+				narrow[i]=1
+	var lanes: int=0
+	for i in w*h:
+		if narrow[i]==0 or lane[i]>=0:
+			continue
+		var stack: Array[int]=[i]
+		lane[i]=lanes
+		while not stack.is_empty():
+			var cell: int=stack.pop_back()
+			var cx: int=cell%w
+			var cy: int=cell/w
+			for d in 8:
+				var nx: int=cx+STEP_X[d]
+				var ny: int=cy+STEP_Y[d]
+				if nx<0 or ny<0 or nx>=w or ny>=h:
+					continue
+				var nb: int=ny*w+nx
+				if narrow[nb]==1 and lane[nb]<0:
+					lane[nb]=lanes
+					stack.append(nb)
+		lanes+=1
+	_grids[cls]=[g,depth,room,part,main,lane]
 	return _grids[cls]
 
 # A route from `from` to `to` over the grid (A*, 8 neighbours, no corner cutting; ties by cell
@@ -1138,6 +1339,8 @@ func _plan(cls: String, species: String, scale: float, from: Vector2, to: Vector
 	var grid: Array=_grid(cls,species,scale)
 	var g: PackedByteArray=grid[0]
 	var depth: PackedFloat32Array=grid[1]
+	var room: PackedFloat32Array=grid[2]
+	var need: float=NAV.room*BODY[species][1]*scale
 	var c: float=NAV.cell
 	var w: int=int(1280.0/c)
 	var h: int=int(720.0/c)
@@ -1191,7 +1394,10 @@ func _plan(cls: String, species: String, scale: float, from: Vector2, to: Vector
 				continue
 			if dx!=0 and dy!=0 and (g[cy*w+nx]>=closed or g[ny*w+cx]>=closed):
 				continue
-			var step: float=cost[cell]+(1.41421356 if dx!=0 and dy!=0 else 1.0)
+			# (A cell with less than NAV.room x its body height of water around it costs up to
+			# 1 + NAV.narrow times more: a route keeps off narrow gaps and obstacle edges where
+			# there is open water, S5-fix.)
+			var step: float=cost[cell]+(1.41421356 if dx!=0 and dy!=0 else 1.0)*(1.0+NAV.narrow*maxf(0.0,1.0-room[n]/need))
 			if step<cost[n]:
 				cost[n]=step
 				prev[n]=cell
@@ -1323,6 +1529,23 @@ func _choose_home(a: Dictionary) -> void:
 	a.activity="Hovering"
 	a.tx=clampf(a.home_x+cos(angle)*reach,_roam_x.x,_roam_x.y)
 	a.ty=_in_water(a.species,a.tx,a.home_y+sin(angle)*reach*0.6)
+	# (S5-fix) Only as far out as it sees from its home: a spot behind the next rock had sent a
+	# gramma up and over it and back, turning round on the way, for a few px of hovering.
+	var home:=Vector2(a.home_x,a.home_y)
+	var spot:=Vector2(a.tx,a.ty)
+	var radii: PackedVector2Array=_radii_of(a)
+	if _blocker(home,spot,radii,-1)>=0:
+		var lo: float=0.0
+		var hi: float=1.0
+		for n in 5:
+			var mid: float=(lo+hi)*0.5
+			if _blocker(home,home.lerp(spot,mid),radii,-1)<0:
+				lo=mid
+			else:
+				hi=mid
+		spot=home.lerp(spot,lo)
+		a.tx=spot.x
+		a.ty=_in_water(a.species,spot.x,spot.y)
 	a.decision_at=state.elapsed+motion_rng.randf_range(h.dwell[0],h.dwell[1])
 
 # A school member holds its own slot beside the leader, mirrored with the leader's heading.
