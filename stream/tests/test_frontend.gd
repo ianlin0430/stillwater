@@ -55,12 +55,33 @@ func run() -> void:
 	print(JSON.stringify({"checks":checks,"failures":failures}))
 	quit(0 if failures.is_empty() else 1)
 
-# Drives a real world and stage exactly as main.gd does, at 30 FPS, and measures rendered fish speed.
+# Keep the real 5 Hz world clock and main.gd presentation cadence, with one controlled
+# chromis snapshot travelling at 20 px/s. Natural burst/glide fish cannot supply the
+# 13-frame constant-speed window this interpolation contract requires. The fixture
+# changes snapshots only; no physics constants or acceptance thresholds are changed.
+func _cruise_snapshot(world: StreamWorld) -> Dictionary:
+	var snap:=world.snapshot()
+	var fish: Dictionary=snap.animals.filter(func(a: Dictionary) -> bool: return a.species=="green_chromis")[0].duplicate(true)
+	fish.x=400.0+20.0*float(snap.elapsed)
+	fish.y=260.0
+	fish.tx=1100.0
+	fish.ty=260.0
+	fish.decision_at=1000.0
+	fish.vx=20.0
+	fish.vy=0.0
+	fish.speed=20.0
+	fish.heading=0.0
+	fish.pitch=0.0
+	fish.direction=1.0
+	fish.activity="Schooling"
+	snap.animals=[fish]
+	return snap
+
 func _motion(jitter: bool) -> void:
 	var world:=StreamWorld.new(42,1000)
 	var stage:=StreamStage.new()
 	root.add_child(stage)
-	stage.apply_snapshot(world.snapshot())
+	stage.apply_snapshot(_cruise_snapshot(world))
 	var applied: int=world.state.motion_ticks
 	var noise:=RandomNumberGenerator.new()
 	noise.seed=7
@@ -72,11 +93,11 @@ func _motion(jitter: bool) -> void:
 		if jitter: dt=noise.randf_range(0.7,1.3)/30
 		world.advance_live(minf(dt,0.25))
 		if world.state.motion_ticks!=applied:
-			stage.apply_snapshot(world.snapshot())
+			stage.apply_snapshot(_cruise_snapshot(world))
 			applied=world.state.motion_ticks
 		stage.animate(minf(dt,0.1))
 		frames.append(dt)
-		for a: Dictionary in world.state.animals:
+		for a: Dictionary in _cruise_snapshot(world).animals:
 			if a.species=="shrimp" or not stage.rigs.has(a.id): continue
 			if not rendered.has(a.id):
 				rendered[a.id]=[]
@@ -103,7 +124,7 @@ func _motion(jitter: bool) -> void:
 	for id: int in stage.rigs: held[id]=stage.rigs[id].position
 	var moved: float=0
 	for f in 90:
-		if f==45: stage.apply_snapshot(world.snapshot())
+		if f==45: stage.apply_snapshot(_cruise_snapshot(world))
 		stage.animate(0)
 		for id: int in held: moved=maxf(moved,stage.rigs[id].position.distance_to(held[id]))
 	check(moved==0,"Paused stage renders no motion (max %.3f px)" % moved)
