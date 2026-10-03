@@ -1,8 +1,8 @@
 {
 	"id": "reef",
 	"version": 1,
-	"note": "H1 2026-09-29: checked against background-v1 at 1280x720. Bed retains the S1 sampled sand plane (test_scene_data locks it within 1 unit of legacy world); terrain silhouettes are separate obstacles. Anchors use a 2-world-unit render grid. Optional slots sit on foreground sand, not inside the left reef.",
-	"background": "res://assets/reef/background-v1.png",
+	"note": "H1 2026-09-29 unified-style candidate: background-v2 matches shipwreck v2. S1 bed retained within the required 1-unit legacy tolerance; it is the traversable foreground sand plane, not the distant visual horizon. Reef silhouettes, exposed rock approaches and slot anchors are checked separately. Art awaits overview approval.",
+	"background": "res://assets/reef/background-v2.png",
 	"bounds": {
 		"swim_x": [100, 1180],
 		"roam_x": [130, 1150],
@@ -55,24 +55,24 @@
 		[1320, 300]
 	],
 	"terrain_obstacles": [
-		{"cx": 40, "cy": 344, "rx": 92, "ry": 42},
-		{"cx": 126, "cy": 410, "rx": 134, "ry": 70},
-		{"cx": 212, "cy": 392, "rx": 106, "ry": 18},
-		{"cx": 276, "cy": 450, "rx": 196, "ry": 24},
-		{"cx": 188, "cy": 528, "rx": 200, "ry": 56},
-		{"cx": 408, "cy": 551, "rx": 70, "ry": 32},
-		{"cx": 1116, "cy": 534, "rx": 94, "ry": 50},
-		{"cx": 1174, "cy": 580, "rx": 50, "ry": 22}
+		{"cx": 40, "cy": 342, "rx": 90, "ry": 42},
+		{"cx": 126, "cy": 412, "rx": 134, "ry": 72},
+		{"cx": 214, "cy": 384, "rx": 110, "ry": 18},
+		{"cx": 278, "cy": 454, "rx": 198, "ry": 22},
+		{"cx": 186, "cy": 528, "rx": 200, "ry": 60},
+		{"cx": 414, "cy": 556, "rx": 70, "ry": 32},
+		{"cx": 1108, "cy": 534, "rx": 100, "ry": 50},
+		{"cx": 1178, "cy": 582, "rx": 58, "ry": 30}
 	],
 	"rock_spots": [
-		{"x": 476, "y": 520, "side": 1},
-		{"x": 988, "y": 510, "side": -1},
-		{"x": 1230, "y": 566, "side": -1}
+		{"x": 486, "y": 548, "side": 1},
+		{"x": 998, "y": 520, "side": -1},
+		{"x": 1242, "y": 566, "side": -1}
 	],
 	"slots": [
 		{
 			"id": "anemone",
-			"anchor": [616, 600],
+			"anchor": [660, 600],
 			"required": "anemone",
 			"styles": ["anemone_green", "anemone_pink"],
 			"default": "anemone_green"
@@ -86,14 +86,14 @@
 		},
 		{
 			"id": "s1",
-			"anchor": [500, 606],
+			"anchor": [516, 606],
 			"required": null,
 			"styles": ["cave_rock", "shell", "brain_coral"],
 			"default": "cave_rock"
 		},
 		{
 			"id": "s2",
-			"anchor": [756, 606],
+			"anchor": [770, 608],
 			"required": null,
 			"styles": ["cave_rock", "table_coral", "brain_coral", "rounded_rock"],
 			"default": ""

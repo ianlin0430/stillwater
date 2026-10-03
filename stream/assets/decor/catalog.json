@@ -1,62 +1,62 @@
 {
 	"anemone_green": {
-		"texture": "res://assets/decor/anemone_green-v1.png",
-		"region": [87, 135, 1347, 794],
-		"size": [140, 82.524]
+		"texture": "res://assets/decor/anemone_green-v2.png",
+		"region": [49, 96, 1416, 883],
+		"size": [140, 87.302]
 	},
 	"anemone_pink": {
-		"texture": "res://assets/decor/anemone_pink-v1.png",
-		"region": [82, 199, 1344, 695],
-		"size": [140, 72.396]
+		"texture": "res://assets/decor/anemone_pink-v2.png",
+		"region": [75, 193, 1373, 755],
+		"size": [140, 76.985]
 	},
 	"seagrass_tall": {
-		"texture": "res://assets/decor/seagrass_tall-v1.png",
-		"region": [51, 22, 867, 1569],
-		"size": [108.306, 196]
+		"texture": "res://assets/decor/seagrass_tall-v2.png",
+		"region": [44, 21, 893, 1590],
+		"size": [110.081, 196]
 	},
 	"gorgonian": {
-		"texture": "res://assets/decor/gorgonian-v1.png",
-		"region": [84, 56, 864, 1454],
-		"size": [112.902, 190]
+		"texture": "res://assets/decor/gorgonian-v2.png",
+		"region": [74, 48, 866, 1507],
+		"size": [109.184, 190]
 	},
 	"kelp_short": {
-		"texture": "res://assets/decor/kelp_short-v1.png",
-		"region": [120, 78, 835, 1351],
-		"size": [100.126, 162]
+		"texture": "res://assets/decor/kelp_short-v2.png",
+		"region": [118, 80, 866, 1376],
+		"size": [101.956, 162]
 	},
 	"cave_rock": {
-		"texture": "res://assets/decor/cave_rock-v1.png",
-		"region": [69, 205, 1465, 682],
-		"size": [140, 65.174]
+		"texture": "res://assets/decor/cave_rock-v2.png",
+		"region": [35, 170, 1514, 759],
+		"size": [140, 70.185]
 	},
 	"shell": {
-		"texture": "res://assets/decor/shell-v1.png",
-		"region": [84, 115, 1538, 717],
-		"size": [128, 59.672]
+		"texture": "res://assets/decor/shell-v2.png",
+		"region": [61, 91, 1574, 794],
+		"size": [128, 64.569]
 	},
 	"wreck_bow": {
-		"texture": "res://assets/decor/wreck_bow-v1.png",
-		"region": [88, 91, 1499, 738],
-		"size": [186, 91.573]
+		"texture": "res://assets/decor/wreck_bow-v2.png",
+		"region": [92, 55, 1544, 843],
+		"size": [186, 101.553]
 	},
 	"table_coral": {
-		"texture": "res://assets/decor/table_coral-v1.png",
-		"region": [75, 253, 1438, 599],
-		"size": [150, 62.483]
+		"texture": "res://assets/decor/table_coral-v2.png",
+		"region": [68, 245, 1453, 666],
+		"size": [150, 68.754]
 	},
 	"brain_coral": {
-		"texture": "res://assets/decor/brain_coral-v1.png",
-		"region": [92, 139, 1380, 769],
-		"size": [96, 53.496]
+		"texture": "res://assets/decor/brain_coral-v2.png",
+		"region": [79, 134, 1413, 811],
+		"size": [96, 55.1]
 	},
 	"rounded_rock": {
-		"texture": "res://assets/decor/rounded_rock-v1.png",
-		"region": [109, 171, 1325, 752],
-		"size": [104, 59.025]
+		"texture": "res://assets/decor/rounded_rock-v2.png",
+		"region": [69, 142, 1412, 833],
+		"size": [104, 61.354]
 	},
 	"branch_coral": {
-		"texture": "res://assets/decor/branch_coral-v1.png",
-		"region": [79, 155, 1145, 971],
-		"size": [92, 78.019]
+		"texture": "res://assets/decor/branch_coral-v2.png",
+		"region": [71, 155, 1165, 1018],
+		"size": [92, 80.391]
 	}
 }
