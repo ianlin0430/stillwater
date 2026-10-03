@@ -129,7 +129,7 @@ const SEPARATE: Dictionary = {"margin":1.2,"look":5.0,"gain":1.6,"close":1.05,"s
 # never snapped. What else steers it (spacing, making way for other fish) never pushes it into an
 # obstacle: within `hold` beyond its widened radii the part heading in fades out, and inside them it
 # eases back out, by `out` x cruise x how deep it is (_hold_off).
-const OBSTACLE: Dictionary = {"pad":4.0,"body":0.8,"escape":0.6,"hold":0.35,"out":1.0,"ahead":1.0,"ahead_on":false}
+const OBSTACLE: Dictionary = {"pad":4.0,"body":0.8,"escape":0.6,"hold":0.35,"out":1.0,"ahead":1.0}
 # Routes round obstacles (S5): planned on a grid of `cell` px (A*), again only once the aim moves
 # more than `replan` px (or the fish has been pushed that far off its route).
 # (S5-fix) A cell with less than `room` x the body height of open water around it costs up to
@@ -590,6 +590,12 @@ func _move(delta: float) -> void:
 			if waiting:
 				way=Vector2.ZERO
 				arrive=Vector2.ZERO
+		# (Saved, so a restored world gives way the same: a fish waiting at a passage makes way for
+		# the one coming out of it, _avoid.)
+		if waiting:
+			a.nav_wait=1
+		else:
+			a.erase("nav_wait")
 		# A way steeper than its nose can pitch is climbed (or sunk) slowly: no faster than it can
 		# scull up the difference, with its forward stroke kept to the level part (_swim `climbing`).
 		# (Near an obstacle, within 1.3 x its widened radii, it rises and sinks by sculling only, never
@@ -644,7 +650,7 @@ func _move(delta: float) -> void:
 		desired.x*=clampf(((p.x-_swim_x.x) if desired.x<0 else (_swim_x.y-p.x))/SWIM.edge,0.0,1.0)
 		# (Climbing or sinking near an obstacle it sculls up or down faster than it swims along, so
 		# there its way in is held off too: it never sinks onto a rock it is passing over.)
-		desired+=_hold_off(p,arrive,radii,0.0) if climbing and not _escaping else arrive
+		desired+=_hold_off(p,arrive,radii,0.0,true) if climbing and not _escaping else arrive
 		# (S5-fix) And all of it together never carries a body deeper into an obstacle, and eases it
 		# back out inside the widened edge, wherever it is going: a dodge round another fish beside a
 		# mast had pressed a chromis to a 0.47 overlap along the mast's side.
@@ -740,11 +746,18 @@ func _avoid(a: Dictionary, p: Vector2, desired: Vector2, speed: float) -> Vector
 		# down by a passing school, a clownfish ended up under a ledge and turned round and back.)
 		var schooling: bool=a.species=="green_chromis"
 		var yields: float=(1.0 if a.id>o.id else 0.0) if schooling==(o.species=="green_chromis") else (1.0 if schooling else 0.0)
-		if now<SEPARATE.close or yields>0.0:
+		# (A fish waiting at a passage gives way to everyone; one coming out does not wait for it.)
+		var holding: float=SEPARATE.close
+		if a.has("nav_wait") and not o.has("nav_wait"):
+			yields=1.0
+		elif o.has("nav_wait") and not a.has("nav_wait"):
+			yields=0.0
+			holding=0.85
+		if now<holding or yields>0.0:
 			var n: Vector2=Vector2(rel.x/(r.x*r.x),rel.y/(r.y*r.y)).normalized()
 			var toward: float=-desired.dot(n)
 			if toward>0.0:
-				var k: float=1.0 if now<SEPARATE.close else yields*clampf((1.0-q)*3.0,0.0,1.0)
+				var k: float=1.0 if now<holding else yields*clampf((1.0-q)*3.0,0.0,1.0)
 				var along:=Vector2(-n.y,n.x)
 				# (Meeting above or below, it slides off to the side it is already on, ids breaking a
 				# tie; never back the way it is heading: that would turn it round.)
@@ -1001,7 +1014,7 @@ func _aim(a: Dictionary, radii: PackedVector2Array = PackedVector2Array()) -> Ve
 
 # v without the part that heads into an obstacle, over the last `hold` of its widened radii (radii)
 # and inside them; inside them it also eases out, up to `out` x cruise at the obstacle's own edge.
-func _hold_off(p: Vector2, v: Vector2, radii: PackedVector2Array, cruise: float) -> Vector2:
+func _hold_off(p: Vector2, v: Vector2, radii: PackedVector2Array, cruise: float, ahead: bool = false) -> Vector2:
 	for i in _obstacles.size():
 		var o: Dictionary=_obstacles[i]
 		# (Not beside its own home, where only its centre keeps out: a gramma at its cave.)
@@ -1014,11 +1027,12 @@ func _hold_off(p: Vector2, v: Vector2, radii: PackedVector2Array, cruise: float)
 			continue
 		var n:=Vector2(P.x/r.x,P.y/r.y).normalized()
 		var into: float=v.dot(n)
-		# (S5-fix: only a way that would take it inside the widened edge within OBSTACLE.ahead s is
-		# held off; one that passes the edge, as a route round the obstacle does, is left alone: holding
-		# that off too had a clownfish creeping round a rock's tip at 1 px/s.)
+		# (S5-fix, `ahead`: for the climb along its way, only a way that would take it inside the
+		# widened edge within OBSTACLE.ahead s is held off; one that passes the edge, as a route round
+		# the obstacle does, is left alone: holding that off too had a clownfish creeping round a
+		# rock's tip at 1 px/s.)
 		var at: Vector2=p+v*OBSTACLE.ahead
-		if into<0.0 and (not OBSTACLE.ahead_on or Vector2((at.x-o.cx)/radii[i].x,(at.y-o.cy)/radii[i].y).length_squared()<1.0):
+		if into<0.0 and (not ahead or Vector2((at.x-o.cx)/radii[i].x,(at.y-o.cy)/radii[i].y).length_squared()<1.0):
 			v-=n*into*clampf((1.0-q)/(1.0-1.0/(1.0+OBSTACLE.hold)),0.0,1.0)
 		var inner: float=q*(1.0+OBSTACLE.hold)
 		if inner<1.0:
