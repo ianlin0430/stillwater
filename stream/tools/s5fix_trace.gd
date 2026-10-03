@@ -33,7 +33,7 @@ func _initialize() -> void:
 		if t<t0 or t>t1 or i%every!=0: continue
 		for a in w.state.animals:
 			if a.id!=id: continue
-			var s:="t%.1f %s hd%.2f tn%.2f sp%.1f p(%.0f,%.0f) v(%.1f,%.1f) dir%d act %s t(%.0f,%.0f) aim %s" % [t,a.species,a.heading,a.turn,a.speed,a.x,a.y,a.vx,a.vy,a.direction,a.activity,a.tx,a.ty,str(w._aim(a).round())]
+			var s:="w%s t%.1f %s hd%.2f tn%.2f sp%.1f p(%.0f,%.0f) v(%.1f,%.1f) dir%d act %s t(%.0f,%.0f) aim %s" % [str(a.has("nav_wait")),t,a.species,a.heading,a.turn,a.speed,a.x,a.y,a.vx,a.vy,a.direction,a.activity,a.tx,a.ty,str(w._aim(a).round())]
 			s+=" avoid(%.1f,%.1f)" % [a.get("avoid_x",0.0),a.get("avoid_y",0.0)]
 			if a.has("nav_tx"):
 				var r: PackedVector2Array=w._radii_of(a)

@@ -136,7 +136,7 @@ const OBSTACLE: Dictionary = {"pad":4.0,"body":0.8,"escape":0.6,"hold":0.35,"out
 # 1 + `narrow` times a step in open water.
 # `lane`: a passage narrower than lane x the body (length across, height up and down) is one
 # fish at a time (_must_wait).
-const NAV: Dictionary = {"cell":10.0,"replan":24.0,"leave":3.0,"room":1.0,"narrow":3.0,"lane":1.4}
+const NAV: Dictionary = {"cell":10.0,"replan":24.0,"leave":3.0,"room":1.0,"narrow":3.0,"lane":1.4,"moved":10.0,"patience":6.0,"give":8.0}
 const NAMES: Dictionary = {"green_chromis":["Jade","Mint","Lagoon","Kelp","Glass","Pearl"],"clownfish":["Poppy","Ember"],"seahorse":["Drift","Kelpie"],"royal_gramma":["Violet","Dusk"]}
 var rng := RandomNumberGenerator.new()
 var motion_rng := RandomNumberGenerator.new()
@@ -586,7 +586,7 @@ func _move(delta: float) -> void:
 		# another fish is in, or is entering first, coming the other way, it waits at the mouth.
 		var waiting: bool=false
 		if not hovering and not _escaping and gap>NAV.replan:
-			waiting=_must_wait(a,p,way if way!=Vector2.ZERO else offset/gap)
+			waiting=_must_wait(a,p,way if way!=Vector2.ZERO else offset/gap) or _gives_way(a,p)
 			if waiting:
 				way=Vector2.ZERO
 				arrive=Vector2.ZERO
@@ -1059,6 +1059,36 @@ func _must_wait(a: Dictionary, p: Vector2, dir: Vector2) -> bool:
 			continue
 		var at:=Vector2(o.x,o.y)
 		if _lane_at(lane,at)==ahead or o.id<a.id and _lane_at(lane,at+v/moving*_bodies[o.id].x)==ahead:
+			return true
+	return false
+
+# Whether fish a at p, on its way somewhere, gives way to a fish it is held up by (S5-fix): once it
+# has moved less than NAV.moved px for NAV.patience s with a fish it would make way for (_avoid's
+# order: the higher id, a chromis before any other fish) within 1.3 x their spacing, it waits for
+# NAV.give s, making way for everyone, so the other can come past. Checkpoint and wait are saved.
+func _gives_way(a: Dictionary, p: Vector2) -> bool:
+	if a.get("nav_give",-1.0)>state.elapsed:
+		return true
+	if not a.has("nav_ct") or p.distance_to(Vector2(a.nav_cx,a.nav_cy))>NAV.moved:
+		a.nav_cx=p.x
+		a.nav_cy=p.y
+		a.nav_ct=state.elapsed
+		return false
+	if state.elapsed-a.nav_ct<NAV.patience:
+		return false
+	var own: Vector2=_bodies[a.id]
+	var schooling: bool=a.species=="green_chromis"
+	for o: Dictionary in state.animals:
+		if o.id==a.id or schooling and o.species=="green_chromis":
+			continue
+		var other: bool=o.species=="green_chromis"
+		var yields: bool=(a.id>o.id) if schooling==other else schooling
+		if not yields:
+			continue
+		var r: Vector2=(own+_bodies[o.id])*0.5*SEPARATE.margin*1.3
+		if Vector2((p.x-o.x)/r.x,(p.y-o.y)/r.y).length_squared()<1.0:
+			a.nav_give=state.elapsed+NAV.give
+			a.nav_ct=state.elapsed
 			return true
 	return false
 
@@ -1584,6 +1614,19 @@ func _choose_home(a: Dictionary) -> void:
 		spot=home.lerp(spot,lo)
 		a.tx=spot.x
 		a.ty=_in_water(a.species,spot.x,spot.y)
+	# (S5-fix) Not inside the room another fish keeps (_avoid's spacing) where it is now: two
+	# hitch points closer than that kept a seahorse hovering short of its spot, never arriving.
+	var own: Vector2=_bodies[a.id] if _bodies.has(a.id) else _body(a)
+	for o: Dictionary in state.animals:
+		if o.id==a.id or o.species=="green_chromis" or a.species=="clownfish" and o.species=="clownfish" and o.home==a.home:
+			continue
+		var r: Vector2=(own+(_bodies[o.id] if _bodies.has(o.id) else _body(o)))*0.5*(SEPARATE.perch if a.species=="seahorse" and o.species=="seahorse" else SEPARATE.margin*(1.17 if o.species!=a.species else SEPARATE.same))
+		var rel:=Vector2((a.tx-o.x)/r.x,(a.ty-o.y)/r.y)
+		var q: float=rel.length()
+		if q<1.0:
+			var out: Vector2=rel/q if q>0.0001 else Vector2(0.0,-1.0)
+			a.tx=clampf(o.x+out.x*r.x*1.05,_roam_x.x,_roam_x.y)
+			a.ty=_in_water(a.species,a.tx,o.y+out.y*r.y*1.05)
 	a.decision_at=state.elapsed+motion_rng.randf_range(h.dwell[0],h.dwell[1])
 
 # A school member holds its own slot beside the leader, mirrored with the leader's heading.
