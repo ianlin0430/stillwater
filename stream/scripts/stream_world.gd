@@ -1101,7 +1101,7 @@ func _lane_at(lane: PackedInt32Array, p: Vector2) -> int:
 	return lane[gy*w+gx]
 
 func _forget_around(a: Dictionary) -> void:
-	for key: String in ["nav_x","nav_y","nav_tx","nav_ty","nav_k"]:
+	for key: String in ["nav_x","nav_y","nav_tx","nav_ty","nav_k","nav_vx","nav_vy"]:
 		a.erase(key)
 
 # The nearest obstacle (index, or -1) the straight line p -> t runs into: the line passes inside
@@ -1182,14 +1182,22 @@ func _navigate(a: Dictionary, p: Vector2, t: Vector2, radii: PackedVector2Array)
 		a.nav_tx=t.x
 		a.nav_ty=t.y
 		a.nav_k=0
+		a.erase("nav_vx")
+		a.erase("nav_vy")
 	var route: PackedVector2Array=_route(a)
 	# Pushed off its route (another fish making it give way) so that it no longer sees the end of
 	# its leg: it plans again from here, once it is `replan` px from where it planned last.
 	var leg: int=clampi(int(a.nav_k),0,route.size()-2)
 	if _blocker(p,route[leg+1],radii,-1)>=0 and p.distance_to(Vector2(a.nav_x,a.nav_y))>NAV.replan:
+		# (S5-fix: by way of the corner it was making for, so it keeps going round the same side;
+		# planned afresh it had switched sides and turned round and back.)
+		var via: Vector2=route[leg+1]
 		a.nav_x=p.x
 		a.nav_y=p.y
 		a.nav_k=0
+		if via.distance_to(Vector2(a.nav_tx,a.nav_ty))>1.0:
+			a.nav_vx=via.x
+			a.nav_vy=via.y
 		route=_route(a)
 	var end: Vector2=route[route.size()-1]
 	if end.distance_to(Vector2(a.nav_tx,a.nav_ty))>1.0:
@@ -1220,16 +1228,33 @@ func _navigate(a: Dictionary, p: Vector2, t: Vector2, radii: PackedVector2Array)
 		else:
 			hi=mid
 	_leg=(route[k+2]-route[k+1]).normalized() if lo>0.0 else (route[k+1]-route[k]).normalized()
-	return route[k+1].lerp(route[k+2],lo)
+	var to: Vector2=route[k+1].lerp(route[k+2],lo)
+	# (S5-fix: a leg of a step or two, the last nudge into a target, does not set its facing; the
+	# way it swims does: a 7 px leg back had turned a chromis round eight times.)
+	if lo>0.0 and route[k+1].distance_to(route[k+2])<2.0*NAV.cell and p.distance_squared_to(to)>1.0:
+		_leg=(to-p).normalized()
+	return to
 
 # The planned route of fish a (from nav_x/nav_y to nav_tx/nav_ty, for its species and size), kept
 # for as long as those stay the same (never saved: planned again the same after a restore).
 func _route(a: Dictionary) -> PackedVector2Array:
 	var cls: String=a.species+"/"+str(animal_scale(a))
-	var key: Array=[a.nav_x,a.nav_y,a.nav_tx,a.nav_ty,cls]
+	var key: Array=[a.nav_x,a.nav_y,a.nav_tx,a.nav_ty,cls,a.get("nav_vx"),a.get("nav_vy")]
 	var kept: Dictionary=_routes.get(a.id,{})
 	if kept.get("key",[])!=key:
-		kept={"key":key,"route":_plan(cls,a.species,animal_scale(a),Vector2(a.nav_x,a.nav_y),Vector2(a.nav_tx,a.nav_ty))}
+		var from:=Vector2(a.nav_x,a.nav_y)
+		var to:=Vector2(a.nav_tx,a.nav_ty)
+		var route: PackedVector2Array
+		if a.has("nav_vx"):
+			# (Re-planned by way of a corner, S5-fix: here to the corner, then on from it.)
+			var via:=Vector2(a.nav_vx,a.nav_vy)
+			route=_plan(cls,a.species,animal_scale(a),from,via)
+			if route[route.size()-1].distance_to(via)<=1.0:
+				var rest: PackedVector2Array=_plan(cls,a.species,animal_scale(a),via,to)
+				route.append_array(rest.slice(1))
+		else:
+			route=_plan(cls,a.species,animal_scale(a),from,to)
+		kept={"key":key,"route":route}
 		_routes[a.id]=kept
 	return kept.route
 
