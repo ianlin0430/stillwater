@@ -151,7 +151,6 @@ var _dodge: float = 0.0
 # inside), and whether the fish was inside one. Scratch, never saved.
 var _close: float = 0.0
 var _escaping: bool = false
-var debug_id: int = -1
 # The direction of the route leg the last _navigate() call steered along (ZERO when none).
 var _leg: Vector2 = Vector2.ZERO
 # Per-tick scratch that _move() fills before moving anyone (2026-09-27, speed only; never saved):
@@ -688,7 +687,6 @@ func _move(delta: float) -> void:
 		elif follower and gap<40 and _close==0.0:
 			# (A school member settled in its slot faces with the leader, unless an obstacle is near.)
 			face=lead.direction
-		if a.id==debug_id: print("DBG t%.1f way %s arrive %s desired %s climbing %s close %.2f face %.0f" % [state.elapsed,str(way),str(arrive),str(desired),str(climbing),_close,face])
 		var velocity: Vector2=_swim(a,desired,speed,cruise,cfg,delta,a.activity=="Startled",face,climbing)
 		var free: Vector2=p+velocity*delta
 		# Keep each fish in its own layer (the shoaling push once carried hatchetfish down).

@@ -15,7 +15,6 @@ func _initialize() -> void:
 	w.state.ecology_remainder=-1.0e9
 	var obs: Array=w.scene.obstacles(w.state.decor[sc])
 	var lead: Dictionary=w.state.animals.filter(func(x): return x.species=="green_chromis")[0]
-	if arg("debug","0")=="1": w.debug_id=id
 	var trips: Dictionary={}
 	var TE=load("res://tests/test_obstacles.gd")
 	for i in 7000:
