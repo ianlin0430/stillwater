@@ -585,11 +585,28 @@ func _move(delta: float) -> void:
 		# One at a time through a passage too narrow for two (S5-fix): about to enter one that
 		# another fish is in, or is entering first, coming the other way, it waits at the mouth.
 		var waiting: bool=false
+		# When it entered the narrow passage it is in (S5-fix; saved): in a passage the later comer
+		# gives way, _gives_way.
+		var lanes: PackedInt32Array=_grid(species+"/"+str(animal_scale(a)),species,animal_scale(a))[5]
+		var in_lane: int=_lane_at(lanes,p)
+		if in_lane<0:
+			a.erase("nav_lane")
+			a.erase("nav_lane_t")
+		elif int(a.get("nav_lane",-1))!=in_lane:
+			a.nav_lane=in_lane
+			a.nav_lane_t=state.elapsed
 		if not hovering and not _escaping and gap>NAV.replan:
-			waiting=_must_wait(a,p,way if way!=Vector2.ZERO else offset/gap) or _gives_way(a,p)
-			if waiting:
+			var heading: Vector2=way if way!=Vector2.ZERO else offset/gap
+			waiting=_must_wait(a,p,heading)
+			var giving: bool=not waiting and _gives_way(a,p)
+			if waiting or giving:
 				way=Vector2.ZERO
 				arrive=Vector2.ZERO
+				# Giving way inside a passage too narrow to pass in, it backs out slowly, sculling,
+				# without turning round (S5-fix).
+				if giving and in_lane>=0:
+					arrive=-heading*cfg.scull*0.9
+				waiting=true
 		# (Saved, so a restored world gives way the same: a fish waiting at a passage makes way for
 		# the one coming out of it, _avoid.)
 		if waiting:
@@ -1078,11 +1095,16 @@ func _gives_way(a: Dictionary, p: Vector2) -> bool:
 		return false
 	var own: Vector2=_bodies[a.id]
 	var schooling: bool=a.species=="green_chromis"
+	var lane: PackedInt32Array=_grid(a.species+"/"+str(animal_scale(a)),a.species,animal_scale(a))[5]
+	var mine: int=_lane_at(lane,p)
 	for o: Dictionary in state.animals:
 		if o.id==a.id or schooling and o.species=="green_chromis":
 			continue
 		var other: bool=o.species=="green_chromis"
 		var yields: bool=(a.id>o.id) if schooling==other else schooling
+		# (Both in one passage: the later comer gives way, and backs out the way it came.)
+		if mine>=0 and _lane_at(lane,Vector2(o.x,o.y))==mine and a.has("nav_lane_t") and o.has("nav_lane_t") and a.nav_lane_t!=o.nav_lane_t:
+			yields=a.nav_lane_t>o.nav_lane_t
 		if not yields:
 			continue
 		var r: Vector2=(own+_bodies[o.id])*0.5*SEPARATE.margin*1.3
