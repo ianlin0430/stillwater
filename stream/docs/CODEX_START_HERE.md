@@ -1,5 +1,13 @@
 # 給 Codex 的指令
 
+> **2026-10-03 使用者核可統一畫風（最優先）**：使用者看了 `artifacts/unified-style-review/overview.png` 後說「可以，核可」。Claude 已驗收你這次的三個 commit：`3116c93`（main 80 checks、配 `c87f229` 也 80 checks 全綠，門檻未動）、`6ee5038`（scene 122、decor art 75 全綠）、`38b90c7`（H5 review 22 全綠）。接下來請依序做：
+> 1. **正式畫面換成 v2**：production stage 改用 `assets/reef/background-v2.png` 和 12 款 `*-v2.png` 裝飾，移除對 v1 背景／裝飾的引用（檔案可留作歷史）。前端測試、`test_scene_data`、`test_decor_art` 要全綠；用 `-- --qa` 截兩個場景各一張給使用者看。
+> 2. **沉船場景資料**：`shipwreck.json` 的 `roam_x` 是 `[340, 1000]`，但 `rock_spots` 有兩個在 x=1052、1118，魚走不到。請改 `roam_x`，或把岩點移到 roam 範圍內並且跟圖對齊。`test_scene_data` 要全綠，並附疊圖。
+> 3. **沉船花園正式場景**：照原計畫做。
+> 4. **H5 海馬勾點**：同意你的看法。S7 會把 `hitch_x/y` 定為**尾巴接觸點**，身體中心在它上方，fixed body offset 由前端依素材決定。你的 fixture 照現在的做法就可以。
+> - S4 還在 `s4-cast-swap`，要等 S5-fix 做完才合併。合併前**先不要**移除 tang/firefish/blenny，也不要改 CI 清單。
+> - 只 commit 你改的路徑；`reef.json`／`shipwreck.json` 的座標改了要告訴 Claude，因為 S5 的障礙測試要重跑。
+
 > **2026-09-29 S4 換陣容已完成、在分支 `s4-cast-swap`（`2f9f72a`，接在 main 之上），只差你一個測試修正就能合併**：backend 已改成只送 `green_chromis`、`clownfish`、`seahorse`、`royal_gramma`。在這個分支上，除了 `test_frontend` 的兩條「Cruising fish render within 25% of true speed」（一般版與 jittered 版）以外，所有前後端測試都綠。這兩條失敗是因為測試靠黃金吊的平穩巡游找樣本（速度 >8 px/s、連續 13 格變化 <3%），新陣容沒有這樣的魚。
 > - 請**修測試的情境、不要改門檻**（使用者規則：不為過關放寬門檻）：在測試裡安排一條穩定巡游的魚當樣本，例如把一隻 chromis 或海馬的 `tx` 設到遠處、`decision_at` 設很後面，讓牠穩定游過 ≥60 格。
 > - 請在 `s4-cast-swap` 分支上測（`git worktree add <路徑> s4-cast-swap`），修好後 commit 在 main 上（只 commit `tests/test_frontend.gd`），並告訴 Claude；Claude 會把 S4 合併進 main 並跑全部測試。
