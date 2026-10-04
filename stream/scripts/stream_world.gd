@@ -598,21 +598,14 @@ func _move(delta: float) -> void:
 			_forget_around(a)
 		else:
 			way=_around(a,p,target,band,radii)
-		# Reserve all single-file spans before setting out, including straight approaches.
-		# A denied excursion chooses a staging destination in open water; it never queues
-		# inside the neck. Claims live on the animal so save/restore preserves ownership.
+		# A denied claim pauses the same journey. Keep its route and destination:
+		# staging followed by resumption had turned fish away mid-trip.
+		var waiting: bool=false
 		if not hovering and not startled and not _escaping and not follower:
 			if not _reserve_route(a,p,target):
-				var staging: Vector2=_staging_target(a,p,target)
-				a.tx=staging.x
-				a.ty=staging.y
-				_forget_around(a)
-				target=_aim(a,radii)
-				offset=target-p
-				gap=offset.length()
-				way=_around(a,p,target,band,radii)
-				arrive=offset.normalized()*minf(speed,sqrt(2.0*cfg.brake*gap))
-		var waiting: bool=false
+				waiting=true
+				way=Vector2.ZERO
+				arrive=Vector2.ZERO
 		if not hovering and not _escaping and gap>NAV.replan and _obstacles.is_empty() and _gives_way(a,p):
 			waiting=true
 			way=Vector2.ZERO
@@ -699,7 +692,7 @@ func _move(delta: float) -> void:
 		elif follower and gap<40 and _close==0.0:
 			# (A school member settled in its slot faces with the leader, unless an obstacle is near.)
 			face=lead.direction
-		if home_hover:
+		if home_hover or waiting:
 			desired=desired.limit_length(cfg.scull*0.9)
 		var velocity: Vector2=_swim(a,desired,speed,cruise,cfg,delta,a.activity=="Startled",face,climbing)
 		var free: Vector2=p+velocity*delta
