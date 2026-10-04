@@ -16,6 +16,11 @@ func _initialize() -> void:
 		for i in 3000:
 			w.advance_live(0.2)
 			if a.activity=="Foraging": break
+		var candidates: Array=[]
+		for dx: float in [-75.0,75.0]:
+			for dy: float in [-20.0,0.0,20.0]:
+				var target:=Vector2(a.home_x+dx,w._in_water(a.species,a.home_x+dx,a.home_y+dy))
+				candidates.append({"target":str(target),"blocker":w._blocker(Vector2(a.home_x,a.home_y),target,w._radii_of(a),-1)})
 		var start:=Vector2(a.x,a.y)
 		var home:=Vector2(a.home_x,a.home_y)
 		var row: Dictionary={"scene":scene_id,"activity":a.activity,"entry_time":w.state.elapsed,"target_offset":home.distance_to(Vector2(a.tx,a.ty)),"travel":0.0,"max_home_distance":home.distance_to(start),"outside_ticks":0}
@@ -26,6 +31,9 @@ func _initialize() -> void:
 			row.max_home_distance=maxf(row.max_home_distance,home.distance_to(p))
 			if not w._clown_inside(p): row.outside_ticks+=1
 			if a.activity!="Foraging": break
+		row.home=str(home)
+		row.candidates=candidates
+		row.obstacles=w._obstacles
 		row.return_activity=a.activity
 		rows.append(row)
 	print(JSON.stringify({"rows":rows}))

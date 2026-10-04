@@ -1913,8 +1913,15 @@ func _choose_clown(a: Dictionary) -> void:
 	if foraging and _clown_inside(spot):
 		spot.x=clampf(a.home_x+(-reach if cos(angle)<0.0 else reach),_roam_x.x,_roam_x.y)
 		spot.y=_in_water(a.species,spot.x,spot.y)
+	# Try the other side of home when decor blocks the sampled excursion. No extra
+	# random draw: a rock beside the anemone must not suppress every foraging attempt.
+	var home:=Vector2(a.home_x,a.home_y)
+	var radii: PackedVector2Array=_radii_of(a)
+	if foraging and _blocker(home,spot,radii,-1)>=0:
+		spot.x=clampf(a.home_x-(spot.x-a.home_x),_roam_x.x,_roam_x.y)
+		spot.y=_in_water(a.species,spot.x,spot.y)
 	# Excursions remain on the visible side of home, never across a rock or narrow passage.
-	if _blocker(Vector2(a.home_x,a.home_y),spot,_radii_of(a),-1)>=0:
+	if (foraging and _clown_inside(spot)) or _blocker(home,spot,radii,-1)>=0:
 		_clown_return(a)
 		return
 	a.activity="Foraging" if foraging else "Nestling"
