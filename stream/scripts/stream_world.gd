@@ -606,7 +606,7 @@ func _move(delta: float) -> void:
 				way=_around(a,p,target,band,radii)
 				arrive=offset.normalized()*minf(speed,sqrt(2.0*cfg.brake*gap))
 		var waiting: bool=false
-		if not hovering and not _escaping and gap>NAV.replan and _gives_way(a,p):
+		if not hovering and not _escaping and gap>NAV.replan and _obstacles.is_empty() and _gives_way(a,p):
 			waiting=true
 			way=Vector2.ZERO
 			arrive=Vector2.ZERO
@@ -698,7 +698,7 @@ func _move(delta: float) -> void:
 		if next.distance_to(free)>RELOCATION:
 			a.relocated_at=state.elapsed
 		# Its centre never enters an obstacle: a step across an edge slides along it (S5).
-		var kept: Vector2=_keep_out(p,next,lo,hi)
+		var kept: Vector2=_keep_out(p,next,lo,hi,radii)
 		if kept!=next:
 			velocity=(kept-p)/delta
 			next=kept
@@ -1248,7 +1248,7 @@ func _around(a: Dictionary, p: Vector2, t: Vector2, band: Array, radii: PackedVe
 		if travel[i].x>o.rx+OBSTACLE.pad+0.001:
 			travel[i]=Vector2(o.rx+half.x,o.ry+half.y)
 	# Route clearance governs both the decision to detour and visibility around corners.
-	if p.distance_to(t)<NAV.replan or _blocker(p,t,travel,-1)<0:
+	if p.distance_to(t)<NAV.replan or not a.has("nav_tx") and _blocker(p,t,travel,-1)<0:
 		_forget_around(a)
 		return Vector2.ZERO
 	var to: Vector2=_navigate(a,p,t,travel)
@@ -1723,11 +1723,12 @@ static func _pop(nodes: Array, keys: Array) -> int:
 # The step p -> next (kept in lo..hi) with its centre out of every obstacle p is out of: across an
 # edge it slides along the edge instead (the part across is dropped). If that still ends inside
 # one (between two that touch), it stays at p.
-func _keep_out(p: Vector2, next: Vector2, lo: Vector2, hi: Vector2) -> Vector2:
+func _keep_out(p: Vector2, next: Vector2, lo: Vector2, hi: Vector2, radii: PackedVector2Array = PackedVector2Array()) -> Vector2:
 	var moved: bool=false
-	for o: Dictionary in _obstacles:
+	for i in _obstacles.size():
+		var o: Dictionary=_obstacles[i]
 		var c:=Vector2(o.cx,o.cy)
-		var r:=Vector2(o.rx,o.ry)
+		var r: Vector2=radii[i] if not radii.is_empty() else Vector2(o.rx,o.ry)
 		var P1: Vector2=(next-c)/r
 		if P1.length_squared()>=1.0:
 			continue
