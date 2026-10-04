@@ -689,6 +689,8 @@ func _move(delta: float) -> void:
 			# (S5-fix: when the leg runs up or down but the way it swims runs clearly sideways, the
 			# way: a seahorse on a vertical leg had kept facing away from where it swam, and stalled.)
 			face=signf(leg.x) if absf(leg.x)>=0.45 else (signf(way.x) if absf(way.x)>=0.45 else a.direction)
+		elif climbing:
+			face=signf(offset.x) if absf(offset.x)>0.45*gap else a.direction
 		elif follower and gap<40 and _close==0.0:
 			# (A school member settled in its slot faces with the leader, unless an obstacle is near.)
 			face=lead.direction
@@ -856,7 +858,7 @@ func _swim(a: Dictionary, desired: Vector2, cap: float, cruise: float, cfg: Dict
 	var axis:=Vector2(cos(psi),0.0) if absf(cos(psi))>0.01 else Vector2.ZERO
 	var miss: Vector2=desired-body
 	var ahead: Vector2=axis*miss.dot(axis)
-	var settle: float=slow if want<cfg.scull else 0.0
+	var settle: float=slow if want<cfg.scull or climbing and urgent>0.0 else 0.0
 	var velocity: Vector2=body+ahead.limit_length(cfg.scull*settle)+(miss-ahead).limit_length(cfg.scull*maxf(urgent,slow))
 	a.heading=psi
 	a.pitch=theta
@@ -1042,9 +1044,10 @@ func _open_target(a: Dictionary, target: Vector2) -> Vector2:
 	var grid: Array=_grid(cls,a.species,animal_scale(a))
 	var part: PackedInt32Array=grid[6]
 	var main: int=grid[7]
+	var lanes: PackedInt32Array=_grid("traffic","clownfish",1.0)[5]
 	var w: int=int(1280.0/NAV.cell)
 	var cell: int=clampi(int(target.y/NAV.cell),0,71)*w+clampi(int(target.x/NAV.cell),0,w-1)
-	if part[cell]==main:
+	if part[cell]==main and lanes[cell]<0:
 		return target
 	var key: Array=[cls,target.x,target.y]
 	if _open_targets.has(key):
@@ -1052,7 +1055,7 @@ func _open_target(a: Dictionary, target: Vector2) -> Vector2:
 	var best: Vector2=target
 	var distance: float=INF
 	for i in part.size():
-		if part[i]!=main:
+		if part[i]!=main or lanes[i]>=0:
 			continue
 		var spot: Vector2=_centre(i,w)
 		var d: float=target.distance_squared_to(spot)
@@ -1113,7 +1116,7 @@ func _reserve_route(a: Dictionary, p: Vector2, target: Vector2) -> bool:
 			if label>=0 and not claims.has(label):
 				claims.append(label)
 	for o: Dictionary in state.animals:
-		if o.id==a.id or a.species=="green_chromis" and o.species=="green_chromis":
+		if o.id==a.id or a.species=="green_chromis" and o.species=="green_chromis" or a.species=="clownfish" and o.species=="clownfish" and a.home==o.home:
 			continue
 		var at:=Vector2(o.x,o.y)
 		# Expired claims must not block another fish earlier in the update order.
@@ -1514,6 +1517,9 @@ func _grid(cls: String, species: String, scale: float) -> Array:
 		for gx in w:
 			var i: int=gy*w+gx
 			if g[i]!=0:
+				continue
+			if traffic and room[i]<maxf(big.x,big.y)*0.5*SEPARATE.margin:
+				narrow[i]=1
 				continue
 			var l: int=0
 			while l<reach_x and gx-l-1>=0 and g[i-l-1]==0: l+=1
