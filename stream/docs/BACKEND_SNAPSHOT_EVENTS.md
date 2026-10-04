@@ -237,7 +237,7 @@ events 只保留 160 筆；若 `events_after` 最舊一筆 `seq > cursor+1`，�
   - `nestle`：0…1 的**目標值**，不是進度；前端自行平滑並安排魚在觸手前／後的層次。`Nestling` = 0.65，`Sheltering`／`Sleeping` = 1，`Foraging`／`Feeding` = 0。
   - `Nestling`：橢圓內 10–25 px 小幅目標，短滑行與慢速胸鰭移動；`Foraging`：短程探索可見且無障礙的家附近水域，8–12 秒後返回；全部日常目標受自己水層限制，離家不超過 120 px。
   - `Sheltering`：敲玻璃命中，或游標距魚 <60 px，朝海葵中心退回，停留 `STARTLE.hide_seconds`（8 秒）；游標持續貼近會延長。此期間不追飼料。`Sleeping`：夜間（<7 或 >19 時）窩在中心，幾乎不動，不追飼料。
-  - `Feeding`：有能量空間時只追魚附近 60 px（chromis 260 px）、海葵中心 90 px 內的飄落飼料；吃到或飼料消失即返家。`ate` 事件與食物帳本不變。
+  - `Feeding`：有能量空間時只追魚附近 120 px（chromis 260 px）、海葵中心 120 px 內的飄落飼料；短程追食可提高胸鰭上／下划水速度，趕在沉降飼料通過前攔截；吃到或飼料消失即返家。返家停留時間由個體 id 與已保存的 motion tick 決定，不抽其他魚共用的 motion_rng。`ate` 事件與食物帳本不變。
   - `nestle` 隨個體存檔／還原；驗證拒絕非有限數值與超出 0…1。S6 前的 v3 存檔可缺此欄位，下一次日常活動決策補上；`decision_at`、`tx/ty` 保存活動時序與目的地。
   - Trace：`tools/natural_motion_trace.gd -- --scene=reef`（或 `shipwreck`），產出 `artifacts/natural-motion/clownfish-<scene>.json`；含所有魚的 0.2 秒一筆 motion、activity、clownfish `nestle`、`home`、`home_x/home_y`，附餵食／敲玻璃／游標／夜間的時間戳。供 H5 前端動畫對照。
 

@@ -1835,14 +1835,15 @@ func _keep_out(p: Vector2, next: Vector2, lo: Vector2, hi: Vector2, radii: Packe
 		var o: Dictionary=_obstacles[i]
 		var c:=Vector2(o.cx,o.cy)
 		var r: Vector2=radii[i] if not radii.is_empty() else Vector2(o.rx,o.ry)
+		var P1: Vector2=(next-c)/r
+		if P1.length_squared()>=1.0:
+			continue
 		# Inside the padded/body margin, keep allowing an escape from that margin,
 		# but never allow an outside centre to cross the raw obstacle itself.
 		var raw: Vector2=Vector2(o.rx,o.ry)
 		if ((p-c)/r).length_squared()<1.0 and ((p-c)/raw).length_squared()>=1.0 and ((next-c)/raw).length_squared()<1.0:
 			r=raw
-		var P1: Vector2=(next-c)/r
-		if P1.length_squared()>=1.0:
-			continue
+			P1=(next-c)/r
 		var P0: Vector2=(p-c)/r
 		if P0.length_squared()<1.0:
 			continue
