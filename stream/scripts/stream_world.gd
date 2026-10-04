@@ -1359,11 +1359,11 @@ func _navigate(a: Dictionary, p: Vector2, t: Vector2, radii: PackedVector2Array)
 		k+=1
 	a.nav_k=k
 	if k+2>=route.size():
-		# Small lateral drift on a vertical last leg is a pectoral correction,
-		# not a change of journey facing. Wider cut-throughs still face their travel.
-		var planned: Vector2=(route[k+1]-route[k]).normalized()
-		_last_scull=absf(planned.x)<0.45 and absf(route[k+1].x-p.x)<NAV.replan
-		_leg=planned if _last_scull else (route[k+1]-p).normalized()
+		# Drift on a vertical last leg is a pectoral correction, not a new
+		# journey heading. Other legs keep their usual travel-facing rule.
+		var planned: Vector2=route[k+1]-route[k]
+		_last_scull=planned.x*planned.x<0.2025*planned.length_squared()
+		_leg=(planned if _last_scull else route[k+1]-p).normalized()
 		return route[k+1]
 	var lo: float=0.0
 	var hi: float=1.0
