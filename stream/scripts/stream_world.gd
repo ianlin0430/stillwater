@@ -1124,7 +1124,6 @@ func _hold_off(p: Vector2, v: Vector2, radii: PackedVector2Array, cruise: float,
 func _reserve_route(a: Dictionary, p: Vector2, target: Vector2) -> bool:
 	if _obstacles.is_empty():
 		return true
-	var lane: PackedInt32Array=_grid("traffic","clownfish",1.0)[5]
 	var same: bool=a.has("pass_tx") and target.distance_to(Vector2(a.pass_tx,a.pass_ty))<1.0
 	if same and a.get("pass_route",false)==a.has("nav_tx") and (not a.has("nav_tx") or a.get("pass_from_x",p.x)==a.nav_x and a.get("pass_from_y",p.y)==a.nav_y) and p.distance_to(target)>NAV.replan:
 		return true
@@ -1134,6 +1133,7 @@ func _reserve_route(a: Dictionary, p: Vector2, target: Vector2) -> bool:
 	if p.distance_to(target)<=NAV.replan:
 		return true
 	var route: PackedVector2Array=_route(a) if a.has("nav_tx") else PackedVector2Array([p,target])
+	var lane: PackedInt32Array=_grid("traffic","clownfish",1.0)[5]
 	var claims: Array[int]=[]
 	for j in range(1,route.size()):
 		var steps: int=maxi(1,int(ceil(route[j-1].distance_to(route[j])/NAV.cell)))
@@ -1141,7 +1141,7 @@ func _reserve_route(a: Dictionary, p: Vector2, target: Vector2) -> bool:
 			var label: int=_lane_at(lane,route[j-1].lerp(route[j],float(k)/steps))
 			if label>=0 and not claims.has(label):
 				claims.append(label)
-	for o: Dictionary in state.animals:
+	for o: Dictionary in (state.animals if not claims.is_empty() else []):
 		if o.id==a.id or a.species=="green_chromis" and o.species=="green_chromis" or a.species=="clownfish" and o.species=="clownfish" and a.home==o.home:
 			continue
 		var at:=Vector2(o.x,o.y)
