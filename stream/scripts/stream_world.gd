@@ -1877,7 +1877,7 @@ func _clown_return(a: Dictionary, activity: String = "Nestling") -> void:
 	a.nestle=1.0 if activity in ["Sleeping","Sheltering"] else 0.65
 	a.tx=a.home_x
 	a.ty=a.home_y
-	a.decision_at=state.elapsed+motion_rng.randf_range(30.0,50.0) if activity=="Nestling" else state.elapsed
+	a.decision_at=state.elapsed+lerpf(30.0,50.0,_hash01(int(a.id),int(state.motion_ticks))) if activity=="Nestling" else state.elapsed
 	a.erase("food_id")
 
 func _clown_shelter(a: Dictionary) -> void:
