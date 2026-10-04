@@ -547,7 +547,6 @@ func _move(delta: float) -> void:
 		var p:=Vector2(a.x,a.y)
 		var species: String=a.species
 		var chromis: bool=species=="green_chromis"
-		var clown_local: bool=species=="clownfish" and a.activity in ["Nestling","Foraging","Sheltering","Sleeping","Feeding"]
 		if species=="clownfish" and not lure.is_empty() and p.distance_to(Vector2(lure.x,lure.y))<60.0:
 			_clown_shelter(a)
 		var sheltered: bool=species=="clownfish" and a.activity=="Sheltering" and state.elapsed<a.decision_at
@@ -566,6 +565,7 @@ func _move(delta: float) -> void:
 					_choose_clown(a)
 				else:
 					_choose_home(a)
+		var clown_local: bool=species=="clownfish" and a.activity in ["Nestling","Foraging","Sheltering","Sleeping","Feeding"]
 		# Its band, but never so low that the body dips into the bed (a scene's band may reach below
 		# the bed where the sand rises, e.g. the royal gramma's; S4 audit_space).
 		var band: Array=[_bands[species][0],minf(_bands[species][1],bed_y(p.x)-_bodies[a.id].y*0.5)]

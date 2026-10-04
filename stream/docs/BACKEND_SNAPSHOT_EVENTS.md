@@ -213,7 +213,7 @@ events 只保留 160 筆；若 `events_after` 最舊一筆 `seq > cursor+1`，�
 ## 活動名稱（`animals[].activity`）
 
 綠光鰓雀鯛（green_chromis）：`Schooling`、`Resting`，以及互動造成的 `Feeding`、`Startled`、`Curious`（只有領頭魚）。
-小丑魚、海馬、皇家范魚（S4 基本行為）：`Hovering`（白天在家附近游）、`Resting`（夜裡在家旁）、`Feeding`、`Startled`。S6–S8 會換成各自的活動名。
+海馬、皇家范魚（S4 基本行為）：`Hovering`（白天在家附近游）、`Resting`（夜裡在家旁）、`Feeding`、`Startled`。S7–S8 會換成各自的活動名。小丑魚（S6）：`Nestling`、`Foraging`、`Sheltering`、`Sleeping`、`Feeding`。
 以下三種 S4 起已移除（backend 不再產生）：
 草食鳚（lawnmower_blenny）：`Grazing`、`Perching`、`Hopping`、`Sleeping`（夜裡），以及 `Feeding`（去啄沉底飼料）、`Startled`（沿沙床逃開）。
 紫雷達（purple_firefish）：`Hovering`、`Hiding`、`Sleeping`。
@@ -230,9 +230,17 @@ events 只保留 160 筆；若 `events_after` 最舊一筆 `seq > cursor+1`，�
 
 ## 珊瑚礁 v3 陣容（2026-09-28 重新定案，S4）
 
-四種都吃 `microfauna`；世界座標 1280×720；水層、床面、出入口與「家」都從場景檔來（S4 固定是 `reef` 場景、預設裝飾；Codex 改 JSON 座標後自動跟著變）。S4 的新魚只有**最基本的行為**，完整行為（小丑魚 `Nestling`/`nestle`、海馬 `Hitched`/`lean`、皇家范魚 `extend`/`den_*`）在 S6–S8，欄位與活動名到時會增加。
+四種都吃 `microfauna`；世界座標 1280×720；水層、床面、出入口與「家」都從場景檔來（S4 固定是 `reef` 場景、預設裝飾；Codex 改 JSON 座標後自動跟著變）。小丑魚已實作 S6；海馬 `Hitched`/`lean`、皇家范魚 `extend`/`den_*` 在 S7–S8 增加。
 
 - **綠光鰓雀鯛 `green_chromis`**：同下方舊章節的魚群規則（領頭魚、成員位置、餵食、敲玻璃、游標引魚）。唯一改變：夜裡領頭魚選「游」時只做短程（40–150 px、不橫越），讓夜裡確實比白天慢（S4：新陣容改變了亂數順序後，有的 seed 夜裡游的距離接近白天）。
+- **小丑魚 S6 / H5 動畫契約**：`home` = `{kind:"anemone", slot, i:0}`，`home_x/home_y` 為目前款式海葵的世界座標中心；橢圓半徑從 `scene.effects(slot, decor[slot]).anemone.rx/ry` 讀。海葵換款式立即更新家座標，魚自行游回，不瞬移。
+  - `nestle`：0…1 的**目標值**，不是進度；前端自行平滑並安排魚在觸手前／後的層次。`Nestling` = 0.65，`Sheltering`／`Sleeping` = 1，`Foraging`／`Feeding` = 0。
+  - `Nestling`：橢圓內 10–25 px 小幅目標，短滑行與慢速胸鰭移動；`Foraging`：短程探索可見且無障礙的家附近水域，8–12 秒後返回；全部日常目標受自己水層限制，離家不超過 120 px。
+  - `Sheltering`：敲玻璃命中，或游標距魚 <60 px，朝海葵中心退回，停留 `STARTLE.hide_seconds`（8 秒）；游標持續貼近會延長。此期間不追飼料。`Sleeping`：夜間（<7 或 >19 時）窩在中心，幾乎不動，不追飼料。
+  - `Feeding`：有能量空間時只追魚附近 60 px（chromis 260 px）、海葵中心 90 px 內的飄落飼料；吃到或飼料消失即返家。`ate` 事件與食物帳本不變。
+  - `nestle` 隨個體存檔／還原；驗證拒絕非有限數值與超出 0…1。S6 前的 v3 存檔可缺此欄位，下一次日常活動決策補上；`decision_at`、`tx/ty` 保存活動時序與目的地。
+  - Trace：`tools/natural_motion_trace.gd -- --scene=reef`（或 `shipwreck`），產出 `artifacts/natural-motion/clownfish-<scene>.json`；含所有魚的 0.2 秒一筆 motion、activity、clownfish `nestle`、`home`、`home_x/home_y`，附餵食／敲玻璃／游標／夜間的時間戳。供 H5 前端動畫對照。
+
 - **小丑魚 `clownfish`**（*Amphiprion ocellaris*）、**海馬 `seahorse`**（*Hippocampus kuda*）、**皇家范魚 `royal_gramma`**（*Gramma loreto*）：每隻有一個家（`StreamWorld.HOME`）：
   - `home` = `{"kind","slot","i"}`：`kind` 是 `anemone`（小丑魚共用場景唯一的海葵，最多 capacity 隻）、`hitch`（海馬一隻一個勾點，必備水草優先）、`shelter`（范魚一隻一個 `use` 含 `royal_gramma` 的洞）或 `rock`（沒有空洞時用場景的 `rock_spots`）；`slot` 是槽位 id（`rock` 為空字串），`i` 是該槽效果清單裡的序號。`home_x`/`home_y` 是家的世界座標。出生、移入、開場時指派，不抽亂數；離親代的家最近的空位優先。
   - 活動：白天 `Hovering`（游到家附近 `radius` 內的點：小丑魚 60、海馬 30、范魚 50 px，每 6–15／15–40／5–12 秒換一個點）、夜裡 `Resting`（在家旁邊自己固定的位置休息），以及互動的 `Feeding`、`Startled`。**不理游標**（只有 chromis 領頭魚會 `Curious`）。

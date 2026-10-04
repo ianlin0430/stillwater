@@ -63,7 +63,8 @@ func _initialize() -> void:
 	a.advance_live(120)
 	c.advance_live(120)
 	check(same(a,c),"Live RNG continues after restoration")
-	var path: String="user://qa-test.world"
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path("res://artifacts/world-test"))
+	var path: String="res://artifacts/world-test/qa-test.world"
 	check(StreamStore.save(path,a)==OK,"Atomic save succeeds")
 	check(c.restore(StreamStore.read(path)),"Checksummed save loads")
 	check(same(a,c),"Complete save round trip")
@@ -89,7 +90,7 @@ func _initialize() -> void:
 	future=a.export_state()
 	future.animals[0].activity=44
 	check(not c.restore(future),"Wrong-type activity rejected")
-	var damaged_path: String="user://qa-future.world"
+	var damaged_path: String="res://artifacts/world-test/qa-future.world"
 	f=FileAccess.open(damaged_path,FileAccess.WRITE)
 	f.store_var({"format":"future"})
 	f.close()
@@ -833,6 +834,7 @@ func new_cast_checks() -> void:
 	d.state.light_hour=12.0
 	var seen: Dictionary={}
 	var band_ok: bool=true
+	var activities_ok: bool=true
 	var far: Dictionary={}
 	var travelled: Dictionary={}
 	for i in 9000:
@@ -844,11 +846,12 @@ func new_cast_checks() -> void:
 			if not x.has("home"):
 				continue
 			seen[x.activity]=true
+			activities_ok=activities_ok and x.activity in (["Nestling","Foraging"] if x.species=="clownfish" else ["Hovering","Resting"])
 			band_ok=band_ok and in_band(d,x)
 			far[x.species]=maxf(far.get(x.species,0.0),home_dist(x))
 			travelled[x.id]=travelled.get(x.id,0.0)+Vector2(x.x,x.y).distance_to(before.get(x.id,Vector2(x.x,x.y)))
 	check(band_ok,"The new fish keep to their depth bands")
-	check(seen.has("Hovering") and seen.keys().all(func(k): return k in ["Hovering","Resting"]),"By day the new fish swim about their homes (%s)" % str(seen.keys()))
+	check(seen.has("Hovering") and seen.has("Nestling") and seen.has("Foraging") and activities_ok,"By day the new fish swim about their homes (%s)" % str(seen.keys()))
 	for species: String in NEW_CAST:
 		var r: float=StreamWorld.HOME[species].radius
 		check(far.get(species,INF)<=2.0*r,"A %s stays near its home (at most %.0f px away, limit %.0f)" % [species,far.get(species,INF),2.0*r])
@@ -857,7 +860,7 @@ func new_cast_checks() -> void:
 	var n:=StreamWorld.new(42,1000)
 	n.state.light_hour=1.0
 	n.advance_live(300)
-	check(n.state.animals.filter(func(x): return x.has("home")).all(func(x): return x.activity=="Resting" and home_dist(x)<=StreamWorld.HOME[x.species].radius),"At night the new fish rest beside their homes")
+	check(n.state.animals.filter(func(x): return x.has("home")).all(func(x): return x.activity==("Sleeping" if x.species=="clownfish" else "Resting") and home_dist(x)<=StreamWorld.HOME[x.species].radius),"At night the new fish rest beside their homes")
 	check(absf(d.residual())<0.00001 and StreamWorld.validate(d.export_state()) and StreamWorld.validate(n.export_state()),"New-cast worlds conserve material and validate")
 	# They eat microfauna.
 	var grazed:=StreamWorld.new(8,1000)
@@ -894,10 +897,10 @@ func new_cast_checks() -> void:
 		var tf: Dictionary=of(t,species)[0]
 		var tap:=Vector2(tf.x+30,tf.y)
 		var start: float=Vector2(tf.x,tf.y).distance_to(tap)
-		check(t.startle(tap.x,tap.y,1.0)>=1 and tf.activity=="Startled","A tap startles a nearby %s" % species)
+		check(t.startle(tap.x,tap.y,1.0)>=1 and tf.activity==("Sheltering" if species=="clownfish" else "Startled"),"A tap startles a nearby %s" % species)
 		t.advance_live(StreamWorld.STARTLE.seconds)
 		var moved: float=Vector2(tf.x,tf.y).distance_to(tap)-start
-		check(moved>(5.0 if species=="seahorse" else 10.0) and in_band(t,tf),"The %s darts away from the tap inside its band (%.1f px)" % [species,moved])
+		check((t._clown_inside(Vector2(tf.x,tf.y)) if species=="clownfish" else moved>(5.0 if species=="seahorse" else 10.0)) and in_band(t,tf),"The %s shelters or darts as specified, inside its band (%.1f px from tap)" % [species,moved])
 		t.advance_live(60)
 		check(tf.activity!="Startled" and home_dist(tf)<=2.0*StreamWorld.HOME[species].radius,"Then it settles and returns to its home")
 	# Young are born beside their own home; a full habitat sends them away; arrivals swim home.
