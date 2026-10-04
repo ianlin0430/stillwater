@@ -581,7 +581,7 @@ func _move(delta: float) -> void:
 		# (Chasing a sinking pellet it keeps closing in: no slower than twice the sink speed.)
 		var top: float=minf(speed,maxf(sqrt(2.0*cfg.brake*gap),2.0*FOOD.sink if a.activity=="Feeding" else 0.0))
 		var arrive: Vector2=offset/gap*top if gap>0.01 else Vector2.ZERO
-		var home_hover: bool=a.has("home_x") and a.activity=="Hovering" and p.distance_to(Vector2(a.home_x,a.home_y))<HOME[species].radius+_bodies[a.id].x*0.5 and target.distance_to(Vector2(a.home_x,a.home_y))<HOME[species].radius
+		var home_hover: bool=a.has("home_x") and a.activity=="Hovering" and p.distance_to(Vector2(a.home_x,a.home_y))<HOME[species].radius+_bodies[a.id].x and target.distance_to(Vector2(a.home_x,a.home_y))<HOME[species].radius
 		if home_hover:
 			arrive=arrive.limit_length(cfg.scull*0.9)
 		var hovering: bool=resting and gap<CHROMIS.hold
@@ -759,6 +759,15 @@ func _avoid(a: Dictionary, p: Vector2, desired: Vector2, speed: float) -> Vector
 		var q: float=minf(now,Vector2(ahead.x/r.x,ahead.y/r.y).length())
 		if q>=1.0:
 			continue
+		var schooling: bool=a.species=="green_chromis"
+		var yields: float=(1.0 if a.id>o.id else 0.0) if schooling==(o.species=="green_chromis") else (1.0 if schooling else 0.0)
+		if a.has("nav_wait") and not o.has("nav_wait"):
+			yields=1.0
+		elif o.has("nav_wait") and not a.has("nav_wait"):
+			yields=0.0
+		var travelling: bool=Vector2(o.tx-o.x,o.ty-o.y).length()>40.0 and o.activity!="Resting"
+		if yields==0.0 and travelling and now>=0.8:
+			continue
 		# Dodge up or down, away from the other (the upper fish rises; ids break a tie).
 		var up: float=signf(rel.y) if absf(rel.y)>1.0 else (1.0 if a.id>o.id else -1.0)
 		var side: float=signf(rel.x) if absf(rel.x)>1.0 else 0.0
@@ -770,8 +779,6 @@ func _avoid(a: Dictionary, p: Vector2, desired: Vector2, speed: float) -> Vector
 		# wait (S5-fix; holding back alone left two fish face to face for minutes).
 		# (S5-fix: a swimming chromis gives way to the slower fish, not they to the school: shoved
 		# down by a passing school, a clownfish ended up under a ledge and turned round and back.)
-		var schooling: bool=a.species=="green_chromis"
-		var yields: float=(1.0 if a.id>o.id else 0.0) if schooling==(o.species=="green_chromis") else (1.0 if schooling else 0.0)
 		# (A fish waiting at a passage gives way to everyone; one coming out does not wait for it.)
 		var holding: float=SEPARATE.close
 		if a.has("nav_wait") and not o.has("nav_wait"):
@@ -1065,30 +1072,6 @@ func _open_target(a: Dictionary, target: Vector2) -> Vector2:
 			distance=d
 			best=spot
 	_open_targets[key]=best
-	return best
-
-# A home hover destination must lie in water that the home-aware planner can reach.
-# Project once per decision, keeping the original random draws and nearest-point intent.
-func _home_target(a: Dictionary, target: Vector2) -> Vector2:
-	var grid: Array=_grid(_route_class(a),a.species,animal_scale(a))
-	var part: PackedInt32Array=grid[3]
-	var w: int=int(1280.0/NAV.cell)
-	var cell: int=clampi(int(target.y/NAV.cell),0,71)*w+clampi(int(target.x/NAV.cell),0,w-1)
-	if part[cell]==grid[4]:
-		return target
-	var home:=Vector2(a.home_x,a.home_y)
-	var best: Vector2=target
-	var score: float=INF
-	for i in part.size():
-		if part[i]!=grid[4]:
-			continue
-		var spot: Vector2=_centre(i,w)
-		if spot.distance_to(home)>HOME[a.species].radius:
-			continue
-		var d: float=spot.distance_squared_to(target)
-		if d<score:
-			score=d
-			best=spot
 	return best
 
 # v without the part that heads into an obstacle, over the last `hold` of its widened radii (radii)
@@ -1866,10 +1849,6 @@ func _choose_home(a: Dictionary) -> void:
 			var out: Vector2=rel/q if q>0.0001 else Vector2(0.0,-1.0)
 			a.tx=clampf(o.x+out.x*r.x*1.05,_roam_x.x,_roam_x.y)
 			a.ty=_in_water(a.species,a.tx,o.y+out.y*r.y*1.05)
-	if not _obstacles.is_empty():
-		var reachable: Vector2=_home_target(a,Vector2(a.tx,a.ty))
-		a.tx=reachable.x
-		a.ty=reachable.y
 	a.decision_at=state.elapsed+motion_rng.randf_range(h.dwell[0],h.dwell[1])
 
 # A school member holds its own slot beside the leader, mirrored with the leader's heading.
