@@ -691,7 +691,9 @@ func _move(delta: float) -> void:
 			# (S5-fix: when the leg runs up or down but the way it swims runs clearly sideways, the
 			# way: a seahorse on a vertical leg had kept facing away from where it swam, and stalled.)
 			face=signf(leg.x) if absf(leg.x)>=0.45 else (signf(way.x) if absf(way.x)>=0.45 else a.direction)
-		elif climbing:
+		elif gap>40.0:
+			# Keep the journey heading through lateral avoidance; a transient dodge is
+			# not a new destination and must not turn the body back and forth.
 			face=signf(offset.x) if absf(offset.x)>0.45*gap else a.direction
 		elif follower and gap<40 and _close==0.0:
 			# (A school member settled in its slot faces with the leader, unless an obstacle is near.)
