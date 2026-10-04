@@ -717,7 +717,7 @@ func _move(delta: float) -> void:
 		# Which way to face: a resting fish settled on its spot keeps its facing, a school member
 		# settled in its slot faces the way the leader does (so the school turns almost together).
 		var face: float=0.0
-		if hovering or waiting or home_hover:
+		if hovering or waiting or nestled:
 			face=a.direction
 		elif way!=Vector2.ZERO:
 			# On a route round an obstacle it faces along its leg; only a clearly sideways leg turns
