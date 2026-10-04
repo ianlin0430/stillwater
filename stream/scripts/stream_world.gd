@@ -690,7 +690,7 @@ func _move(delta: float) -> void:
 			var leg: Vector2=_leg if not _escaping else way
 			# (S5-fix: when the leg runs up or down but the way it swims runs clearly sideways, the
 			# way: a seahorse on a vertical leg had kept facing away from where it swam, and stalled.)
-			face=signf(leg.x) if absf(leg.x)>=0.45 else (signf(way.x) if absf(way.x)>=0.45 else a.direction)
+			face=signf(leg.x) if absf(leg.x)>=0.45 else (signf(way.x) if a.species=="seahorse" and absf(way.x)>=0.45 else a.direction)
 		elif gap>40.0:
 			# Lateral passing does not change the journey heading.
 			face=signf(offset.x) if absf(offset.x)>0.45*gap else a.direction
@@ -1357,10 +1357,10 @@ func _navigate(a: Dictionary, p: Vector2, t: Vector2, radii: PackedVector2Array)
 		k+=1
 	a.nav_k=k
 	if k+2>=route.size():
-		# (On the last leg, the way it actually swims to the end: having seen past a corner it may
-		# cut straight across; the last leg itself had run straight down and kept a seahorse facing
-		# away from where it swam, so it never swam on, S5-fix.)
-		_leg=(route[k+1]-p).normalized() if p.distance_squared_to(route[k+1])>1.0 else (route[k+1]-route[k]).normalized()
+		# Body drift does not change a planned last leg's facing. The swimmer still
+		# steers to the endpoint, correcting lateral displacement with its pectorals.
+		# Upright seahorses need to face their actual lateral travel to make headway.
+		_leg=(route[k+1]-(p if a.species=="seahorse" else route[k])).normalized()
 		return route[k+1]
 	var lo: float=0.0
 	var hi: float=1.0
