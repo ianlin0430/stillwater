@@ -738,6 +738,7 @@ func _avoid(a: Dictionary, p: Vector2, desired: Vector2, speed: float) -> Vector
 	var own: Vector2=_bodies[a.id]
 	var v:=Vector2(a.get("vx",0.0),a.get("vy",0.0))
 	var push:=Vector2.ZERO
+	var own_crossing: bool=a.species=="seahorse" and a.activity!="Resting" and absf(a.ty-a.y)>absf(a.tx-a.x) and Vector2(a.tx-a.x,a.ty-a.y).length_squared()>1600.0
 	var margin: float=SEPARATE.margin
 	var look: float=SEPARATE.look
 	var gain: float=SEPARATE.gain
@@ -761,26 +762,24 @@ func _avoid(a: Dictionary, p: Vector2, desired: Vector2, speed: float) -> Vector
 			continue
 		var schooling: bool=a.species=="green_chromis"
 		var yields: float=(1.0 if a.id>o.id else 0.0) if schooling==(o.species=="green_chromis") else (1.0 if schooling else 0.0)
+		# A slow vertical crossing has priority over fast horizontal traffic. Otherwise
+		# successive clownfish excursions starve a seahorse of any gap to descend.
+		var other_crossing: bool=o.species=="seahorse" and absf(o.ty-o.y)>absf(o.tx-o.x) and Vector2(o.tx-o.x,o.ty-o.y).length_squared()>1600.0 and o.activity!="Resting"
+		if own_crossing and o.species!="seahorse":
+			yields=0.0
+		elif other_crossing and a.species!="seahorse":
+			yields=1.0
 		if a.has("nav_wait") and not o.has("nav_wait"):
 			yields=1.0
 		elif o.has("nav_wait") and not a.has("nav_wait"):
 			yields=0.0
-		var travelling: bool=Vector2(o.tx-o.x,o.ty-o.y).length()>40.0 and o.activity!="Resting"
+		var travelling: bool=Vector2(o.tx-o.x,o.ty-o.y).length_squared()>1600.0 and o.activity!="Resting"
 		if yields==0.0 and travelling and now>=0.8:
 			continue
 		# Dodge up or down, away from the other (the upper fish rises; ids break a tie).
 		var up: float=signf(rel.y) if absf(rel.y)>1.0 else (1.0 if a.id>o.id else -1.0)
 		var side: float=signf(rel.x) if absf(rel.x)>1.0 else 0.0
 		var vertical: bool=absf(desired.y)>absf(desired.x)
-		# A vertical traveller commits to one passing side through an encounter. Changing
-		# sides as crossing neighbours pass its nose leaves it sculling in place.
-		if vertical and yields>0.0:
-			if not a.has("nav_dodge_side") or state.elapsed>a.get("nav_dodge_until",-1.0) or a.tx!=a.get("nav_dodge_tx") or a.ty!=a.get("nav_dodge_ty"):
-				a.nav_dodge_side=side if side!=0.0 else a.direction
-				a.nav_dodge_tx=a.tx
-				a.nav_dodge_ty=a.ty
-			a.nav_dodge_until=state.elapsed+look
-			side=a.nav_dodge_side
 		var dodge: Vector2=Vector2(side if side!=0.0 else (1.0 if a.id>o.id else -1.0),up*0.25) if vertical else Vector2(side*0.5,up)
 		push+=dodge.normalized()*speed*gain*(1.0-q)
 		_dodge=maxf(_dodge,1.0-q)
@@ -806,7 +805,7 @@ func _avoid(a: Dictionary, p: Vector2, desired: Vector2, speed: float) -> Vector
 				# (Meeting above or below, it slides off to the side it is already on, ids breaking a
 				# tie; never back the way it is heading: that would turn it round.)
 				var aside: float=side if side!=0.0 else (1.0 if a.id>o.id else -1.0)
-				if vertical and signf(along.x)!=aside or not vertical and (absf(along.y)>0.3 and signf(along.y)!=up or absf(along.y)<=0.3 and signf(along.x)!=aside):
+				if absf(along.y)>0.3 and signf(along.y)!=up or absf(along.y)<=0.3 and signf(along.x)!=aside:
 					along=-along
 				if along.x*desired.x<0.0 and absf(desired.x)>0.45*desired.length():
 					along.x=0.0
