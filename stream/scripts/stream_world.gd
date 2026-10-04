@@ -691,7 +691,8 @@ func _move(delta: float) -> void:
 			# (S5-fix: when the leg runs up or down but the way it swims runs clearly sideways, the
 			# way: a seahorse on a vertical leg had kept facing away from where it swam, and stalled.)
 			face=signf(leg.x) if absf(leg.x)>=0.45 else (signf(way.x) if absf(way.x)>=0.45 else a.direction)
-		elif climbing:
+		elif gap>40.0:
+			# Lateral passing does not change the journey heading.
 			face=signf(offset.x) if absf(offset.x)>0.45*gap else a.direction
 		elif follower and gap<40 and _close==0.0:
 			# (A school member settled in its slot faces with the leader, unless an obstacle is near.)
@@ -833,8 +834,7 @@ func _swim(a: Dictionary, desired: Vector2, cap: float, cruise: float, cfg: Dict
 	if facing==0.0:
 		# (Only for a clear sideways lead: a mostly vertical move keeps the current facing.)
 		var now: float=1.0 if cos(psi)>=0.0 else -1.0
-		# Pectoral corrections below sculling speed need no body reversal.
-		if want>cfg.scull and (absf(desired.x)>0.45*want or desired.x*now<0.0 and absf(desired.x)>0.15*want):
+		if want>0.5 and (absf(desired.x)>0.45*want or desired.x*now<0.0 and absf(desired.x)>0.15*want):
 			facing=signf(desired.x)
 		elif absf(cos(psi))<0.3 and absf(turn)>0.01:
 			# Mid-turn with nowhere in particular to go: finish the turn.
@@ -1066,6 +1066,9 @@ func _aim(a: Dictionary, radii: PackedVector2Array = PackedVector2Array()) -> Ve
 # Derived cache only: recomputed identically after restore; no random draws.
 func _open_target(a: Dictionary, target: Vector2) -> Vector2:
 	var cls: String=a.species+"/"+str(animal_scale(a))
+	var key: Array=[cls,target.x,target.y]
+	if _open_targets.has(key):
+		return _open_targets[key]
 	var grid: Array=_grid(cls,a.species,animal_scale(a))
 	var part: PackedInt32Array=grid[6]
 	var main: int=grid[7]
@@ -1073,10 +1076,8 @@ func _open_target(a: Dictionary, target: Vector2) -> Vector2:
 	var w: int=int(1280.0/NAV.cell)
 	var cell: int=clampi(int(target.y/NAV.cell),0,71)*w+clampi(int(target.x/NAV.cell),0,w-1)
 	if part[cell]==main and lanes[cell]<0:
+		_open_targets[key]=target
 		return target
-	var key: Array=[cls,target.x,target.y]
-	if _open_targets.has(key):
-		return _open_targets[key]
 	var best: Vector2=target
 	var distance: float=INF
 	for i in part.size():
