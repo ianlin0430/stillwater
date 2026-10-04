@@ -1,6 +1,6 @@
 extends SceneTree
-# Evidence for natural motion (not a test): 60 simulated daytime seconds, seed 42, of every
-# animal's motion fields, one row per 0.2 s tick, written to artifacts/natural-motion/trace.json.
+# Evidence for natural motion (not a test): 180 simulated seconds across day and night, seed 42, of every
+# animal's motion fields, one row per 0.2 s tick, written to artifacts/natural-motion/clownfish-<scene>.json.
 # godot --headless --path <stream> --script tools/natural_motion_trace.gd -- --scene=reef
 # H5: includes clownfish nestle/home and feed, tap, cursor and night transitions.
 

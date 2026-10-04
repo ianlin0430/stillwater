@@ -516,6 +516,7 @@
 - 〔進度 2026-10-04：**暫停，仍紅**（使用者決定）。`583a83d`：RED 測試 `tests/test_obstacles.gd`（`1766b02`）；行為修正 WIP（Claude WIP1–7，Codex 救援：只選連通的開闊水域目的地、整條路線預約窄道、固定讓路順序、沿路線方向閃避）。6 個最難 seed（23,240921,2,29,37,17）× 2 場景 × min/max：卡住窗 0、連續 ≤1、重疊最大 0.132、猶豫 0、kinks 0.160，**只剩 shipwreck/max seed 240921 gramma 多翻身 1 次**；完整 16 seed、其他 backend 測試未跑。每 tick 552 µs（S5 323 µs，同條件前景量，1.71×）。gramma 行為在 S8 重寫，所以先做 S6–S8，做完 S8 再讓本測試在 16 seed 全綠；判準不改。S6–S8 不得讓這 6 seed 面板變差（現況 1 個多翻身）。S4/S5 等本測試全綠才合併 main。〕
 
 **S6 clownfish 行為**
+- 〔進度 2026-10-04：實作與 H5 契約已 commit。RED `4aa266f` 在行為改動前固定判準；8 motion seed × 2 場景 128 checks 全綠：橢圓內比例最低 0.970889（reef seed 1），最遠 80.261 px（shipwreck seed 1），敲玻璃最慢 1.0 s（shipwreck seed 3）。五種 activity、nestle、飼料、游標躲藏、夜眠、換海葵、存檔續跑 52 checks 全綠。六 seed S5-fix guard、完整 regression、tick bench 依序執行中；判準未改。〕
 - 目標：§3.1 clownfish 全部 activity、`nestle`、飼料、敲玻璃。
 - 檔案：`scripts/stream_world.gd`、`tests/test_natural_motion.gd`、`tests/test_world.gd`、`docs/BACKEND_SNAPSHOT_EVENTS.md`（clownfish 章節）。
 - 先寫的失敗測試：「白天 30 分鐘，clownfish 在海葵橢圓內的時間比例 ≥ 0.6、離海葵最遠 ≤ 120 px；敲玻璃後 3 秒內在海葵內」。
