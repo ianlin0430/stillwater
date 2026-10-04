@@ -547,6 +547,7 @@ func _move(delta: float) -> void:
 		var p:=Vector2(a.x,a.y)
 		var species: String=a.species
 		var chromis: bool=species=="green_chromis"
+		var clown_local: bool=species=="clownfish" and a.activity in ["Nestling","Foraging","Sheltering","Sleeping","Feeding"]
 		if species=="clownfish" and not lure.is_empty() and p.distance_to(Vector2(lure.x,lure.y))<60.0:
 			_clown_shelter(a)
 		var sheltered: bool=species=="clownfish" and a.activity=="Sheltering" and state.elapsed<a.decision_at
@@ -573,7 +574,7 @@ func _move(delta: float) -> void:
 		var radii: PackedVector2Array=_radii_of(a)
 		# Select a real destination, rather than steering at a substitute while the
 		# decision system still believes the old destination is outstanding.
-		if not follower and not startled and not a.has("food_id") and not _obstacles.is_empty():
+		if not follower and not startled and not clown_local and not a.has("food_id") and not _obstacles.is_empty():
 			var chosen: Vector2=Vector2(a.tx,a.ty)
 			if not a.has("home_x") or chosen.distance_to(Vector2(a.home_x,a.home_y))>HOME[species].radius:
 				var open: Vector2=_open_target(a,chosen)
@@ -626,7 +627,7 @@ func _move(delta: float) -> void:
 		# Reserve all single-file spans before setting out, including straight approaches.
 		# A denied excursion chooses a staging destination in open water; it never queues
 		# inside the neck. Claims live on the animal so save/restore preserves ownership.
-		if not hovering and not startled and not _escaping and not follower:
+		if not hovering and not startled and not _escaping and not follower and not clown_local:
 			if not _reserve_route(a,p,target):
 				var staging: Vector2=_staging_target(a,p,target)
 				a.tx=staging.x
