@@ -1305,6 +1305,9 @@ func _blocker(p: Vector2, t: Vector2, radii: PackedVector2Array, skip: int) -> i
 
 # The way (a unit vector) fish a at p swims toward t when an obstacle is in the straight way, or
 # ZERO when none is (see OBSTACLE, NAV). Sets _close and _escaping.
+func _local_home(a: Dictionary) -> bool:
+	return a.has("home_x") and a.activity in ["Hovering","Resting"] and Vector2(a.tx-a.home_x,a.ty-a.home_y).length_squared()<=HOME[a.species].radius*HOME[a.species].radius
+
 func _around(a: Dictionary, p: Vector2, t: Vector2, band: Array, radii: PackedVector2Array) -> Vector2:
 	var close: float=INF
 	for i in _obstacles.size():
@@ -1325,10 +1328,10 @@ func _around(a: Dictionary, p: Vector2, t: Vector2, band: Array, radii: PackedVe
 	var half: Vector2=_body(a)*0.5+Vector2.ONE*NAV.cell
 	for i in _obstacles.size():
 		var o: Dictionary=_obstacles[i]
-		if travel[i].x>o.rx+OBSTACLE.pad+0.001:
+		if not _local_home(a) and travel[i].x>o.rx+OBSTACLE.pad+0.001:
 			travel[i]=Vector2(o.rx+half.x,o.ry+half.y)
 	# Route clearance governs both the decision to detour and visibility around corners.
-	if p.distance_to(t)<NAV.replan or not a.has("nav_tx") and _blocker(p,t,travel,-1)<0:
+	if p.distance_to(t)<NAV.replan or (not a.has("nav_tx") or _local_home(a)) and _blocker(p,t,travel,-1)<0:
 		_forget_around(a)
 		return Vector2.ZERO
 	var to: Vector2=_navigate(a,p,t,travel)
@@ -1403,7 +1406,7 @@ func _navigate(a: Dictionary, p: Vector2, t: Vector2, radii: PackedVector2Array)
 		# Drift on a vertical last leg is a pectoral correction, not a new
 		# journey heading. Other legs keep their usual travel-facing rule.
 		var planned: Vector2=route[k+1]-route[k]
-		_last_scull=planned.x*planned.x<0.2025*planned.length_squared()
+		_last_scull=planned.x*planned.x<0.2025*planned.length_squared() or planned.x*(route[k+1].x-p.x)<0.0
 		_leg=(planned if _last_scull else route[k+1]-p).normalized()
 		return route[k+1]
 	var lo: float=0.0
@@ -1420,10 +1423,11 @@ func _navigate(a: Dictionary, p: Vector2, t: Vector2, radii: PackedVector2Array)
 	var f: int=maxi(int(a.get("nav_f",0)),k+1 if lo>0.0 else k)
 	a.nav_f=f
 	_leg=(route[f+1]-route[f]).normalized()
+	_last_scull=absf(_leg.x)<0.45
 	var to: Vector2=route[k+1].lerp(route[k+2],lo)
 	# (S5-fix: a leg of a step or two, the last nudge into a target, does not set its facing; the
 	# way it swims does: a 7 px leg back had turned a chromis round eight times.)
-	if lo>0.0 and route[k+1].distance_to(route[k+2])<2.0*NAV.cell and p.distance_squared_to(to)>1.0:
+	if not _last_scull and lo>0.0 and route[k+1].distance_to(route[k+2])<2.0*NAV.cell and p.distance_squared_to(to)>1.0:
 		_leg=(to-p).normalized()
 	return to
 
@@ -1433,6 +1437,8 @@ func _route_class(a: Dictionary) -> String:
 	var cls: String=a.species+"/"+str(animal_scale(a))
 	if a.has("home_x"):
 		cls+="/"+str(a.home_x)+"/"+str(a.home_y)
+	if _local_home(a):
+		cls+="/local"
 	return cls
 
 func _route(a: Dictionary) -> PackedVector2Array:
@@ -1469,11 +1475,11 @@ func _grid(cls: String, species: String, scale: float) -> Array:
 	var h: int=int(720.0/c)
 	var body: Vector2=Vector2(BODY[species][0],BODY[species][1])*scale
 	var home_fields: PackedStringArray=cls.split("/")
-	var home: Vector2=Vector2(float(home_fields[2]),float(home_fields[3])) if home_fields.size()==4 else Vector2.INF
+	var home: Vector2=Vector2(float(home_fields[2]),float(home_fields[3])) if home_fields.size()>=4 else Vector2.INF
 	var traffic: bool=cls=="traffic"
 	if traffic:
 		body=Vector2(69.0,61.0)
-	var half: Vector2=body*0.5+Vector2.ONE*NAV.cell
+	var half: Vector2=body*0.5*OBSTACLE.body if cls.ends_with("/local") else body*0.5+Vector2.ONE*NAV.cell
 	var g:=PackedByteArray()
 	g.resize(w*h)
 	var depth:=PackedFloat32Array()
@@ -1759,9 +1765,9 @@ func _plan(cls: String, species: String, scale: float, from: Vector2, to: Vector
 	# Pulled straight: from each kept point on to the furthest cell it sees past every obstacle
 	# (widened as for this species and size; out of one it starts in counts as seeing).
 	var radii:=PackedVector2Array()
-	var half: Vector2=Vector2(BODY[species][0],BODY[species][1])*scale*0.5+Vector2.ONE*NAV.cell
+	var half: Vector2=Vector2(BODY[species][0],BODY[species][1])*scale*0.5*OBSTACLE.body if cls.ends_with("/local") else Vector2(BODY[species][0],BODY[species][1])*scale*0.5+Vector2.ONE*NAV.cell
 	var home_fields: PackedStringArray=cls.split("/")
-	var home: Vector2=Vector2(float(home_fields[2]),float(home_fields[3])) if home_fields.size()==4 else Vector2.INF
+	var home: Vector2=Vector2(float(home_fields[2]),float(home_fields[3])) if home_fields.size()>=4 else Vector2.INF
 	for o: Dictionary in _obstacles:
 		var physical: Vector2=Vector2(BODY[species][0],BODY[species][1])*scale*0.5*OBSTACLE.body
 		var at_home: bool=home!=Vector2.INF and ((home-Vector2(o.cx,o.cy))/(Vector2(o.rx,o.ry)+physical)).length_squared()<1.0
