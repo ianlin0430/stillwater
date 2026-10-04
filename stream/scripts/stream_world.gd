@@ -690,8 +690,14 @@ func _move(delta: float) -> void:
 		# tick; 0.5 still let a chromis flip up and down every tick, 2026-09-26), so a meeting reads
 		# as one sweeping dodge, not a twitch each tick.
 		var change: Vector2=_avoid(a,p,arrive+desired,cruise)-arrive-desired
+		var route_passing: bool=way!=Vector2.ZERO and gap>40.0 and not home_hover and a.activity!="Feeding" and not _escaping
+		var journey: Vector2=arrive.normalized()
+		if route_passing:
+			change-=journey*change.dot(journey)
 		var was: Vector2=Vector2(a.get("avoid_x",0.0),a.get("avoid_y",0.0))
 		var steer: Vector2=was.lerp(change,0.3)
+		if route_passing:
+			steer-=journey*steer.dot(journey)
 		if species=="clownfish" and a.activity in ["Nestling","Sleeping","Sheltering"]:
 			steer=steer.limit_length(1.0 if a.activity!="Sheltering" else 3.0)
 		a.avoid_x=steer.x
@@ -719,21 +725,12 @@ func _move(delta: float) -> void:
 		var face: float=0.0
 		if hovering or waiting or nestled:
 			face=a.direction
-		elif way!=Vector2.ZERO:
-			# On a route round an obstacle it faces along its leg; only a clearly sideways leg turns
-			# it round (S5).
-			var leg: Vector2=_leg if not _escaping else way
-			# (S5-fix: when the leg runs up or down but the way it swims runs clearly sideways, the
-			# way: a seahorse on a vertical leg had kept facing away from where it swam, and stalled.)
-			face=signf(leg.x) if absf(leg.x)>=0.45 else (signf(way.x) if absf(way.x)>=0.45 and not _last_scull else a.direction)
-		elif home_hover:
-			face=float(a.home_intent_face) if _has_home_intent(a) else (signf(offset.x) if absf(offset.x)>0.45*gap and absf(offset.x)>cfg.scull else a.direction)
-		elif gap>40.0:
-			# Lateral passing does not change the journey heading.
-			face=signf(offset.x) if absf(offset.x)>0.45*gap else a.direction
+		elif home_hover and _has_home_intent(a):
+			face=float(a.home_intent_face)
 		elif follower and gap<40 and _close==0.0:
-			# (A school member settled in its slot faces with the leader, unless an obstacle is near.)
 			face=lead.direction
+		else:
+			face=_trip_facing(a,offset,way,cfg.scull)
 		if home_hover:
 			if _has_home_intent(a):
 				desired=_bound_home_steering(a,p,desired)
@@ -865,6 +862,23 @@ func _avoid(a: Dictionary, p: Vector2, desired: Vector2, speed: float) -> Vector
 				desired+=(n if local else n+along)*toward*k
 	return desired+push
 
+
+# Facing is a saved trip intention. A temporary direct approach near a route
+# endpoint cannot hand it over to the velocity contributed by body avoidance.
+func _trip_facing(a: Dictionary, offset: Vector2, way: Vector2, scull: float) -> float:
+	if not a.has("trip_intent_x") or a.trip_intent_x!=a.tx or a.trip_intent_y!=a.ty:
+		a.trip_intent_x=a.tx
+		a.trip_intent_y=a.ty
+		a.trip_intent_face=a.direction
+		a.trip_intent_route=false
+	if way!=Vector2.ZERO:
+		var leg: Vector2=way if _escaping else _leg
+		if absf(leg.x)>=0.45:
+			a.trip_intent_face=signf(leg.x)
+		a.trip_intent_route=true
+	elif not a.trip_intent_route and absf(offset.x)>0.45*offset.length() and absf(offset.x)>scull:
+		a.trip_intent_face=signf(offset.x)
+	return float(a.trip_intent_face)
 
 # Natural swimming (2026-09-25): the body turns at a limited rate, through facing the glass
 # (heading 0 = facing right, pi = facing left); the nose pitches up or down gently; speed along
@@ -2435,6 +2449,8 @@ static func validate(saved: Dictionary) -> bool:
 		for key: String in ["vx","vy","relocated_at","avoid_x","avoid_y","heading","pitch","speed","thrust","turn"]:
 			if a.has(key) and not _number(a[key]):
 				return false
+		if a.has("trip_intent_x") and (not ["trip_intent_x","trip_intent_y","trip_intent_face"].all(func(k): return _number(a.get(k))) or absf(a.trip_intent_face)!=1.0 or not a.get("trip_intent_route") is bool):
+			return false
 		if a.has("home_intent_x") and (not ["home_intent_x","home_intent_y","home_intent_face"].all(func(k): return _number(a.get(k))) or absf(a.home_intent_face)!=1.0):
 			return false
 		if a.has("nestle") and (not _number(a.nestle) or a.nestle<0.0 or a.nestle>1.0):
