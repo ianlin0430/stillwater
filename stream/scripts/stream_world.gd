@@ -173,6 +173,7 @@ var _obstacles: Array = []
 # route by id (both planned again, the same, after a restore or a decor change).
 var _grids: Dictionary = {}
 var _routes: Dictionary = {}
+var _open_targets: Dictionary = {}
 # The default scene, for the static floor_y (frontend callers).
 static var _default_scene: ReefScene = null
 # Every scene, read once, for validate() (static) and the new world's decor.
@@ -545,6 +546,14 @@ func _move(delta: float) -> void:
 		# (Targets are always in the band; an edited one is aimed at the band edge. One inside an
 		# obstacle is aimed at its edge, S5.)
 		var radii: PackedVector2Array=_radii_of(a)
+		# Select a real destination, rather than steering at a substitute while the
+		# decision system still believes the old destination is outstanding.
+		if not follower and not startled and not a.has("food_id") and not _obstacles.is_empty():
+			var chosen: Vector2=Vector2(a.tx,a.ty)
+			if not a.has("home_x") or chosen.distance_to(Vector2(a.home_x,a.home_y))>HOME[species].radius:
+				var open: Vector2=_open_target(a,chosen)
+				a.tx=open.x
+				a.ty=open.y
 		var target: Vector2=_aim(a,radii)
 		var offset: Vector2=target-p
 		# A resting fish already within `hold` px of its spot's depth never corrects its depth:
@@ -1027,6 +1036,34 @@ func _aim(a: Dictionary, radii: PackedVector2Array = PackedVector2Array()) -> Ve
 	var band: Array=[_bands[a.species][0],minf(_bands[a.species][1],bed_y(a.tx)-(_bodies[a.id] if _bodies.has(a.id) else _body(a)).y*0.5)]
 	return _clear_of(Vector2(a.tx,clampf(a.ty,band[0],band[1])),band,radii,Vector2.INF)
 
+# Roaming destinations belong to the main water even after the single-file spans are
+# removed. A clear spot in a pocket behind a neck is not a useful place to roam.
+# Derived cache only: recomputed identically after restore; no random draws.
+func _open_target(a: Dictionary, target: Vector2) -> Vector2:
+	var cls: String=a.species+"/"+str(animal_scale(a))
+	var grid: Array=_grid(cls,a.species,animal_scale(a))
+	var part: PackedInt32Array=grid[6]
+	var main: int=grid[7]
+	var w: int=int(1280.0/NAV.cell)
+	var cell: int=clampi(int(target.y/NAV.cell),0,71)*w+clampi(int(target.x/NAV.cell),0,w-1)
+	if part[cell]==main:
+		return target
+	var key: Array=[cls,target.x,target.y]
+	if _open_targets.has(key):
+		return _open_targets[key]
+	var best: Vector2=target
+	var distance: float=INF
+	for i in part.size():
+		if part[i]!=main:
+			continue
+		var spot: Vector2=_centre(i,w)
+		var d: float=target.distance_squared_to(spot)
+		if d<distance:
+			distance=d
+			best=spot
+	_open_targets[key]=best
+	return best
+
 # v without the part that heads into an obstacle, over the last `hold` of its widened radii (radii)
 # and inside them; inside them it also eases out, up to `out` x cruise at the obstacle's own edge.
 func _hold_off(p: Vector2, v: Vector2, radii: PackedVector2Array, cruise: float, ahead: bool = false) -> Vector2:
@@ -1448,7 +1485,41 @@ func _grid(cls: String, species: String, scale: float) -> Array:
 					lane[nb]=lanes
 					stack.append(nb)
 		lanes+=1
-	_grids[cls]=[g,depth,room,part,main,lane]
+	# Connected open water without narrow spans. Require room to turn at a destination;
+	# these are destinations, not a restriction on routes to an owner's home.
+	var open_part:=PackedInt32Array()
+	open_part.resize(w*h)
+	open_part.fill(-1)
+	var open_sizes: Array[int]=[]
+	for i in w*h:
+		if g[i]!=0 or lane[i]>=0 or room[i]<body.y*0.5 or open_part[i]>=0:
+			continue
+		var label: int=open_sizes.size()
+		var stack: Array[int]=[i]
+		open_part[i]=label
+		var n: int=0
+		while not stack.is_empty():
+			var cell: int=stack.pop_back()
+			n+=1
+			var cx: int=cell%w
+			var cy: int=cell/w
+			for d in 4:
+				var nx: int=cx+[-1,1,0,0][d]
+				var ny: int=cy+[0,0,-1,1][d]
+				if nx<0 or ny<0 or nx>=w or ny>=h:
+					continue
+				var nb: int=ny*w+nx
+				if g[nb]!=0 or lane[nb]>=0 or room[nb]<body.y*0.5 or open_part[nb]>=0:
+					continue
+				open_part[nb]=label
+				stack.append(nb)
+		open_sizes.append(n)
+	var open_main: int=-1
+	for k in open_sizes.size():
+		if open_main<0 or open_sizes[k]>open_sizes[open_main]:
+			open_main=k
+	_open_targets.clear()
+	_grids[cls]=[g,depth,room,part,main,lane,open_part,open_main]
 	return _grids[cls]
 
 # A route from `from` to `to` over the grid (A*, 8 neighbours, no corner cutting; ties by cell
