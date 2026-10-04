@@ -772,6 +772,14 @@ func _avoid(a: Dictionary, p: Vector2, desired: Vector2, speed: float) -> Vector
 		var up: float=signf(rel.y) if absf(rel.y)>1.0 else (1.0 if a.id>o.id else -1.0)
 		var side: float=signf(rel.x) if absf(rel.x)>1.0 else 0.0
 		var vertical: bool=absf(desired.y)>absf(desired.x)
+		# A vertical traveller commits to one passing side for its destination. Changing
+		# sides as crossing neighbours pass its nose leaves it sculling in place.
+		if vertical and yields>0.0:
+			if not a.has("nav_dodge_side") or a.tx!=a.get("nav_dodge_tx") or a.ty!=a.get("nav_dodge_ty"):
+				a.nav_dodge_side=side if side!=0.0 else a.direction
+				a.nav_dodge_tx=a.tx
+				a.nav_dodge_ty=a.ty
+			side=a.nav_dodge_side
 		var dodge: Vector2=Vector2(side if side!=0.0 else (1.0 if a.id>o.id else -1.0),up*0.25) if vertical else Vector2(side*0.5,up)
 		push+=dodge.normalized()*speed*gain*(1.0-q)
 		_dodge=maxf(_dodge,1.0-q)
@@ -797,7 +805,7 @@ func _avoid(a: Dictionary, p: Vector2, desired: Vector2, speed: float) -> Vector
 				# (Meeting above or below, it slides off to the side it is already on, ids breaking a
 				# tie; never back the way it is heading: that would turn it round.)
 				var aside: float=side if side!=0.0 else (1.0 if a.id>o.id else -1.0)
-				if absf(along.y)>0.3 and signf(along.y)!=up or absf(along.y)<=0.3 and signf(along.x)!=aside:
+				if vertical and signf(along.x)!=aside or not vertical and (absf(along.y)>0.3 and signf(along.y)!=up or absf(along.y)<=0.3 and signf(along.x)!=aside):
 					along=-along
 				if along.x*desired.x<0.0 and absf(desired.x)>0.45*desired.length():
 					along.x=0.0
