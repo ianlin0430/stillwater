@@ -598,26 +598,21 @@ func _move(delta: float) -> void:
 			_forget_around(a)
 		else:
 			way=_around(a,p,target,band,radii)
-		# A genuine yielding excursion must continue forward or sideways. If no
-		# open-water excursion is possible, retain this journey and face it while waiting.
-		var waiting: bool=false
+		# Reserve all single-file spans before setting out, including straight approaches.
+		# A denied excursion chooses a staging destination in open water; it never queues
+		# inside the neck. Claims live on the animal so save/restore preserves ownership.
 		if not hovering and not startled and not _escaping and not follower:
 			if not _reserve_route(a,p,target):
 				var staging: Vector2=_staging_target(a,p,target)
-				if staging.distance_squared_to(p)<=1600.0:
-					waiting=true
-					way=Vector2.ZERO
-					arrive=Vector2.ZERO
-				else:
-					a.tx=staging.x
-					a.ty=staging.y
-					a.decision_at=maxf(a.decision_at,state.elapsed+staging.distance_to(p)/speed+NAV.give)
-					_forget_around(a)
-					target=_aim(a,radii)
-					offset=target-p
-					gap=offset.length()
-					way=_around(a,p,target,band,radii)
-					arrive=offset.normalized()*minf(speed,sqrt(2.0*cfg.brake*gap))
+				a.tx=staging.x
+				a.ty=staging.y
+				_forget_around(a)
+				target=_aim(a,radii)
+				offset=target-p
+				gap=offset.length()
+				way=_around(a,p,target,band,radii)
+				arrive=offset.normalized()*minf(speed,sqrt(2.0*cfg.brake*gap))
+		var waiting: bool=false
 		if not hovering and not _escaping and gap>NAV.replan and _obstacles.is_empty() and _gives_way(a,p):
 			waiting=true
 			way=Vector2.ZERO
@@ -704,7 +699,7 @@ func _move(delta: float) -> void:
 		elif follower and gap<40 and _close==0.0:
 			# (A school member settled in its slot faces with the leader, unless an obstacle is near.)
 			face=lead.direction
-		if home_hover or waiting and not _obstacles.is_empty():
+		if home_hover:
 			desired=desired.limit_length(cfg.scull*0.9)
 		var velocity: Vector2=_swim(a,desired,speed,cruise,cfg,delta,a.activity=="Startled",face,climbing)
 		var free: Vector2=p+velocity*delta
@@ -1131,10 +1126,6 @@ func _hold_off(p: Vector2, v: Vector2, radii: PackedVector2Array, cruise: float,
 func _reserve_route(a: Dictionary, p: Vector2, target: Vector2) -> bool:
 	if _obstacles.is_empty():
 		return true
-	# Planning may end at reachable water short of the requested destination.
-	# Reserve that actual route endpoint, not the obsolete pre-plan request.
-	if a.has("nav_tx"):
-		target=Vector2(a.nav_tx,a.nav_ty)
 	var same: bool=a.has("pass_tx") and target.distance_to(Vector2(a.pass_tx,a.pass_ty))<1.0
 	if same and a.get("pass_route",false)==a.has("nav_tx") and (not a.has("nav_tx") or a.get("pass_from_x",p.x)==a.nav_x and a.get("pass_from_y",p.y)==a.nav_y) and p.distance_to(target)>NAV.replan:
 		return true
@@ -1157,8 +1148,7 @@ func _reserve_route(a: Dictionary, p: Vector2, target: Vector2) -> bool:
 			continue
 		var at:=Vector2(o.x,o.y)
 		# Expired claims must not block another fish earlier in the update order.
-		var destination: Vector2=Vector2(o.nav_tx,o.nav_ty) if o.has("nav_tx") else Vector2(o.tx,o.ty)
-		if not o.has("pass_tx") or destination.distance_to(Vector2(o.pass_tx,o.pass_ty))>NAV.replan or at.distance_to(Vector2(o.pass_tx,o.pass_ty))<=NAV.replan:
+		if not o.has("pass_tx") or Vector2(o.tx,o.ty).distance_to(Vector2(o.pass_tx,o.pass_ty))>NAV.replan or at.distance_to(Vector2(o.pass_tx,o.pass_ty))<=NAV.replan:
 			continue
 		for label: int in o.get("pass_claims",[]):
 			if claims.has(label):
@@ -1178,12 +1168,7 @@ func _staging_target(a: Dictionary, p: Vector2, target: Vector2) -> Vector2:
 	var parts: PackedInt32Array=grid[6]
 	var lane: PackedInt32Array=_grid("traffic","clownfish",1.0)[5]
 	var radii: PackedVector2Array=_radii_of(a)
-	var half: Vector2=_bodies[a.id]*0.5+Vector2.ONE*NAV.cell
-	for i in _obstacles.size():
-		var obstacle: Dictionary=_obstacles[i]
-		if radii[i].x>obstacle.rx+OBSTACLE.pad+0.001:
-			radii[i]=Vector2(obstacle.rx+half.x,obstacle.ry+half.y)
-	var forward:=Vector2(a.direction,0.0)
+	var forward: Vector2=(target-p).normalized()
 	var preferred: Vector2=p+forward*100.0
 	var best: Vector2=p
 	var score: float=INF
