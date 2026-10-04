@@ -11,6 +11,10 @@ parser.add_argument('--label', required=True)
 a = parser.parse_args()
 if not a.label.replace('-', '').replace('_', '').isalnum():
     parser.error('label must be alphanumeric with - or _')
+def encode(value, **kwargs):
+    # Preserve Godot's valid overflow exponent for an infinite failure sentinel.
+    # Python's default Infinity token is not JSON syntax.
+    return json.dumps(value, **kwargs).replace('Infinity', '1e99999')
 root = pathlib.Path(__file__).resolve().parents[2]
 out = root / 'stream/artifacts/nav-redesign' / a.label
 out.mkdir(parents=True, exist_ok=True)
@@ -45,8 +49,8 @@ for name, script, args in parts:
         result['failures'].append('Engine exit '+str(proc.returncode))
     result['wall_seconds'] = round(time.monotonic()-t, 2)
     results[name] = result
-    print('DONE '+name+' '+json.dumps({'checks':result.get('checks'), 'failures':result['failures'], 'seconds':result['wall_seconds']}), flush=True)
-    (out/'result.json').write_text(json.dumps(results, indent=2))
+    print('DONE '+name+' '+encode({'checks':result.get('checks'), 'failures':result['failures'], 'seconds':result['wall_seconds']}), flush=True)
+    (out/'result.json').write_text(encode(results, indent=2))
 failures = [name+': '+f for name,r in results.items() for f in r['failures']]
-print(json.dumps({'failures':failures, 'parts':results, 'wall_seconds':round(time.monotonic()-started,2)}), flush=True)
+print(encode({'failures':failures, 'parts':results, 'wall_seconds':round(time.monotonic()-started,2)}), flush=True)
 sys.exit(bool(failures))
