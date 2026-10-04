@@ -550,7 +550,7 @@ func _move(delta: float) -> void:
 		if species=="clownfish" and not lure.is_empty() and p.distance_to(Vector2(lure.x,lure.y))<60.0:
 			_clown_shelter(a)
 		var sheltered: bool=species=="clownfish" and a.activity=="Sheltering" and state.elapsed<a.decision_at
-		var sleeping: bool=species=="clownfish" and (state.light_hour<7 or state.light_hour>19)
+		var sleeping: bool=species=="clownfish" and a.activity!="Hovering" and (state.light_hour<7 or state.light_hour>19)
 		var startled: bool=a.activity=="Startled" and state.elapsed<a.decision_at
 		var follower: bool=chromis and a.id!=lead.id
 		if sleeping and not sheltered:
@@ -563,7 +563,7 @@ func _move(delta: float) -> void:
 					_choose_activity(a)
 				elif species=="clownfish":
 					_choose_clown(a)
-				else:
+				elif not _home_intent_pending(a,p):
 					_choose_home(a)
 		var clown_local: bool=species=="clownfish" and a.activity in ["Nestling","Foraging","Sheltering","Sleeping","Feeding"]
 		# Its band, but never so low that the body dips into the bed (a scene's band may reach below
@@ -574,7 +574,7 @@ func _move(delta: float) -> void:
 		var radii: PackedVector2Array=_radii_of(a)
 		# Select a real destination, rather than steering at a substitute while the
 		# decision system still believes the old destination is outstanding.
-		if not follower and not startled and not clown_local and not a.has("food_id") and not _obstacles.is_empty():
+		if not follower and not startled and not clown_local and not a.has("food_id") and not _obstacles.is_empty() and a.activity!="Resting" and a.ty>=band[0] and a.ty<=band[1]:
 			var chosen: Vector2=Vector2(a.tx,a.ty)
 			if not a.has("home_x") or chosen.distance_to(Vector2(a.home_x,a.home_y))>HOME[species].radius:
 				var open: Vector2=_open_target(a,chosen)
@@ -632,7 +632,7 @@ func _move(delta: float) -> void:
 		# Reserve all single-file spans before setting out, including straight approaches.
 		# A denied excursion chooses a staging destination in open water; it never queues
 		# inside the neck. Claims live on the animal so save/restore preserves ownership.
-		if not hovering and not startled and not _escaping and not follower and not clown_local:
+		if not hovering and not resting and not home_hover and not startled and not _escaping and not follower and not clown_local and not a.has("food_id"):
 			if not _reserve_route(a,p,target):
 				var staging: Vector2=_staging_target(a,p,target)
 				a.tx=staging.x
@@ -717,7 +717,7 @@ func _move(delta: float) -> void:
 		# Which way to face: a resting fish settled on its spot keeps its facing, a school member
 		# settled in its slot faces the way the leader does (so the school turns almost together).
 		var face: float=0.0
-		if hovering or waiting or home_hover:
+		if hovering or waiting or nestled:
 			face=a.direction
 		elif way!=Vector2.ZERO:
 			# On a route round an obstacle it faces along its leg; only a clearly sideways leg turns
@@ -726,6 +726,8 @@ func _move(delta: float) -> void:
 			# (S5-fix: when the leg runs up or down but the way it swims runs clearly sideways, the
 			# way: a seahorse on a vertical leg had kept facing away from where it swam, and stalled.)
 			face=signf(leg.x) if absf(leg.x)>=0.45 else (signf(way.x) if absf(way.x)>=0.45 and not _last_scull else a.direction)
+		elif home_hover:
+			face=float(a.home_intent_face) if _has_home_intent(a) else (signf(offset.x) if absf(offset.x)>0.45*gap and absf(offset.x)>cfg.scull else a.direction)
 		elif gap>40.0:
 			# Lateral passing does not change the journey heading.
 			face=signf(offset.x) if absf(offset.x)>0.45*gap else a.direction
@@ -733,6 +735,8 @@ func _move(delta: float) -> void:
 			# (A school member settled in its slot faces with the leader, unless an obstacle is near.)
 			face=lead.direction
 		if home_hover:
+			if _has_home_intent(a):
+				desired=_bound_home_steering(a,p,desired)
 			desired=desired.limit_length(cfg.scull*0.9)
 		if species=="clownfish" and a.activity=="Sheltering":
 			# Pectoral retreat keeps the body turning smoothly while moving home immediately.
@@ -779,6 +783,7 @@ func _avoid(a: Dictionary, p: Vector2, desired: Vector2, speed: float) -> Vector
 	var own: Vector2=_bodies[a.id]
 	var v:=Vector2(a.get("vx",0.0),a.get("vy",0.0))
 	var push:=Vector2.ZERO
+	var local: bool=a.activity=="Feeding" or a.has("home_x") and Vector2(a.tx-a.home_x,a.ty-a.home_y).length_squared()<=HOME[a.species].radius*HOME[a.species].radius
 	var own_crossing: bool=a.species=="seahorse" and a.activity!="Resting" and absf(a.ty-a.y)>absf(a.tx-a.x) and Vector2(a.tx-a.x,a.ty-a.y).length_squared()>1600.0
 	var margin: float=SEPARATE.margin
 	var look: float=SEPARATE.look
@@ -792,7 +797,7 @@ func _avoid(a: Dictionary, p: Vector2, desired: Vector2, speed: float) -> Vector
 		# (S5-fix: two seahorses keep only SEPARATE.perch apart, enough that their bodies never
 		# overlap by a fifth: hitch points on one plant lie closer than the general spacing, and a
 		# seahorse kept off its own hitch by its neighbour hovered above it for minutes.)
-		var r: Vector2=(own+_bodies[o.id])*0.5*(SEPARATE.perch if a.species=="seahorse" and o.species=="seahorse" else margin*(1.17 if mixed else SEPARATE.same))
+		var r: Vector2=(own+_bodies[o.id])*0.5*(SEPARATE.perch if not local and a.species=="seahorse" and o.species=="seahorse" else margin*(1.17 if mixed else SEPARATE.same))
 		var rel: Vector2=p-Vector2(o.x,o.y)
 		var relv: Vector2=v-Vector2(o.get("vx",0.0),o.get("vy",0.0))
 		var t: float=clampf(-rel.dot(relv)/maxf(relv.length_squared(),0.0001),0.0,look)
@@ -815,12 +820,14 @@ func _avoid(a: Dictionary, p: Vector2, desired: Vector2, speed: float) -> Vector
 		elif o.has("nav_wait") and not a.has("nav_wait"):
 			yields=0.0
 		var travelling: bool=Vector2(o.tx-o.x,o.ty-o.y).length_squared()>1600.0 and o.activity!="Resting"
-		if yields==0.0 and travelling and now>=0.8:
+		if local:
+			yields=1.0 if a.id>o.id else 0.0
+		if not local and yields==0.0 and travelling and now>=0.8:
 			continue
 		# Dodge up or down, away from the other (the upper fish rises; ids break a tie).
 		var up: float=signf(rel.y) if absf(rel.y)>1.0 else (1.0 if a.id>o.id else -1.0)
 		var side: float=signf(rel.x) if absf(rel.x)>1.0 else 0.0
-		var vertical: bool=absf(desired.y)>absf(desired.x)
+		var vertical: bool=not local and absf(desired.y)>absf(desired.x)
 		var dodge: Vector2=Vector2(side if side!=0.0 else (1.0 if a.id>o.id else -1.0),up*0.25) if vertical else Vector2(side*0.5,up)
 		push+=dodge.normalized()*speed*gain*(1.0-q)
 		_dodge=maxf(_dodge,1.0-q)
@@ -855,7 +862,7 @@ func _avoid(a: Dictionary, p: Vector2, desired: Vector2, speed: float) -> Vector
 					along=-along
 				if along.x*desired.x<0.0 and absf(desired.x)>0.45*desired.length():
 					along.x=0.0
-				desired+=(n+along)*toward*k
+				desired+=(n if local else n+along)*toward*k
 	return desired+push
 
 
@@ -1325,7 +1332,8 @@ func _around(a: Dictionary, p: Vector2, t: Vector2, band: Array, radii: PackedVe
 		if travel[i].x>o.rx+OBSTACLE.pad+0.001:
 			travel[i]=Vector2(o.rx+half.x,o.ry+half.y)
 	# Route clearance governs both the decision to detour and visibility around corners.
-	if p.distance_to(t)<NAV.replan or not a.has("nav_tx") and _blocker(p,t,travel,-1)<0:
+	var local: bool=a.has("home_x") and a.activity=="Hovering" and t.distance_to(Vector2(a.home_x,a.home_y))<=HOME[a.species].radius and p.distance_to(Vector2(a.home_x,a.home_y))<=2.0*HOME[a.species].radius
+	if p.distance_to(t)<NAV.replan or not a.has("nav_tx") and _blocker(p,t,radii if local else travel,-1)<0:
 		_forget_around(a)
 		return Vector2.ZERO
 	var to: Vector2=_navigate(a,p,t,travel)
@@ -1400,8 +1408,8 @@ func _navigate(a: Dictionary, p: Vector2, t: Vector2, radii: PackedVector2Array)
 		# Drift on a vertical last leg is a pectoral correction, not a new
 		# journey heading. Other legs keep their usual travel-facing rule.
 		var planned: Vector2=route[k+1]-route[k]
-		_last_scull=planned.x*planned.x<0.2025*planned.length_squared()
-		_leg=(planned if _last_scull else route[k+1]-p).normalized()
+		_last_scull=planned.x*planned.x<0.2025*planned.length_squared() or planned.x*(route[k+1].x-p.x)<0.0
+		_leg=planned.normalized()
 		return route[k+1]
 	var lo: float=0.0
 	var hi: float=1.0
@@ -1417,11 +1425,8 @@ func _navigate(a: Dictionary, p: Vector2, t: Vector2, radii: PackedVector2Array)
 	var f: int=maxi(int(a.get("nav_f",0)),k+1 if lo>0.0 else k)
 	a.nav_f=f
 	_leg=(route[f+1]-route[f]).normalized()
+	_last_scull=absf(_leg.x)<0.45
 	var to: Vector2=route[k+1].lerp(route[k+2],lo)
-	# (S5-fix: a leg of a step or two, the last nudge into a target, does not set its facing; the
-	# way it swims does: a 7 px leg back had turned a chromis round eight times.)
-	if lo>0.0 and route[k+1].distance_to(route[k+2])<2.0*NAV.cell and p.distance_squared_to(to)>1.0:
-		_leg=(to-p).normalized()
 	return to
 
 # The planned route of fish a (from nav_x/nav_y to nav_tx/nav_ty, for its species and size), kept
@@ -1941,40 +1946,94 @@ func _choose_home(a: Dictionary) -> void:
 		return
 	var angle: float=motion_rng.randf()*TAU
 	var reach: float=h.radius*sqrt(motion_rng.randf())
-	a.activity="Hovering"
-	a.tx=clampf(a.home_x+cos(angle)*reach,_roam_x.x,_roam_x.y)
-	a.ty=_in_water(a.species,a.tx,a.home_y+sin(angle)*reach*0.6)
-	# (S5-fix) Only as far out as it sees from its home: a spot behind the next rock had sent a
-	# gramma up and over it and back, turning round on the way, for a few px of hovering.
 	var home:=Vector2(a.home_x,a.home_y)
-	var spot:=Vector2(a.tx,a.ty)
-	var radii: PackedVector2Array=_radii_of(a)
-	if _blocker(home,spot,radii,-1)>=0:
-		var lo: float=0.0
-		var hi: float=1.0
-		for n in 5:
-			var mid: float=(lo+hi)*0.5
-			if _blocker(home,home.lerp(spot,mid),radii,-1)<0:
-				lo=mid
-			else:
-				hi=mid
-		spot=home.lerp(spot,lo)
-		a.tx=spot.x
-		a.ty=_in_water(a.species,spot.x,spot.y)
-	# (S5-fix) Not inside the room another fish keeps (_avoid's spacing) where it is now: two
-	# hitch points closer than that kept a seahorse hovering short of its spot, never arriving.
-	var own: Vector2=_bodies[a.id] if _bodies.has(a.id) else _body(a)
-	for o: Dictionary in state.animals:
-		if o.id==a.id or o.species=="green_chromis" or a.species=="clownfish" and o.species=="clownfish" and o.home==a.home:
-			continue
-		var r: Vector2=(own+(_bodies[o.id] if _bodies.has(o.id) else _body(o)))*0.5*(SEPARATE.perch if a.species=="seahorse" and o.species=="seahorse" else SEPARATE.margin*(1.17 if o.species!=a.species else SEPARATE.same))
-		var rel:=Vector2((a.tx-o.x)/r.x,(a.ty-o.y)/r.y)
-		var q: float=rel.length()
-		if q<1.0:
-			var out: Vector2=rel/q if q>0.0001 else Vector2(0.0,-1.0)
-			a.tx=clampf(o.x+out.x*r.x*1.05,_roam_x.x,_roam_x.y)
-			a.ty=_in_water(a.species,a.tx,o.y+out.y*r.y*1.05)
+	var sample:=home+Vector2(cos(angle),sin(angle)*0.6)*reach
+	var spot: Vector2=_bounded_home_aim(a,sample)
+	a.activity="Hovering"
+	a.tx=spot.x
+	a.ty=spot.y
+	a.home_intent_x=spot.x
+	a.home_intent_y=spot.y
+	var offset: Vector2=spot-Vector2(a.x,a.y)
+	a.home_intent_face=signf(offset.x) if absf(offset.x)>0.45*offset.length() and absf(offset.x)>SWIM[a.species].scull else a.direction
 	a.decision_at=state.elapsed+motion_rng.randf_range(h.dwell[0],h.dwell[1])
+
+# Intent belongs to an ordinary home choice, never an externally assigned trip.
+# Coordinate identity also makes food/startle/decor changes invalidate it without
+# coupling those systems to this controller. Fields remain saved for exact restore.
+func _has_home_intent(a: Dictionary) -> bool:
+	return a.species in ["seahorse","royal_gramma"] and a.activity=="Hovering" and a.has("home_intent_x") and a.tx==a.home_intent_x and a.ty==a.home_intent_y
+
+func _home_intent_pending(a: Dictionary, p: Vector2) -> bool:
+	if not _has_home_intent(a) or state.light_hour<7 or state.light_hour>19:
+		return false
+	return p.distance_to(Vector2(a.home_intent_x,a.home_intent_y))>=5.0 or Vector2(a.get("vx",0.0),a.get("vy",0.0)).length()>SWIM[a.species].scull
+
+# Local steering respects the home disk as a soft boundary. Separation still
+# steers within it; it cannot create a permanent perch outside the neighborhood.
+func _bound_home_steering(a: Dictionary, p: Vector2, desired: Vector2) -> Vector2:
+	var offset: Vector2=p-Vector2(a.home_x,a.home_y)
+	var distance: float=offset.length()
+	if distance<0.001:
+		return desired
+	var outward: Vector2=offset/distance
+	var radial: float=desired.dot(outward)
+	var radius: float=HOME[a.species].radius
+	if radial>0.0:
+		desired-=outward*radial*(1.0-clampf((radius-distance)/SWIM.edge,0.0,1.0))
+	if distance>radius:
+		desired-=outward*minf(SWIM[a.species].scull,distance-radius)
+	return desired
+
+# Clear first, then validate the actual point the motion controller will use.
+# Nearby alternatives are deterministic and stay on the visible side of home.
+func _bounded_home_aim(a: Dictionary, sample: Vector2) -> Vector2:
+	var home:=Vector2(a.home_x,a.home_y)
+	var from:=Vector2(a.x,a.y)
+	var radius: float=HOME[a.species].radius
+	var radii: PackedVector2Array=_radii_of(a)
+	var body: Vector2=_body(a)
+	var best: Vector2=home
+	var room: float=-INF
+	var candidates: Array[Vector2]=[]
+	for i in 9:
+		candidates.append(home.lerp(sample,1.0-float(i)/8.0))
+	for i in 16:
+		var angle: float=(sample-home).angle()+float(i)*TAU/16.0
+		candidates.append(home+Vector2(cos(angle),sin(angle)*0.6)*radius)
+	for point: Vector2 in candidates:
+		var band: Array=[_bands[a.species][0],minf(_bands[a.species][1],bed_y(point.x)-body.y*0.5)]
+		var aim: Vector2=_clear_of(Vector2(clampf(point.x,_roam_x.x,_roam_x.y),clampf(point.y,band[0],band[1])),band,radii,Vector2.INF)
+		if aim.distance_to(home)>radius or aim.y>bed_y(aim.x)-body.y*0.5 or _blocker(home,aim,radii,-1)>=0:
+			continue
+		if from.distance_to(home)<=radius+body.x and _blocker(from,aim,radii,-1)>=0:
+			continue
+		if not _obstacles.all(func(o): return Vector2((aim.x-o.cx)/o.rx,(aim.y-o.cy)/o.ry).length_squared()>=1.0):
+			continue
+		var clearance: float=_home_landing_room(a,aim)
+		if clearance>=1.0:
+			return aim
+		if clearance>room:
+			room=clearance
+			best=aim
+	# A crowded neighborhood still chooses the least occupied valid point;
+	# it never displaces the target outside the bounded home neighborhood.
+	return best
+
+# Landing eligibility uses the SAME body envelope as local separation, rather
+# than moving a selected goal around a neighbor. Current and committed landing
+# positions both count, so two neighbors cannot choose each other's free space.
+func _home_landing_room(a: Dictionary, aim: Vector2) -> float:
+	var room: float=INF
+	var own: Vector2=_body(a)
+	for other: Dictionary in state.animals:
+		if other.id==a.id:
+			continue
+		var r: Vector2=(own+_body(other))*0.5*SEPARATE.margin*(1.17 if other.species!=a.species else SEPARATE.same)
+		room=minf(room,((aim-Vector2(other.x,other.y))/r).length())
+		if _has_home_intent(other):
+			room=minf(room,((aim-Vector2(other.home_intent_x,other.home_intent_y))/r).length())
+	return room
 
 # A school member holds its own slot beside the leader, mirrored with the leader's heading.
 func _follow(a: Dictionary, lead: Dictionary) -> void:
@@ -2376,6 +2435,8 @@ static func validate(saved: Dictionary) -> bool:
 		for key: String in ["vx","vy","relocated_at","avoid_x","avoid_y","heading","pitch","speed","thrust","turn"]:
 			if a.has(key) and not _number(a[key]):
 				return false
+		if a.has("home_intent_x") and (not ["home_intent_x","home_intent_y","home_intent_face"].all(func(k): return _number(a.get(k))) or absf(a.home_intent_face)!=1.0):
+			return false
 		if a.has("nestle") and (not _number(a.nestle) or a.nestle<0.0 or a.nestle>1.0):
 			return false
 		# On a route round an obstacle (S5): planned from nav_x/nav_y to nav_tx/nav_ty, on leg nav_k.
