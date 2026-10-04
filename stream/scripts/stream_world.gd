@@ -263,6 +263,8 @@ func set_decor(slot: String, style: String) -> bool:
 	for a: Dictionary in state.animals:
 		# (Each fish plans its way round afresh.)
 		_forget_around(a)
+		for key: String in ["pass_claims","pass_tx","pass_ty","pass_from_x","pass_from_y","pass_route"]:
+			a.erase(key)
 	_rehome()
 	return true
 
@@ -579,7 +581,7 @@ func _move(delta: float) -> void:
 		# (Chasing a sinking pellet it keeps closing in: no slower than twice the sink speed.)
 		var top: float=minf(speed,maxf(sqrt(2.0*cfg.brake*gap),2.0*FOOD.sink if a.activity=="Feeding" else 0.0))
 		var arrive: Vector2=offset/gap*top if gap>0.01 else Vector2.ZERO
-		var home_hover: bool=a.has("home_x") and a.activity=="Hovering" and p.distance_to(Vector2(a.home_x,a.home_y))<HOME[species].radius and target.distance_to(Vector2(a.home_x,a.home_y))<HOME[species].radius
+		var home_hover: bool=a.has("home_x") and a.activity=="Hovering" and p.distance_to(Vector2(a.home_x,a.home_y))<HOME[species].radius+_bodies[a.id].x*0.5 and target.distance_to(Vector2(a.home_x,a.home_y))<HOME[species].radius
 		if home_hover:
 			arrive=arrive.limit_length(cfg.scull*0.9)
 		var hovering: bool=resting and gap<CHROMIS.hold
@@ -1065,6 +1067,30 @@ func _open_target(a: Dictionary, target: Vector2) -> Vector2:
 	_open_targets[key]=best
 	return best
 
+# A home hover destination must lie in water that the home-aware planner can reach.
+# Project once per decision, keeping the original random draws and nearest-point intent.
+func _home_target(a: Dictionary, target: Vector2) -> Vector2:
+	var grid: Array=_grid(_route_class(a),a.species,animal_scale(a))
+	var part: PackedInt32Array=grid[3]
+	var w: int=int(1280.0/NAV.cell)
+	var cell: int=clampi(int(target.y/NAV.cell),0,71)*w+clampi(int(target.x/NAV.cell),0,w-1)
+	if part[cell]==grid[4]:
+		return target
+	var home:=Vector2(a.home_x,a.home_y)
+	var best: Vector2=target
+	var score: float=INF
+	for i in part.size():
+		if part[i]!=grid[4]:
+			continue
+		var spot: Vector2=_centre(i,w)
+		if spot.distance_to(home)>HOME[a.species].radius:
+			continue
+		var d: float=spot.distance_squared_to(target)
+		if d<score:
+			score=d
+			best=spot
+	return best
+
 # v without the part that heads into an obstacle, over the last `hold` of its widened radii (radii)
 # and inside them; inside them it also eases out, up to `out` x cruise at the obstacle's own edge.
 func _hold_off(p: Vector2, v: Vector2, radii: PackedVector2Array, cruise: float, ahead: bool = false) -> Vector2:
@@ -1100,7 +1126,7 @@ func _reserve_route(a: Dictionary, p: Vector2, target: Vector2) -> bool:
 		return true
 	var lane: PackedInt32Array=_grid("traffic","clownfish",1.0)[5]
 	var same: bool=a.has("pass_tx") and target.distance_to(Vector2(a.pass_tx,a.pass_ty))<1.0
-	if same and a.get("pass_from_x",p.x)==a.get("nav_x",p.x) and a.get("pass_from_y",p.y)==a.get("nav_y",p.y) and p.distance_to(target)>NAV.replan:
+	if same and a.get("pass_route",false)==a.has("nav_tx") and (not a.has("nav_tx") or a.get("pass_from_x",p.x)==a.nav_x and a.get("pass_from_y",p.y)==a.nav_y) and p.distance_to(target)>NAV.replan:
 		return true
 	a.erase("pass_claims")
 	a.erase("pass_tx")
@@ -1125,6 +1151,7 @@ func _reserve_route(a: Dictionary, p: Vector2, target: Vector2) -> bool:
 		for label: int in o.get("pass_claims",[]):
 			if claims.has(label):
 				return false
+	a.pass_route=a.has("nav_tx")
 	a.pass_claims=claims
 	a.pass_tx=target.x
 	a.pass_ty=target.y
@@ -1358,10 +1385,14 @@ func _navigate(a: Dictionary, p: Vector2, t: Vector2, radii: PackedVector2Array)
 
 # The planned route of fish a (from nav_x/nav_y to nav_tx/nav_ty, for its species and size), kept
 # for as long as those stay the same (never saved: planned again the same after a restore).
-func _route(a: Dictionary) -> PackedVector2Array:
+func _route_class(a: Dictionary) -> String:
 	var cls: String=a.species+"/"+str(animal_scale(a))
 	if a.has("home_x"):
 		cls+="/"+str(a.home_x)+"/"+str(a.home_y)
+	return cls
+
+func _route(a: Dictionary) -> PackedVector2Array:
+	var cls: String=_route_class(a)
 	var key: Array=[a.nav_x,a.nav_y,a.nav_tx,a.nav_ty,cls,a.get("nav_vx"),a.get("nav_vy")]
 	var kept: Dictionary=_routes.get(a.id,{})
 	if kept.get("key",[])!=key:
@@ -1835,6 +1866,10 @@ func _choose_home(a: Dictionary) -> void:
 			var out: Vector2=rel/q if q>0.0001 else Vector2(0.0,-1.0)
 			a.tx=clampf(o.x+out.x*r.x*1.05,_roam_x.x,_roam_x.y)
 			a.ty=_in_water(a.species,a.tx,o.y+out.y*r.y*1.05)
+	if not _obstacles.is_empty():
+		var reachable: Vector2=_home_target(a,Vector2(a.tx,a.ty))
+		a.tx=reachable.x
+		a.ty=reachable.y
 	a.decision_at=state.elapsed+motion_rng.randf_range(h.dwell[0],h.dwell[1])
 
 # A school member holds its own slot beside the leader, mirrored with the leader's heading.
