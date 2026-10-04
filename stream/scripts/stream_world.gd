@@ -1092,7 +1092,7 @@ func _reserve_route(a: Dictionary, p: Vector2, target: Vector2) -> bool:
 		return true
 	var lane: PackedInt32Array=_grid("traffic","clownfish",1.0)[5]
 	var same: bool=a.has("pass_tx") and target.distance_to(Vector2(a.pass_tx,a.pass_ty))<1.0
-	if same and p.distance_to(target)>NAV.replan:
+	if same and a.get("pass_from_x",p.x)==a.get("nav_x",p.x) and a.get("pass_from_y",p.y)==a.get("nav_y",p.y) and p.distance_to(target)>NAV.replan:
 		return true
 	a.erase("pass_claims")
 	a.erase("pass_tx")
@@ -1120,6 +1120,8 @@ func _reserve_route(a: Dictionary, p: Vector2, target: Vector2) -> bool:
 	a.pass_claims=claims
 	a.pass_tx=target.x
 	a.pass_ty=target.y
+	a.pass_from_x=a.get("nav_x",p.x)
+	a.pass_from_y=a.get("nav_y",p.y)
 	return true
 
 # Keep swimming in the direction of the excursion while the passage is occupied.
@@ -1350,6 +1352,8 @@ func _navigate(a: Dictionary, p: Vector2, t: Vector2, radii: PackedVector2Array)
 # for as long as those stay the same (never saved: planned again the same after a restore).
 func _route(a: Dictionary) -> PackedVector2Array:
 	var cls: String=a.species+"/"+str(animal_scale(a))
+	if a.has("home_x"):
+		cls+="/"+str(a.home_x)+"/"+str(a.home_y)
 	var key: Array=[a.nav_x,a.nav_y,a.nav_tx,a.nav_ty,cls,a.get("nav_vx"),a.get("nav_vy")]
 	var kept: Dictionary=_routes.get(a.id,{})
 	if kept.get("key",[])!=key:
@@ -1381,6 +1385,8 @@ func _grid(cls: String, species: String, scale: float) -> Array:
 	var w: int=int(1280.0/c)
 	var h: int=int(720.0/c)
 	var body: Vector2=Vector2(BODY[species][0],BODY[species][1])*scale
+	var home_fields: PackedStringArray=cls.split("/")
+	var home: Vector2=Vector2(float(home_fields[2]),float(home_fields[3])) if home_fields.size()==4 else Vector2.INF
 	var traffic: bool=cls=="traffic"
 	if traffic:
 		body=Vector2(69.0,61.0)
@@ -1409,8 +1415,10 @@ func _grid(cls: String, species: String, scale: float) -> Array:
 				if dx*dx+dy*dy<1.0:
 					v=2
 					continue
-				dx=(x-o.cx)/(o.rx+half.x)
-				dy=(y-o.cy)/(o.ry+half.y)
+				var at_home: bool=home!=Vector2.INF and ((home-Vector2(o.cx,o.cy))/(Vector2(o.rx,o.ry)+body*0.5*OBSTACLE.body)).length_squared()<1.0
+				var edge: Vector2=Vector2.ONE*OBSTACLE.pad if at_home else half
+				dx=(x-o.cx)/(o.rx+edge.x)
+				dy=(y-o.cy)/(o.ry+edge.y)
 				if dx*dx+dy*dy<1.0 and v<2:
 					v=1
 					depth[gy*w+gx]=minf(depth[gy*w+gx],sqrt(dx*dx+dy*dy))
@@ -1535,6 +1543,17 @@ func _grid(cls: String, species: String, scale: float) -> Array:
 					lane[nb]=lanes
 					stack.append(nb)
 		lanes+=1
+	if traffic:
+		var original: PackedInt32Array=lane.duplicate()
+		for i in w*h:
+			if original[i]<0:
+				continue
+			for dy in range(-3,4):
+				for dx in range(-3,4):
+					var x: int=i%w+dx
+					var y: int=i/w+dy
+					if x>=0 and x<w and y>=0 and y<h and g[y*w+x]!=3 and lane[y*w+x]<0:
+						lane[y*w+x]=original[i]
 	# Connected open water without narrow spans. Require room to turn at a destination;
 	# these are destinations, not a restriction on routes to an owner's home.
 	var open_part:=PackedInt32Array()
@@ -1655,8 +1674,12 @@ func _plan(cls: String, species: String, scale: float, from: Vector2, to: Vector
 	# (widened as for this species and size; out of one it starts in counts as seeing).
 	var radii:=PackedVector2Array()
 	var half: Vector2=Vector2(BODY[species][0],BODY[species][1])*scale*0.5+Vector2.ONE*NAV.cell
+	var home_fields: PackedStringArray=cls.split("/")
+	var home: Vector2=Vector2(float(home_fields[2]),float(home_fields[3])) if home_fields.size()==4 else Vector2.INF
 	for o: Dictionary in _obstacles:
-		radii.append(Vector2(o.rx+half.x,o.ry+half.y))
+		var physical: Vector2=Vector2(BODY[species][0],BODY[species][1])*scale*0.5*OBSTACLE.body
+		var at_home: bool=home!=Vector2.INF and ((home-Vector2(o.cx,o.cy))/(Vector2(o.rx,o.ry)+physical)).length_squared()<1.0
+		radii.append(Vector2(o.rx+OBSTACLE.pad,o.ry+OBSTACLE.pad) if at_home else Vector2(o.rx+half.x,o.ry+half.y))
 	var points: Array[Vector2]=[from]
 	var i: int=0
 	while i<cells.size()-1:
