@@ -1874,11 +1874,18 @@ func _clown_inside(p: Vector2) -> bool:
 	return Vector2((p.x-_anemone.cx)/_anemone.rx,(p.y-_anemone.cy)/_anemone.ry).length_squared()<=1.0
 
 func _clown_return(a: Dictionary, activity: String = "Nestling") -> void:
+	var returning_from_food: bool=a.activity=="Feeding"
 	a.activity=activity
 	a.nestle=1.0 if activity in ["Sleeping","Sheltering"] else 0.65
 	a.tx=a.home_x
 	a.ty=a.home_y
-	a.decision_at=state.elapsed+lerpf(30.0,50.0,_hash01(int(a.id),int(state.motion_ticks))) if activity=="Nestling" else state.elapsed
+	# A bite must not consume the shared motion sequence during mixed-tank feeding.
+	# Ordinary home decisions retain their scheduled motion RNG draw.
+	if activity=="Nestling":
+		var dwell: float=lerpf(30.0,50.0,_hash01(int(a.id),int(state.motion_ticks))) if returning_from_food else motion_rng.randf_range(30.0,50.0)
+		a.decision_at=state.elapsed+dwell
+	else:
+		a.decision_at=state.elapsed
 	a.erase("food_id")
 
 func _clown_shelter(a: Dictionary) -> void:
