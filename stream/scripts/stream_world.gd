@@ -771,7 +771,9 @@ func _avoid(a: Dictionary, p: Vector2, desired: Vector2, speed: float) -> Vector
 		# Dodge up or down, away from the other (the upper fish rises; ids break a tie).
 		var up: float=signf(rel.y) if absf(rel.y)>1.0 else (1.0 if a.id>o.id else -1.0)
 		var side: float=signf(rel.x) if absf(rel.x)>1.0 else 0.0
-		push+=Vector2(side*0.5,up).normalized()*speed*gain*(1.0-q)
+		var vertical: bool=absf(desired.y)>absf(desired.x)
+		var dodge: Vector2=Vector2(side if side!=0.0 else (1.0 if a.id>o.id else -1.0),up*0.25) if vertical else Vector2(side*0.5,up)
+		push+=dodge.normalized()*speed*gain*(1.0-q)
 		_dodge=maxf(_dodge,1.0-q)
 		# The younger id holds back as a meeting nears; inside the other's space nobody presses on
 		# toward it. What it held back it swims along the other's edge instead, on its dodging side
