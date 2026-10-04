@@ -84,7 +84,7 @@ const HOME: Dictionary = {
 const FOOD: Dictionary = {"particles":5,"mass":0.05,"daily":1.0,"max":40,"surface":56.0,"sink":10.0,"notice":260.0,"eat":12.0,"decay":900.0,"max_bites":10}
 # Tap the glass: fish within `radius` dart up to `dart` px away for `seconds`. Presentation of the
 # tap only; no ecology effect, nothing saved.
-const STARTLE: Dictionary = {"radius":260.0,"dart":150.0,"seconds":3.0}
+const STARTLE: Dictionary = {"radius":260.0,"dart":150.0,"seconds":3.0,"hide_seconds":8.0}
 # Cursor lure: for `interest` seconds after the cursor comes to rest, the chromis school leader
 # choosing its next move within `range` of it looks with probability `chance`, hovering `stand_off`
 # px to the side for `look` seconds. Jitter under `still` px keeps the same lure. Never saved.
@@ -167,6 +167,7 @@ var _swim_x: Vector2
 var _roam_x: Vector2
 var _feed_x: Vector2
 var _homes: Dictionary = {}
+var _anemone: Dictionary = {}
 # The obstacles of the scene with its current decor (ReefScene.obstacles): terrain first, then each
 # slot's, as {cx, cy, rx, ry}. Re-read whenever the scene or the decor changes; never saved.
 var _obstacles: Array = []
@@ -246,6 +247,8 @@ func _use_decor() -> void:
 	_open_targets.clear()
 	for species: String in HOME:
 		_homes[species]=_home_spots(species)
+	var h: Dictionary=_homes.clownfish[0]
+	_anemone=scene.effects(h.slot,state.decor[state.scene][h.slot]).anemone
 
 # Puts `style` in `slot` of the current scene (S5; plan §5.1, H4): one of the slot's styles, or ""
 # to empty a slot that is not required (the anemone and the hitch plant change style but are never
@@ -332,6 +335,9 @@ func spawn(species: String, age: float = 0, parent: int = 0) -> Dictionary:
 		a.home={"kind":home.kind,"slot":home.slot,"i":home.i}
 		a.home_x=home.x
 		a.home_y=home.y
+	if species=="clownfish":
+		a.nestle=0.65
+		a.activity="Nestling"
 	state.next_id += 1
 	state.animals.append(a)
 	return a
@@ -445,6 +451,9 @@ func startle(x: float, y: float, strength: float = 1.0) -> int:
 		if gap>=reach:
 			continue
 		noticed+=1
+		if a.species=="clownfish":
+			_clown_shelter(a)
+			continue
 		var away: Vector2=(p-hit)/gap if gap>0.01 else Vector2(a.direction,0)
 		var band: Array=_bands[a.species]
 		var to: Vector2=p+away*STARTLE.dart*(1.0-0.5*gap/reach)
@@ -486,9 +495,11 @@ func _seek_food(a: Dictionary) -> bool:
 	var best: Dictionary={}
 	var band: Array=_bands[a.species]
 	if SPECIES[a.species].reserve-a.energy>=FOOD.mass*0.8:
-		var gap: float=FOOD.notice
+		var gap: float=60.0 if a.species=="clownfish" else FOOD.notice
 		for f: Dictionary in state.get("food",[]):
 			if f.settled or f.y>band[1]+FOOD.eat:
+				continue
+			if a.species=="clownfish" and Vector2(f.x-a.home_x,f.y-a.home_y).length()>90.0:
 				continue
 			var d: float=Vector2(a.x,a.y).distance_to(Vector2(f.x,clampf(f.y,band[0],band[1])))
 			if d<gap:
@@ -498,6 +509,7 @@ func _seek_food(a: Dictionary) -> bool:
 		a.erase("food_id")
 		return false
 	a.activity="Feeding"
+	if a.species=="clownfish": a.nestle=0.0
 	a.food_id=best.id
 	a.tx=best.x
 	# Aim where the sinking pellet will be when the fish gets there (at most 3 s ahead).
@@ -513,6 +525,7 @@ func _eat(a: Dictionary, f: Dictionary) -> void:
 	state.resources.detritus+=f.mass*0.2
 	state.food.erase(f)
 	a.erase("food_id")
+	if a.species=="clownfish": _clown_return(a)
 	_live=true
 	_event("ate",a,"",{"food_id":f.id,"food_x":f.x,"food_y":f.y})
 	_live=false
@@ -534,14 +547,22 @@ func _move(delta: float) -> void:
 		var p:=Vector2(a.x,a.y)
 		var species: String=a.species
 		var chromis: bool=species=="green_chromis"
+		if species=="clownfish" and not lure.is_empty() and p.distance_to(Vector2(lure.x,lure.y))<60.0:
+			_clown_shelter(a)
+		var sheltered: bool=species=="clownfish" and a.activity=="Sheltering" and state.elapsed<a.decision_at
+		var sleeping: bool=species=="clownfish" and (state.light_hour<7 or state.light_hour>19)
 		var startled: bool=a.activity=="Startled" and state.elapsed<a.decision_at
 		var follower: bool=chromis and a.id!=lead.id
-		if not startled and not _seek_food(a):
+		if sleeping and not sheltered:
+			_clown_return(a,"Sleeping")
+		if not startled and not sheltered and not sleeping and not _seek_food(a):
 			if follower:
 				_follow(a,lead)
 			elif state.elapsed>=a.decision_at:
 				if chromis:
 					_choose_activity(a)
+				elif species=="clownfish":
+					_choose_clown(a)
 				else:
 					_choose_home(a)
 		# Its band, but never so low that the body dips into the bed (a scene's band may reach below
@@ -562,7 +583,7 @@ func _move(delta: float) -> void:
 		var offset: Vector2=target-p
 		# A resting fish already within `hold` px of its spot's depth never corrects its depth:
 		# nudged aside (spacing) it glides straight back, level (2026-09-26).
-		var resting: bool=a.activity=="Resting"
+		var resting: bool=a.activity in ["Resting","Sleeping"]
 		# (Twice that beside an obstacle, where its spot is moved to the obstacle's edge and slides up
 		# and down the edge as the slot breathes, S5.)
 		var pushed: bool=target.distance_squared_to(Vector2(a.tx,clampf(a.ty,band[0],band[1])))>0.01
@@ -574,6 +595,8 @@ func _move(delta: float) -> void:
 		var speed: float=cruise
 		if resting:
 			speed=1.2
+		elif a.activity=="Sheltering":
+			speed*=SWIM.startle_speed
 		elif a.activity=="Startled":
 			speed*=SWIM.startle_speed
 		elif follower:
@@ -583,6 +606,8 @@ func _move(delta: float) -> void:
 		var top: float=minf(speed,maxf(sqrt(2.0*cfg.brake*gap),2.0*FOOD.sink if a.activity=="Feeding" else 0.0))
 		var arrive: Vector2=offset/gap*top if gap>0.01 else Vector2.ZERO
 		var home_hover: bool=a.has("home_x") and a.activity=="Hovering" and p.distance_to(Vector2(a.home_x,a.home_y))<HOME[species].radius+_bodies[a.id].x and target.distance_to(Vector2(a.home_x,a.home_y))<HOME[species].radius
+		var nestled: bool=species=="clownfish" and a.activity=="Nestling" and _clown_inside(p)
+		home_hover=home_hover or nestled
 		if home_hover:
 			arrive=arrive.limit_length(cfg.scull*0.9)
 		var hovering: bool=resting and gap<CHROMIS.hold
@@ -661,6 +686,8 @@ func _move(delta: float) -> void:
 		var change: Vector2=_avoid(a,p,arrive+desired,cruise)-arrive-desired
 		var was: Vector2=Vector2(a.get("avoid_x",0.0),a.get("avoid_y",0.0))
 		var steer: Vector2=was.lerp(change,0.3)
+		if species=="clownfish" and a.activity in ["Nestling","Sleeping","Sheltering"]:
+			steer=steer.limit_length(1.0 if a.activity!="Sheltering" else 3.0)
 		a.avoid_x=steer.x
 		a.avoid_y=steer.y
 		_dodge=maxf(minf(1.0,steer.length()/cruise),_close)
@@ -701,6 +728,11 @@ func _move(delta: float) -> void:
 			face=lead.direction
 		if home_hover:
 			desired=desired.limit_length(cfg.scull*0.9)
+		if species=="clownfish" and a.activity=="Sheltering":
+			# Pectoral retreat keeps the body turning smoothly while moving home immediately.
+			cfg=cfg.duplicate()
+			cfg.scull=speed
+			_last_scull=true
 		var velocity: Vector2=_swim(a,desired,speed,cruise,cfg,delta,a.activity=="Startled",face,climbing)
 		var free: Vector2=p+velocity*delta
 		# Keep each fish in its own layer (the shoaling push once carried hatchetfish down).
@@ -1825,6 +1857,48 @@ func _in_water(species: String, x: float, y: float) -> float:
 
 # A new fish's next move (S4, the simplest behaviour): by day a swim to a point near its home, at
 # night a rest at its own spot beside it.
+# S6: local home decisions use only motion_rng; all scheduling is saved on the animal.
+func _clown_inside(p: Vector2) -> bool:
+	return Vector2((p.x-_anemone.cx)/_anemone.rx,(p.y-_anemone.cy)/_anemone.ry).length_squared()<=1.0
+
+func _clown_return(a: Dictionary, activity: String = "Nestling") -> void:
+	a.activity=activity
+	a.nestle=1.0 if activity in ["Sleeping","Sheltering"] else 0.65
+	a.tx=a.home_x
+	a.ty=a.home_y
+	a.decision_at=state.elapsed+motion_rng.randf_range(30.0,50.0) if activity=="Nestling" else state.elapsed
+	a.erase("food_id")
+
+func _clown_shelter(a: Dictionary) -> void:
+	# No RNG draw on a tap or cursor motion; repeated proximity extends the same retreat.
+	a.activity="Sheltering"
+	a.nestle=1.0
+	a.tx=a.home_x
+	a.ty=a.home_y
+	a.decision_at=state.elapsed+STARTLE.hide_seconds
+	a.erase("food_id")
+	_forget_around(a)
+
+func _choose_clown(a: Dictionary) -> void:
+	if a.activity in ["Foraging","Feeding","Sheltering"] or not _clown_inside(Vector2(a.x,a.y)):
+		_clown_return(a)
+		return
+	var foraging: bool=motion_rng.randf()<0.18
+	var angle: float=motion_rng.randf()*TAU
+	var reach: float=motion_rng.randf_range(65.0,80.0) if foraging else motion_rng.randf_range(10.0,25.0)
+	var spot:=Vector2(a.home_x+cos(angle)*reach,a.home_y+sin(angle)*reach*(0.15 if foraging else 0.6))
+	spot.x=clampf(spot.x,_roam_x.x,_roam_x.y)
+	spot.y=_in_water(a.species,spot.x,spot.y)
+	# Excursions remain on the visible side of home, never across a rock or narrow passage.
+	if _blocker(Vector2(a.home_x,a.home_y),spot,_radii_of(a),-1)>=0:
+		_clown_return(a)
+		return
+	a.activity="Foraging" if foraging else "Nestling"
+	a.nestle=0.0 if foraging else 0.65
+	a.tx=spot.x
+	a.ty=spot.y
+	a.decision_at=state.elapsed+motion_rng.randf_range(8.0,12.0) if foraging else state.elapsed+motion_rng.randf_range(30.0,50.0)
+
 func _choose_home(a: Dictionary) -> void:
 	var h: Dictionary=HOME[a.species]
 	if state.light_hour<7 or state.light_hour>19:
@@ -2271,6 +2345,8 @@ static func validate(saved: Dictionary) -> bool:
 		for key: String in ["vx","vy","relocated_at","avoid_x","avoid_y","heading","pitch","speed","thrust","turn"]:
 			if a.has(key) and not _number(a[key]):
 				return false
+		if a.has("nestle") and (not _number(a.nestle) or a.nestle<0.0 or a.nestle>1.0):
+			return false
 		# On a route round an obstacle (S5): planned from nav_x/nav_y to nav_tx/nav_ty, on leg nav_k.
 		if a.has("nav_tx") and (not ["nav_x","nav_y","nav_tx","nav_ty"].all(func(k): return _number(a.get(k))) or not a.get("nav_k") is int or a.nav_k<0):
 			return false
