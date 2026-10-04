@@ -851,7 +851,7 @@ func _swim(a: Dictionary, desired: Vector2, cap: float, cruise: float, cfg: Dict
 	# Headway: less while turning, hardly any while still facing away from the way to go.
 	# Headway: what lies ahead of the body (none while still facing away), and some to climb or dive.
 	# (Climbing round an obstacle steeper than it can pitch, S5: only the level part; it sculls the rest.)
-	var along: float=maxf(0.0,desired.x*cos(psi))+(0.0 if climbing else absf(desired.y)*0.6)
+	var along: float=(0.0 if _last_scull else maxf(0.0,desired.x*cos(psi)))+(0.0 if climbing else absf(desired.y)*0.6)
 	along=minf(along,cruise*SWIM.startle_speed)
 	var full: float=cfg.push*cfg.drag*maxf(cruise,1.0)
 	var thrust: float=a.get("thrust",0.0)
@@ -885,7 +885,7 @@ func _swim(a: Dictionary, desired: Vector2, cap: float, cruise: float, cfg: Dict
 	var axis:=Vector2(cos(psi),0.0) if absf(cos(psi))>0.01 else Vector2.ZERO
 	var miss: Vector2=desired-body
 	var ahead: Vector2=axis*miss.dot(axis)
-	var settle: float=slow if want<cfg.scull or climbing and urgent>0.0 else 0.0
+	var settle: float=slow if _last_scull or want<cfg.scull or climbing and urgent>0.0 else 0.0
 	var velocity: Vector2=body+ahead.limit_length(cfg.scull*settle)+(miss-ahead).limit_length(cfg.scull*maxf(urgent,slow))
 	a.heading=psi
 	a.pitch=theta
