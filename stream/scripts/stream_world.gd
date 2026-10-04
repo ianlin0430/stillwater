@@ -579,6 +579,9 @@ func _move(delta: float) -> void:
 		# (Chasing a sinking pellet it keeps closing in: no slower than twice the sink speed.)
 		var top: float=minf(speed,maxf(sqrt(2.0*cfg.brake*gap),2.0*FOOD.sink if a.activity=="Feeding" else 0.0))
 		var arrive: Vector2=offset/gap*top if gap>0.01 else Vector2.ZERO
+		var home_hover: bool=a.has("home_x") and a.activity=="Hovering" and p.distance_to(Vector2(a.home_x,a.home_y))<HOME[species].radius and target.distance_to(Vector2(a.home_x,a.home_y))<HOME[species].radius
+		if home_hover:
+			arrive=arrive.limit_length(cfg.scull*0.9)
 		var hovering: bool=resting and gap<CHROMIS.hold
 		if hovering:
 			arrive=Vector2.ZERO
@@ -618,7 +621,7 @@ func _move(delta: float) -> void:
 		# scull up the difference, with its forward stroke kept to the level part (_swim `climbing`).
 		# (Near an obstacle, within 1.3 x its widened radii, it rises and sinks by sculling only, never
 		# by swimming on forward: a climb does not carry it into the obstacle.)
-		var climbing: bool=_close>0.0 and (way!=Vector2.ZERO or follower)
+		var climbing: bool=_close>0.0 and (way!=Vector2.ZERO or follower) or gap>40.0 and absf(offset.y)>absf(offset.x)*sin(cfg.pitch)
 		if way!=Vector2.ZERO:
 			var steep: float=absf(way.y)-absf(way.x)*sin(cfg.pitch)
 			if steep>0.0 and not _escaping:
@@ -677,7 +680,7 @@ func _move(delta: float) -> void:
 		# Which way to face: a resting fish settled on its spot keeps its facing, a school member
 		# settled in its slot faces the way the leader does (so the school turns almost together).
 		var face: float=0.0
-		if hovering or waiting:
+		if hovering or waiting or home_hover:
 			face=a.direction
 		elif way!=Vector2.ZERO:
 			# On a route round an obstacle it faces along its leg; only a clearly sideways leg turns
@@ -689,6 +692,8 @@ func _move(delta: float) -> void:
 		elif follower and gap<40 and _close==0.0:
 			# (A school member settled in its slot faces with the leader, unless an obstacle is near.)
 			face=lead.direction
+		if home_hover:
+			desired=desired.limit_length(cfg.scull*0.9)
 		var velocity: Vector2=_swim(a,desired,speed,cruise,cfg,delta,a.activity=="Startled",face,climbing)
 		var free: Vector2=p+velocity*delta
 		# Keep each fish in its own layer (the shoaling push once carried hatchetfish down).
@@ -1398,7 +1403,7 @@ func _grid(cls: String, species: String, scale: float) -> Array:
 	depth.fill(1.0)
 	for gx in w:
 		var x: float=(gx+0.5)*c
-		var top: float=0.0 if traffic else _bands[species][0]
+		var top: float=_bands[species][0]
 		var bottom: float=bed_y(x)-body.y*0.5 if traffic else minf(_bands[species][1],bed_y(x)-body.y*0.5)
 		var near: Array=_obstacles.filter(func(o): return absf(x-o.cx)<o.rx+half.x)
 		for gy in h:
