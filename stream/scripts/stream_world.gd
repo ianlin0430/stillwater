@@ -1908,6 +1908,11 @@ func _choose_clown(a: Dictionary) -> void:
 	var spot:=Vector2(a.home_x+cos(angle)*reach,a.home_y+sin(angle)*reach*(0.15 if foraging else 0.6))
 	spot.x=clampf(spot.x,_roam_x.x,_roam_x.y)
 	spot.y=_in_water(a.species,spot.x,spot.y)
+	# A shallow-angle sample can still land inside the wide home ellipse.
+	# Foraging must leave it: retain the sampled side and reach along the water layer.
+	if foraging and _clown_inside(spot):
+		spot.x=clampf(a.home_x+(-reach if cos(angle)<0.0 else reach),_roam_x.x,_roam_x.y)
+		spot.y=_in_water(a.species,spot.x,spot.y)
 	# Excursions remain on the visible side of home, never across a rock or narrow passage.
 	if _blocker(Vector2(a.home_x,a.home_y),spot,_radii_of(a),-1)>=0:
 		_clown_return(a)
