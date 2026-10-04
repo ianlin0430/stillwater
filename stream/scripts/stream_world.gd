@@ -719,6 +719,9 @@ func _move(delta: float) -> void:
 		var face: float=0.0
 		if hovering or waiting or nestled:
 			face=a.direction
+		elif home_hover and way==Vector2.ZERO:
+			# Face the home excursion, rather than reversing for a transient dodge.
+			face=signf(offset.x) if gap>CHROMIS.hold and absf(offset.x)>0.45*gap else a.direction
 		elif way!=Vector2.ZERO:
 			# On a route round an obstacle it faces along its leg; only a clearly sideways leg turns
 			# it round (S5).
