@@ -242,6 +242,7 @@ func _use_decor() -> void:
 	_obstacles=scene.obstacles(state.decor[state.scene])
 	_grids.clear()
 	_routes.clear()
+	_open_targets.clear()
 	for species: String in HOME:
 		_homes[species]=_home_spots(species)
 
@@ -590,37 +591,22 @@ func _move(delta: float) -> void:
 			_forget_around(a)
 		else:
 			way=_around(a,p,target,band,radii)
-		# One at a time through a passage too narrow for two (S5-fix): about to enter one that
-		# another fish is in, or is entering first, coming the other way, it waits at the mouth.
+		# Reserve all single-file spans before setting out, including straight approaches.
+		# A denied excursion chooses a staging destination in open water; it never queues
+		# inside the neck. Claims live on the animal so save/restore preserves ownership.
+		if not hovering and not startled and not _escaping and not follower:
+			if not _reserve_route(a,p,target):
+				var staging: Vector2=_staging_target(a,p,target)
+				a.tx=staging.x
+				a.ty=staging.y
+				_forget_around(a)
+				target=_aim(a,radii)
+				offset=target-p
+				gap=offset.length()
+				way=_around(a,p,target,band,radii)
+				arrive=offset.normalized()*minf(speed,sqrt(2.0*cfg.brake*gap))
 		var waiting: bool=false
-		# When it entered the narrow passage it is in (S5-fix; saved): in a passage the later comer
-		# gives way, _gives_way.
-		var lanes: PackedInt32Array=_grid(species+"/"+str(animal_scale(a)),species,animal_scale(a))[5]
-		var in_lane: int=_lane_at(lanes,p)
-		if in_lane<0:
-			a.erase("nav_lane")
-			a.erase("nav_lane_t")
-		elif int(a.get("nav_lane",-1))!=in_lane:
-			a.nav_lane=in_lane
-			a.nav_lane_t=state.elapsed
-		if not hovering and not _escaping and gap>NAV.replan:
-			var heading: Vector2=way if way!=Vector2.ZERO else offset/gap
-			waiting=_must_wait(a,p,heading)
-			var giving: bool=not waiting and _gives_way(a,p)
-			if waiting or giving:
-				way=Vector2.ZERO
-				arrive=Vector2.ZERO
-				# Giving way inside a passage too narrow to pass in, it backs out slowly, sculling,
-				# without turning round (S5-fix).
-				if giving and in_lane>=0:
-					arrive=-heading*cfg.scull*0.9
-				waiting=true
-		# (Saved, so a restored world gives way the same: a fish waiting at a passage makes way for
-		# the one coming out of it, _avoid.)
-		if waiting:
-			a.nav_wait=1
-		else:
-			a.erase("nav_wait")
+		a.erase("nav_wait")
 		# A way steeper than its nose can pitch is climbed (or sunk) slowly: no faster than it can
 		# scull up the difference, with its forward stroke kept to the level part (_swim `climbing`).
 		# (Near an obstacle, within 1.3 x its widened radii, it rises and sinks by sculling only, never
@@ -1091,63 +1077,70 @@ func _hold_off(p: Vector2, v: Vector2, radii: PackedVector2Array, cruise: float,
 			v+=n*OBSTACLE.out*cruise*(1.0-inner)
 	return v
 
-# Whether fish a at p, heading `dir`, waits before a narrow passage (S5-fix, _grid lanes): the
-# point a body length ahead lies in a passage it is not already in, and another fish (not a fellow
-# chromis) that is not travelling its way is in that passage and under way, or is about to enter it
-# with a lower id. A fish standing still in a passage does not close it (it is passed, not waited for).
-func _must_wait(a: Dictionary, p: Vector2, dir: Vector2) -> bool:
-	var cls: String=a.species+"/"+str(animal_scale(a))
-	var lane: PackedInt32Array=_grid(cls,a.species,animal_scale(a))[5]
-	var look: float=_bodies[a.id].x
-	var ahead: int=_lane_at(lane,p+dir*look)
-	if ahead<0 or ahead==_lane_at(lane,p):
-		return false
+# Whole-route claims use one shared geometry, not species-dependent lane labels.
+# Claims are acquired atomically in the deterministic animal update order, released
+# after arrival or a destination change. School members travel under the leader's claim.
+func _reserve_route(a: Dictionary, p: Vector2, target: Vector2) -> bool:
+	if _obstacles.is_empty():
+		return true
+	var lane: PackedInt32Array=_grid("traffic","clownfish",1.0)[5]
+	var same: bool=a.has("pass_tx") and target.distance_to(Vector2(a.pass_tx,a.pass_ty))<1.0
+	if same and p.distance_to(target)>NAV.replan:
+		return true
+	a.erase("pass_claims")
+	a.erase("pass_tx")
+	a.erase("pass_ty")
+	if p.distance_to(target)<=NAV.replan:
+		return true
+	var route: PackedVector2Array=_route(a) if a.has("nav_tx") else PackedVector2Array([p,target])
+	var claims: Array[int]=[]
+	for j in range(1,route.size()):
+		var steps: int=maxi(1,int(ceil(route[j-1].distance_to(route[j])/NAV.cell)))
+		for k in range(steps+1):
+			var label: int=_lane_at(lane,route[j-1].lerp(route[j],float(k)/steps))
+			if label>=0 and not claims.has(label):
+				claims.append(label)
 	for o: Dictionary in state.animals:
 		if o.id==a.id or a.species=="green_chromis" and o.species=="green_chromis":
 			continue
-		var v:=Vector2(o.get("vx",0.0),o.get("vy",0.0))
-		var moving: float=v.length()
-		if moving<1.0 or v.dot(dir)>0.5*moving:
-			continue
 		var at:=Vector2(o.x,o.y)
-		if _lane_at(lane,at)==ahead or o.id<a.id and _lane_at(lane,at+v/moving*_bodies[o.id].x)==ahead:
-			return true
-	return false
+		var occupied: int=_lane_at(lane,at)
+		if occupied>=0 and claims.has(occupied):
+			return false
+		# Expired claims must not block another fish earlier in the update order.
+		if not o.has("pass_tx") or Vector2(o.tx,o.ty).distance_to(Vector2(o.pass_tx,o.pass_ty))>NAV.replan or at.distance_to(Vector2(o.pass_tx,o.pass_ty))<=NAV.replan:
+			continue
+		for label: int in o.get("pass_claims",[]):
+			if claims.has(label):
+				return false
+	a.pass_claims=claims
+	a.pass_tx=target.x
+	a.pass_ty=target.y
+	return true
 
-# Whether fish a at p, on its way somewhere, gives way to a fish it is held up by (S5-fix): once it
-# has moved less than NAV.moved px for NAV.patience s with a fish it would make way for (_avoid's
-# order: the higher id, a chromis before any other fish) within 1.3 x their spacing, it waits for
-# NAV.give s, making way for everyone, so the other can come past. Checkpoint and wait are saved.
-func _gives_way(a: Dictionary, p: Vector2) -> bool:
-	if a.get("nav_give",-1.0)>state.elapsed:
-		return true
-	if not a.has("nav_ct") or p.distance_to(Vector2(a.nav_cx,a.nav_cy))>NAV.moved:
-		a.nav_cx=p.x
-		a.nav_cy=p.y
-		a.nav_ct=state.elapsed
-		return false
-	if state.elapsed-a.nav_ct<NAV.patience:
-		return false
-	var own: Vector2=_bodies[a.id]
-	var schooling: bool=a.species=="green_chromis"
-	var lane: PackedInt32Array=_grid(a.species+"/"+str(animal_scale(a)),a.species,animal_scale(a))[5]
-	var mine: int=_lane_at(lane,p)
-	for o: Dictionary in state.animals:
-		if o.id==a.id or schooling and o.species=="green_chromis":
+# Keep swimming in the direction of the excursion while the passage is occupied.
+# Prefer a visible open-water spot away from the passage; if none exists, settle nearby.
+func _staging_target(a: Dictionary, p: Vector2, target: Vector2) -> Vector2:
+	var grid: Array=_grid(a.species+"/"+str(animal_scale(a)),a.species,animal_scale(a))
+	var parts: PackedInt32Array=grid[6]
+	var lane: PackedInt32Array=_grid("traffic","clownfish",1.0)[5]
+	var radii: PackedVector2Array=_radii_of(a)
+	var forward: Vector2=(target-p).normalized()
+	var preferred: Vector2=p+forward*100.0
+	var best: Vector2=p
+	var score: float=INF
+	var w: int=int(1280.0/NAV.cell)
+	for i in parts.size():
+		if parts[i]!=grid[7] or lane[i]>=0:
 			continue
-		var other: bool=o.species=="green_chromis"
-		var yields: bool=(a.id>o.id) if schooling==other else schooling
-		# (Both in one passage: the later comer gives way, and backs out the way it came.)
-		if mine>=0 and _lane_at(lane,Vector2(o.x,o.y))==mine and a.has("nav_lane_t") and o.has("nav_lane_t") and a.nav_lane_t!=o.nav_lane_t:
-			yields=a.nav_lane_t>o.nav_lane_t
-		if not yields:
+		var spot: Vector2=_centre(i,w)
+		if p.distance_squared_to(spot)>160.0*160.0 or (spot-p).dot(forward)<0.0:
 			continue
-		var r: Vector2=(own+_bodies[o.id])*0.5*SEPARATE.margin*1.3
-		if Vector2((p.x-o.x)/r.x,(p.y-o.y)/r.y).length_squared()<1.0:
-			a.nav_give=state.elapsed+NAV.give
-			a.nav_ct=state.elapsed
-			return true
-	return false
+		var d: float=spot.distance_squared_to(preferred)
+		if d<score and _blocker(p,spot,radii,-1)<0:
+			best=spot
+			score=d
+	return best
 
 func _lane_at(lane: PackedInt32Array, p: Vector2) -> int:
 	var w: int=int(1280.0/NAV.cell)
@@ -1217,7 +1210,13 @@ func _around(a: Dictionary, p: Vector2, t: Vector2, band: Array, radii: PackedVe
 	if p.distance_to(t)<NAV.replan or _blocker(p,t,radii,-1)<0:
 		_forget_around(a)
 		return Vector2.ZERO
-	var to: Vector2=_navigate(a,p,t,radii)
+	var travel: PackedVector2Array=radii.duplicate()
+	var half: Vector2=_body(a)*0.5+Vector2.ONE*NAV.cell
+	for i in _obstacles.size():
+		var o: Dictionary=_obstacles[i]
+		if travel[i].x>o.rx+OBSTACLE.pad+0.001:
+			travel[i]=Vector2(o.rx+half.x,o.ry+half.y)
+	var to: Vector2=_navigate(a,p,t,travel)
 	# (S5-fix) A route that ends where it is (nothing nearer its aim to reach) is no route: it hovers.
 	if p.distance_to(Vector2(a.nav_tx,a.nav_ty))<NAV.replan:
 		_forget_around(a)
@@ -1250,6 +1249,19 @@ func _navigate(a: Dictionary, p: Vector2, t: Vector2, radii: PackedVector2Array)
 		# (S5-fix: by way of the corner it was making for, so it keeps going round the same side;
 		# planned afresh it had switched sides and turned round and back.)
 		var via: Vector2=route[leg+1]
+		var forward: float=a.direction
+		var found: bool=false
+		for j in range(leg+1,route.size()):
+			if (route[j].x-p.x)*forward>=0.0 and _blocker(p,route[j],radii,-1)<0:
+				via=route[j]
+				found=true
+				break
+		# Keep the route's side and make room vertically before considering a back-leg.
+		if not found:
+			var lift:=Vector2(p.x,via.y)
+			if _blocker(p,lift,radii,-1)<0:
+				_leg=Vector2(0.0,signf(lift.y-p.y))
+				return lift
 		a.nav_x=p.x
 		a.nav_y=p.y
 		a.nav_k=0
@@ -1334,7 +1346,10 @@ func _grid(cls: String, species: String, scale: float) -> Array:
 	var w: int=int(1280.0/c)
 	var h: int=int(720.0/c)
 	var body: Vector2=Vector2(BODY[species][0],BODY[species][1])*scale
-	var half: Vector2=body*0.5*OBSTACLE.body
+	var traffic: bool=cls=="traffic"
+	if traffic:
+		body=Vector2(69.0,61.0)
+	var half: Vector2=body*0.5+Vector2.ONE*NAV.cell
 	var g:=PackedByteArray()
 	g.resize(w*h)
 	var depth:=PackedFloat32Array()
@@ -1342,8 +1357,8 @@ func _grid(cls: String, species: String, scale: float) -> Array:
 	depth.fill(1.0)
 	for gx in w:
 		var x: float=(gx+0.5)*c
-		var top: float=_bands[species][0]
-		var bottom: float=minf(_bands[species][1],bed_y(x)-body.y*0.5)
+		var top: float=0.0 if traffic else _bands[species][0]
+		var bottom: float=bed_y(x)-body.y*0.5 if traffic else minf(_bands[species][1],bed_y(x)-body.y*0.5)
 		var near: Array=_obstacles.filter(func(o): return absf(x-o.cx)<o.rx+half.x)
 		for gy in h:
 			var y: float=(gy+0.5)*c
@@ -1604,7 +1619,7 @@ func _plan(cls: String, species: String, scale: float, from: Vector2, to: Vector
 	# Pulled straight: from each kept point on to the furthest cell it sees past every obstacle
 	# (widened as for this species and size; out of one it starts in counts as seeing).
 	var radii:=PackedVector2Array()
-	var half: Vector2=Vector2(BODY[species][0],BODY[species][1])*scale*0.5*OBSTACLE.body
+	var half: Vector2=Vector2(BODY[species][0],BODY[species][1])*scale*0.5+Vector2.ONE*NAV.cell
 	for o: Dictionary in _obstacles:
 		radii.append(Vector2(o.rx+half.x,o.ry+half.y))
 	var points: Array[Vector2]=[from]
