@@ -805,7 +805,12 @@ func _avoid(a: Dictionary, p: Vector2, desired: Vector2, speed: float) -> Vector
 				# (Meeting above or below, it slides off to the side it is already on, ids breaking a
 				# tie; never back the way it is heading: that would turn it round.)
 				var aside: float=side if side!=0.0 else (1.0 if a.id>o.id else -1.0)
-				if absf(along.y)>0.3 and signf(along.y)!=up or absf(along.y)<=0.3 and signf(along.x)!=aside:
+				# A travelling fish passes on the tangent that continues its journey.
+				# Always retreating above a body below it creates a permanent descent queue.
+				if Vector2(a.tx-a.x,a.ty-a.y).length_squared()>1600.0:
+					if along.dot(desired)<0.0:
+						along=-along
+				elif absf(along.y)>0.3 and signf(along.y)!=up or absf(along.y)<=0.3 and signf(along.x)!=aside:
 					along=-along
 				if along.x*desired.x<0.0 and absf(desired.x)>0.45*desired.length():
 					along.x=0.0
