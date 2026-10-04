@@ -495,11 +495,11 @@ func _seek_food(a: Dictionary) -> bool:
 	var best: Dictionary={}
 	var band: Array=_bands[a.species]
 	if SPECIES[a.species].reserve-a.energy>=FOOD.mass*0.8:
-		var gap: float=60.0 if a.species=="clownfish" else FOOD.notice
+		var gap: float=120.0 if a.species=="clownfish" else FOOD.notice
 		for f: Dictionary in state.get("food",[]):
 			if f.settled or f.y>band[1]+FOOD.eat:
 				continue
-			if a.species=="clownfish" and Vector2(f.x-a.home_x,f.y-a.home_y).length()>90.0:
+			if a.species=="clownfish" and Vector2(f.x-a.home_x,f.y-a.home_y).length()>120.0:
 				continue
 			var d: float=Vector2(a.x,a.y).distance_to(Vector2(f.x,clampf(f.y,band[0],band[1])))
 			if d<gap:
@@ -596,6 +596,11 @@ func _move(delta: float) -> void:
 		var speed: float=cruise
 		if resting:
 			speed=1.2
+		elif species=="clownfish" and a.activity=="Feeding":
+			# A short interception must beat a sinking pellet, rather than scull behind it.
+			speed*=1.5
+			cfg=cfg.duplicate()
+			cfg.scull=speed
 		elif a.activity=="Sheltering":
 			speed*=SWIM.startle_speed
 		elif a.activity=="Startled":
