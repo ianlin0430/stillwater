@@ -152,6 +152,7 @@ var _dodge: float = 0.0
 var _close: float = 0.0
 var _escaping: bool = false
 # The direction of the route leg the last _navigate() call steered along (ZERO when none).
+var _last_scull: bool = false
 var _leg: Vector2 = Vector2.ZERO
 # Per-tick scratch that _move() fills before moving anyone (2026-09-27, speed only; never saved):
 # the non-chromis animals in state.animals order and each animal's _body() by id. Within a motion
@@ -591,6 +592,7 @@ func _move(delta: float) -> void:
 		var way: Vector2=Vector2.ZERO
 		_close=0.0
 		_leg=Vector2.ZERO
+		_last_scull=false
 		_escaping=false
 		if hovering:
 			_forget_around(a)
@@ -690,7 +692,7 @@ func _move(delta: float) -> void:
 			var leg: Vector2=_leg if not _escaping else way
 			# (S5-fix: when the leg runs up or down but the way it swims runs clearly sideways, the
 			# way: a seahorse on a vertical leg had kept facing away from where it swam, and stalled.)
-			face=signf(leg.x) if absf(leg.x)>=0.45 else (signf(way.x) if a.species=="seahorse" and absf(way.x)>=0.45 else a.direction)
+			face=signf(leg.x) if absf(leg.x)>=0.45 else (signf(way.x) if absf(way.x)>=0.45 and not _last_scull else a.direction)
 		elif gap>40.0:
 			# Lateral passing does not change the journey heading.
 			face=signf(offset.x) if absf(offset.x)>0.45*gap else a.direction
@@ -1357,10 +1359,11 @@ func _navigate(a: Dictionary, p: Vector2, t: Vector2, radii: PackedVector2Array)
 		k+=1
 	a.nav_k=k
 	if k+2>=route.size():
-		# Body drift does not change a planned last leg's facing. The swimmer still
-		# steers to the endpoint, correcting lateral displacement with its pectorals.
-		# Upright seahorses need to face their actual lateral travel to make headway.
-		_leg=(route[k+1]-(p if a.species=="seahorse" else route[k])).normalized()
+		# Small lateral drift on a vertical last leg is a pectoral correction,
+		# not a change of journey facing. Wider cut-throughs still face their travel.
+		var planned: Vector2=(route[k+1]-route[k]).normalized()
+		_last_scull=absf(planned.x)<0.45 and absf(route[k+1].x-p.x)<NAV.replan
+		_leg=planned if _last_scull else (route[k+1]-p).normalized()
 		return route[k+1]
 	var lo: float=0.0
 	var hi: float=1.0
