@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Serial composite navigation gate. No thresholds or test implementations here.
 Run: python3 stream/tools/nav_gate.py --label baseline
-Natural motion uses seeds 42,11; guard uses all four scene/decor parts on
-23,240921,2,29,37,17; S6 uses 42,240921. Full suites remain mandatory later.
+Natural motion keeps seeds 42,11 and adds the original eight-seed obstacle
+checks. Guard covers the original six plus every full-validation failing seed
+on all four scene/decor parts; S6 uses 42,240921. Full suites remain mandatory.
 Engine logs and HOME are confined to ignored stream/artifacts/nav-redesign.
 """
 import argparse, json, os, pathlib, subprocess, sys, time
@@ -23,8 +24,9 @@ home.mkdir(exist_ok=True)
 env = dict(os.environ, HOME=str(home), XDG_DATA_HOME=str(home), XDG_CONFIG_HOME=str(home), XDG_CACHE_HOME=str(home))
 parts = [
  ('natural', 'tools/nav_gate_natural.gd', []),
+ ('natural_obstacles', 'tools/nav_gate_natural_obstacles.gd', []),
  ('world_home', 'tools/nav_gate_world.gd', []),
- ('guard', 'tests/test_obstacles.gd', ['--seeds=23,240921,2,29,37,17']),
+ ('guard', 'tests/test_obstacles.gd', ['--seeds=23,240921,2,29,37,17,812,5,11,19,31,3']),
  ('clownfish', 'tests/test_clownfish.gd', ['--seeds=42,240921']),
  ('contract', 'tests/test_clownfish_contract.gd', []),
 ]
@@ -32,7 +34,7 @@ results = {}
 started = time.monotonic()
 for name, script, args in parts:
     print('START '+name, flush=True)
-    cmd = ['timeout', '900', '/opt/homebrew/bin/godot', '--headless', '--path', str(root/'stream'), '--log-file', str(out/(name+'-engine.log')), '--script', script]
+    cmd = ['timeout', '1500', '/opt/homebrew/bin/godot', '--headless', '--path', str(root/'stream'), '--log-file', str(out/(name+'-engine.log')), '--script', script]
     if args: cmd += ['--'] + args
     t = time.monotonic()
     with (out/(name+'.log')).open('w') as log:
@@ -43,10 +45,13 @@ for name, script, args in parts:
         try: value = json.loads(line)
         except json.JSONDecodeError: continue
         if isinstance(value, dict) and 'failures' in value: result = value
+    engine_errors = [line for line in (out/(name+'.log')).read_text().splitlines() if 'SCRIPT ERROR' in line or 'Parse Error' in line]
     if result is None:
         result = {'failures':['Missing final JSON verdict'], 'exit_code':proc.returncode}
     elif proc.returncode not in (0,1):
         result['failures'].append('Engine exit '+str(proc.returncode))
+    if engine_errors:
+        result['failures'].extend(engine_errors)
     result['wall_seconds'] = round(time.monotonic()-t, 2)
     results[name] = result
     print('DONE '+name+' '+encode({'checks':result.get('checks'), 'failures':result['failures'], 'seconds':result['wall_seconds']}), flush=True)
