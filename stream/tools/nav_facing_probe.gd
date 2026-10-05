@@ -2,9 +2,14 @@ extends "res://tests/test_obstacles.gd"
 # Diagnostic only: original run() schedule, reporting facing and route changes.
 var seen: Dictionary={}
 func _initialize() -> void:
-	for c: Array in [[812,"reef","min"],[5,"shipwreck","min"],[3,"shipwreck","max"]]:
-		if c[0] not in seed_list() or c[1] not in arg("scenes",["reef","shipwreck"]) or c[2] not in arg("presets",["min","max"]):
-			continue
+	var cases: Array=[[812,"reef","min"],[5,"shipwreck","min"],[3,"shipwreck","max"]]
+	if OS.get_cmdline_user_args().any(func(s): return s.begins_with("--seeds=") or s.begins_with("--scenes=") or s.begins_with("--presets=")):
+		cases.clear()
+		for scene_id: String in arg("scenes",["reef","shipwreck"]):
+			for preset: String in arg("presets",["min","max"]):
+				for seed_value: int in seed_list():
+					cases.append([seed_value,scene_id,preset])
+	for c: Array in cases:
 		seen.clear()
 		observed_at=-1.0
 		var result: Dictionary=run(c[0],c[1],c[2],false)
