@@ -24,7 +24,7 @@ home.mkdir(exist_ok=True)
 env = dict(os.environ, HOME=str(home), XDG_DATA_HOME=str(home), XDG_CONFIG_HOME=str(home), XDG_CACHE_HOME=str(home))
 parts = [
  ('natural', 'tools/nav_gate_natural.gd', []),
- ('natural_obstacles', 'tools/nav_gate_natural_obstacles.gd', ['--trace-facing']),
+ ('natural_obstacles', 'tools/nav_gate_natural_obstacles.gd', []),
  ('world_home', 'tools/nav_gate_world.gd', []),
  ('guard', 'tests/test_obstacles.gd', ['--seeds=23,240921,2,29,37,17,812,5,11,19,31,3']),
  ('clownfish', 'tests/test_clownfish.gd', ['--seeds=42,240921']),
