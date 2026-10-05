@@ -11,6 +11,7 @@ import argparse, json, os, pathlib, subprocess, sys, time
 parser = argparse.ArgumentParser()
 parser.add_argument('--label', required=True)
 parser.add_argument('--parts', help='Optional comma-separated parts for a serial diagnostic rerun')
+parser.add_argument('--remaining-only', action='store_true', help='Diagnostic six reef hesitation cases; all original assertions remain')
 a = parser.parse_args()
 if not a.label.replace('-', '').replace('_', '').isalnum():
     parser.error('label must be alphanumeric with - or _')
@@ -42,10 +43,15 @@ method = source.split('func obstacle_checks() -> void:\n', 1)[1].split('\nfunc k
 # Exclude the following method's comments; no assertion or threshold is replaced.
 method = method[:method.rfind('\n# test_natural_motion')]
 old = '\tvar seeds: Array=seed_list()'
-new = '\tvar cases: Dictionary={"reef/min":[812,5,11,19,31],"reef/max":[11],"shipwreck/min":[5],"shipwreck/max":[3]}\n\tvar seeds: Array=[812,5,11,19,31,3]'
+cases = {'reef/min':[812,5,11,19,31], 'reef/max':[11]}
+if not a.remaining_only:
+    cases.update({'shipwreck/min':[5], 'shipwreck/max':[3]})
+new = '\tvar cases: Dictionary='+json.dumps(cases)+'\n\tvar seeds: Array='+json.dumps(list(dict.fromkeys(seed for seeds in cases.values() for seed in seeds)))
 assert method.count(old) == 1 and method.count('for seed_value: int in seeds:') == 1
 method = method.replace(old, new).replace('for seed_value: int in seeds:', 'for seed_value: int in cases[tag]:')
 (out/'targeted_obstacles.gd').write_text('extends "res://tests/test_obstacles.gd"\n# Generated from the real test; only case traversal is selected.\nfunc obstacle_checks() -> void:\n'+method+'\n')
+if a.remaining_only:
+    parts = [(name, script, args+['--scenes=reef']) for name, script, args in parts if name=='targeted_guard']
 if a.parts:
     requested = a.parts.split(',')
     if any(name not in [p[0] for p in parts] for name in requested):
