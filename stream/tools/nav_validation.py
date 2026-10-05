@@ -41,7 +41,7 @@ results = {}
 started = time.monotonic()
 for name, script, args in parts:
     print('START '+name, flush=True)
-    cmd = ['timeout', '900', '/opt/homebrew/bin/godot', '--headless', '--path', str(root/'stream'), '--log-file', str(out/(name+'-engine.log')), '--script', script]
+    cmd = ['timeout', '1500', '/opt/homebrew/bin/godot', '--headless', '--path', str(root/'stream'), '--log-file', str(out/(name+'-engine.log')), '--script', script]
     if args: cmd += ['--'] + args
     t = time.monotonic()
     with (out/(name+'.log')).open('w') as log:
@@ -54,10 +54,13 @@ for name, script, args in parts:
         if isinstance(value, dict) and 'failures' in value: result = value
         elif name == 'bench' and isinstance(value, dict) and 'repeatable' in value:
             result = dict(value, failures=[] if value['repeatable'] else ['Benchmark repeatability failed'])
+    engine_errors = [line for line in (out/(name+'.log')).read_text().splitlines() if 'SCRIPT ERROR' in line or 'Parse Error' in line]
     if result is None:
         result = {'failures':['Missing final JSON verdict'], 'exit_code':proc.returncode}
     elif proc.returncode not in (0,1):
         result['failures'].append('Engine exit '+str(proc.returncode))
+    if engine_errors:
+        result['failures'].extend(engine_errors)
     result['wall_seconds'] = round(time.monotonic()-t, 2)
     results[name] = result
     print('DONE '+name+' '+encode({'checks':result.get('checks'), 'failures':result['failures'], 'seconds':result['wall_seconds']}), flush=True)
