@@ -3,7 +3,7 @@ extends "res://tests/test_obstacles.gd"
 var seen: Dictionary={}
 func _initialize() -> void:
 	var cases: Array=[[812,"reef","min"],[5,"shipwreck","min"],[3,"shipwreck","max"]]
-	if OS.get_cmdline_user_args().any(func(s): return s.begins_with("--seeds=") or s.begins_with("--scenes=") or s.begins_with("--presets=")):
+	if Array(OS.get_cmdline_user_args()).any(func(s): return s.begins_with("--seeds=") or s.begins_with("--scenes=") or s.begins_with("--presets=")):
 		cases.clear()
 		for scene_id: String in arg("scenes",["reef","shipwreck"]):
 			for preset: String in arg("presets",["min","max"]):
