@@ -3,6 +3,8 @@ extends "res://tests/test_obstacles.gd"
 var seen: Dictionary={}
 func _initialize() -> void:
 	for c: Array in [[812,"reef","min"],[5,"shipwreck","min"],[3,"shipwreck","max"]]:
+		if c[0] not in seed_list() or c[1] not in arg("scenes",["reef","shipwreck"]) or c[2] not in arg("presets",["min","max"]):
+			continue
 		seen.clear()
 		observed_at=-1.0
 		var result: Dictionary=run(c[0],c[1],c[2],false)
