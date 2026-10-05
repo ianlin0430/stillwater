@@ -41,7 +41,7 @@ results = {}
 started = time.monotonic()
 for name, script, args in parts:
     print('START '+name, flush=True)
-    cmd = ['timeout', '1500', '/opt/homebrew/bin/godot', '--headless', '--path', str(root/'stream'), '--log-file', str(out/(name+'-engine.log')), '--script', script]
+    cmd = ['timeout', '-s', 'KILL', '1500', '/opt/homebrew/bin/godot', '--headless', '--path', str(root/'stream'), '--log-file', str(out/(name+'-engine.log')), '--script', script]
     if args: cmd += ['--'] + args
     t = time.monotonic()
     with (out/(name+'.log')).open('w') as log:

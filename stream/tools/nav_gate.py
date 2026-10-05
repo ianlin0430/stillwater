@@ -2,8 +2,9 @@
 """Serial composite navigation gate. No thresholds or test implementations here.
 Run: python3 stream/tools/nav_gate.py --label baseline
 Natural motion keeps seeds 42,11 and adds the original eight-seed obstacle
-checks. Guard covers the original six plus every full-validation failing seed
-on all four scene/decor parts; S6 uses 42,240921. Full suites remain mandatory.
+checks. Guard keeps the original six on all four scene/decor parts and kinks.
+Only the eight known failing scene/decor/seed cases are added; S6 uses
+42,240921. Full suites remain mandatory.
 Engine logs and HOME are confined to ignored stream/artifacts/nav-redesign.
 """
 import argparse, json, os, pathlib, subprocess, sys, time
@@ -26,7 +27,11 @@ parts = [
  ('natural', 'tools/nav_gate_natural.gd', []),
  ('natural_obstacles', 'tools/nav_gate_natural_obstacles.gd', []),
  ('world_home', 'tools/nav_gate_world.gd', []),
- ('guard', 'tests/test_obstacles.gd', ['--seeds=23,240921,2,29,37,17,812,5,11,19,31,3']),
+ ('guard6', 'tests/test_obstacles.gd', ['--seeds=23,240921,2,29,37,17']),
+ ('reef_min', 'tests/test_obstacles.gd', ['--scenes=reef', '--presets=min', '--seeds=812,5,11,19,31', '--parts=obstacles']),
+ ('reef_max', 'tests/test_obstacles.gd', ['--scenes=reef', '--presets=max', '--seeds=11', '--parts=obstacles']),
+ ('shipwreck_min', 'tests/test_obstacles.gd', ['--scenes=shipwreck', '--presets=min', '--seeds=5', '--parts=obstacles']),
+ ('shipwreck_max', 'tests/test_obstacles.gd', ['--scenes=shipwreck', '--presets=max', '--seeds=3', '--parts=obstacles']),
  ('clownfish', 'tests/test_clownfish.gd', ['--seeds=42,240921']),
  ('contract', 'tests/test_clownfish_contract.gd', []),
 ]
@@ -34,7 +39,7 @@ results = {}
 started = time.monotonic()
 for name, script, args in parts:
     print('START '+name, flush=True)
-    cmd = ['timeout', '1500', '/opt/homebrew/bin/godot', '--headless', '--path', str(root/'stream'), '--log-file', str(out/(name+'-engine.log')), '--script', script]
+    cmd = ['timeout', '-s', 'KILL', '1500', '/opt/homebrew/bin/godot', '--headless', '--path', str(root/'stream'), '--log-file', str(out/(name+'-engine.log')), '--script', script]
     if args: cmd += ['--'] + args
     t = time.monotonic()
     with (out/(name+'.log')).open('w') as log:
