@@ -727,7 +727,9 @@ func _move(delta: float) -> void:
 			face=a.direction
 		elif home_hover and _has_home_intent(a):
 			face=float(a.home_intent_face)
-		elif follower and gap<40 and _close==0.0:
+		# A nearby school slot can still be on an obstacle route. The route owns
+		# its facing until it ends; matching the leader here would undo trip intent.
+		elif follower and gap<40 and _close==0.0 and not a.has("nav_tx"):
 			face=lead.direction
 		else:
 			face=_trip_facing(a,offset,way,cfg.scull)
