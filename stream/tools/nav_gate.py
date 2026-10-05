@@ -10,6 +10,7 @@ Engine logs and HOME are confined to ignored stream/artifacts/nav-redesign.
 import argparse, json, os, pathlib, subprocess, sys, time
 parser = argparse.ArgumentParser()
 parser.add_argument('--label', required=True)
+parser.add_argument('--parts', help='Optional comma-separated parts for a serial diagnostic rerun')
 a = parser.parse_args()
 if not a.label.replace('-', '').replace('_', '').isalnum():
     parser.error('label must be alphanumeric with - or _')
@@ -28,13 +29,28 @@ parts = [
  ('natural_obstacles', 'tools/nav_gate_natural_obstacles.gd', []),
  ('world_home', 'tools/nav_gate_world.gd', []),
  ('guard6', 'tests/test_obstacles.gd', ['--seeds=23,240921,2,29,37,17']),
- ('reef_min', 'tests/test_obstacles.gd', ['--scenes=reef', '--presets=min', '--seeds=812,5,11,19,31', '--parts=obstacles']),
- ('reef_max', 'tests/test_obstacles.gd', ['--scenes=reef', '--presets=max', '--seeds=11', '--parts=obstacles']),
- ('shipwreck_min', 'tests/test_obstacles.gd', ['--scenes=shipwreck', '--presets=min', '--seeds=5', '--parts=obstacles']),
- ('shipwreck_max', 'tests/test_obstacles.gd', ['--scenes=shipwreck', '--presets=max', '--seeds=3', '--parts=obstacles']),
+ ('targeted_guard', str(out.relative_to(root/'stream')/'targeted_obstacles.gd'), ['--parts=obstacles']),
  ('clownfish', 'tests/test_clownfish.gd', ['--seeds=42,240921']),
  ('contract', 'tests/test_clownfish_contract.gd', []),
 ]
+# Reuse the real obstacle_checks implementation and its entire assertion block.
+# Only its seed traversal changes: eight cases, rather than their Cartesian product.
+# Keeping those cases in one assertion pass preserves the original global detour
+# and jerk measures; running reef-only parts cannot meet the global detour sample.
+source = (root/'stream/tests/test_obstacles.gd').read_text()
+method = source.split('func obstacle_checks() -> void:\n', 1)[1].split('\nfunc kink_checks()', 1)[0]
+# Exclude the following method's comments; no assertion or threshold is replaced.
+method = method[:method.rfind('\n# test_natural_motion')]
+old = '\tvar seeds: Array=seed_list()'
+new = '\tvar cases: Dictionary={"reef/min":[812,5,11,19,31],"reef/max":[11],"shipwreck/min":[5],"shipwreck/max":[3]}\n\tvar seeds: Array=[812,5,11,19,31,3]'
+assert method.count(old) == 1 and method.count('for seed_value: int in seeds:') == 1
+method = method.replace(old, new).replace('for seed_value: int in seeds:', 'for seed_value: int in cases[tag]:')
+(out/'targeted_obstacles.gd').write_text('extends "res://tests/test_obstacles.gd"\n# Generated from the real test; only case traversal is selected.\nfunc obstacle_checks() -> void:\n'+method+'\n')
+if a.parts:
+    requested = a.parts.split(',')
+    if any(name not in [p[0] for p in parts] for name in requested):
+        parser.error('unknown part')
+    parts = [p for p in parts if p[0] in requested]
 results = {}
 started = time.monotonic()
 for name, script, args in parts:
