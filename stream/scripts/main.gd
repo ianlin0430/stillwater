@@ -154,6 +154,14 @@ func _setup_ui() -> void:
 	var header := HBoxContainer.new()
 	header.add_theme_constant_override("separation",10)
 	header_margin.add_child(header)
+	# Keep every control reachable at the supported 900px window width.
+	var fit_header: Callable=func() -> void:
+		var compact: bool=size.x<1024.0
+		for side: String in ["left","right"]:
+			header_margin.add_theme_constant_override("margin_"+side,12 if compact else 24)
+		header.add_theme_constant_override("separation",6 if compact else 10)
+	resized.connect(fit_header)
+	fit_header.call()
 	title=_label("Stillwater",24)
 	var serif := SystemFont.new()
 	serif.font_names=PackedStringArray(["Georgia","serif"])
