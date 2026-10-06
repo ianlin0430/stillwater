@@ -136,4 +136,3 @@ func obstacle_checks() -> void:
 	check(flips==0,"No back and forth: going around one obstacle toward one target a fish never flips its facing (%d flips)" % flips)
 	check(stuck.is_empty(),"No fish gets stuck at an obstacle (%d stuck windows: %s)" % [stuck.size(),str(stuck.slice(0,3))])
 	check(relocated==0,"Going around never relocates a fish (%d ticks)" % relocated)
-
