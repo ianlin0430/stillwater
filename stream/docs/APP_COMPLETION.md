@@ -16,12 +16,12 @@ The previously isolated `s4-cast-swap` branch is being integrated into main. Its
 - [x] Night chromis shelter behavior and dawn layer return (128 checks); shared S5 navigation acceptance remains below.
 - [x] Quiet old-age departures, including save/restore (10 checks). Performance and visual review remain.
 - [ ] Fix all S5 navigation failures without changing thresholds.
-- [ ] Remove obsolete production cast paths and revise frontend fixtures.
+- [x] Remove obsolete production cast paths and revise frontend fixtures.
 - [ ] Run all relevant suites and update CI for the final cast.
 - [ ] 32-seed offline ecology and 24 live scene/decor/feed acceptance runs.
 - [ ] Package universal macOS app and verify signature, assets and saves.
 - [ ] Foreground/background/hidden performance acceptance; lifecycle QA.
-- [ ] Update README, PRODUCT, DESIGN and backend contracts to final behavior.
+- [x] Update README, PRODUCT, DESIGN and backend contracts to final behavior.
 
 Evidence from this goal is under `stream/artifacts/completion/`. No release completion is claimed until the remaining gates are met.
 
@@ -175,3 +175,19 @@ The last breath-off-only candidate still fails resting pass stability (27.21px s
 Current sleeping-clown helper selects stable in-anemone points with current/destination chromis clearance, includes lateral points up to48px and clamps to the bed/body ceiling. Reserving all roost space was removed because it contradicted S9 eligible-shelter use. Night-helper and trace parse/runtime mistakes were repaired before the successful focused gate; failed logs remain diagnostic, never accepted.
 
 Stopped the specifically confirmed obsolete natural PID69823 after its known breath-only failure; this was supersession by a verified fix, not an observation timeout. Session71726 proceeds to current S9 `roost-stable-slots-final.log` and restore `restore-stable-slots-final.log`. New exact current full natural is session returned by the latest exec command, log `natural-held-targets-final.log`. Full default16-seed obstacle session46123 remains live (last observed reef/max17 row, all observed rows pass); do not restart it. Its simulated light is fixed at12, so subsequent night-only edits do not alter its tested day controller. Latest source is frozen and movement remains uncommitted pending the full gates and final CI. Goal active; complete24-case live cloud acceptance, final native package, lifecycle and performance still required.
+
+## 2026-10-06 continuation: route arrival and native acceptance evidence
+
+Previous turn made progress: full natural `natural-held-targets-final.log` passes78/78, S9 `roost-stable-slots-final.log`128/128 and restore15/15. Full16-seed S5 `obstacles16-box-final.log` finishes with exactly one failure: shipwreck/min31 gramma11 initially turns twice on a route that allows one turn. All64 configuration/seed rows pass stuck, raw intrusion, separation and control-hesitation gates. This is a real failure, not a whole-suite pass.
+
+The initial Returning→Hovering transition re-enables an old home-facing intention while the approach route is still active. Updating the stored intention at that handover removes the excess flip but changes subsequent choices and adds a hesitation at the forced-trip boundary900s. Rejected that candidate. Giving every home route ownership passes31 but introduces reef/min37 gramma12 hesitation during ordinary home adjustments. The current candidate limits route-facing ownership to approaches whose saved origin is outside the home disk; inside-home choices keep their selected perch facing. No new state field, RNG draw or test threshold. Also guard `_around` after `_navigate` deliberately clears an out-of-disk resident endpoint, avoiding an invalid nav_tx read exposed by the route change.
+
+Focused current shipwreck/min31 passes12/12 (`gramma31-arrival-owner-smoke.log`). Focused reef/min37 has zero hesitation/excess flips/stuck; its only failure is the unchanged global detour sample requirement, which a single sparse-obstacle case cannot satisfy (`reef37-arrival-owner-smoke.log`). A full matrix is still mandatory. The intermediate every-home-route candidate passes S8 224/224, natural78/78, S7 86/86, world249/249, restore15/15, save40/40 and scene12/12, but remains diagnostic because of37. `*-route-owner-final.log` refers to that intermediate loaded source, not the current restricted arrival controller. Its full16 S5 session45546 is still completing; retain results, do not present as accepted.
+
+Current frozen source fingerprint `af151b9acac3a5ee6ea87bb576c3fb1f87fdbca4a9d5d69b2fcad60025bb8ddd` (`arrival-owner-source.json`) includes the native QA telemetry below. Full default16 S5 is session30255, `obstacles16-arrival-owner-final.log`; session63962 runs full natural, then S7, then S8 (`natural-arrival-owner-final.log`, `seahorse-arrival-owner-final.log`, `gramma-arrival-owner-final.log`). Source motion stays uncommitted until these verdicts. All test seeds and gates remain intact.
+
+Committed native measurement infrastructure separately: fbac80d records actual per-mode post-draw frames and at least1800 measured CPU seconds in each of60/30/0; b09a85d adds read-only raw whole-machine battery/power telemetry. CPU<15% and RSS<350MB remain provisional checks; final CPU ceiling requires real native measurements. Raw system energy values are not app watts or a calibrated app energy result. Frontend80/80, lifecycle63/63 and FramePacer18/18 pass; short headless QA is correctly ineligible for all three native measurements.
+
+2b250c5 distinguishes actual hardware sleep from window hiding in persistence QA. `hardware_sleep --trigger external` reads kernel sleep/wake timestamps and requires a new sleep of the requested duration. The sleeping process need not make three minute advances; exactly-once catch-up and one summary still apply. Direct drawable-window gaps now write isolated QA absence evidence too. External mode does not activate/hide/unhide windows; invalid mode/duration and automatic hardware sleep requests are rejected. Failed or UNVERIFIED lifecycle runs exit nonzero. Import/app QA smoke and lifecycle63/63 pass (`*-hardware-telemetry.log`); real-save hashes are unchanged. This prepares the manual check; no hardware sleep was performed or certified.
+
+Still outstanding: finish current motion gates, commit verified candidate, push a review branch and dispatch exact-revision24-case180-day live acceptance, final visual comparison/resize/fullscreen, universal package verification, user real Cmd-Q/sleep-wake, all three30-minute native performance runs and the measured CPU ceiling. No remote dispatch, final package, release or whole-app completion yet. GUI permissions remain pending; independent work continues.
