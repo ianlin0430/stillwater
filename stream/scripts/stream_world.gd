@@ -2083,6 +2083,16 @@ func _hold_home_pose(a: Dictionary, delta: float) -> bool:
 		return false
 	if a.species!="seahorse": return false
 	var home:=_hitch_center(a)
+	var external_trip: bool=a.activity not in ["Hitched","Feeding","Startled"] and Vector2(a.tx,a.ty).distance_to(home)>8.0
+	var covered: bool=_obstacles.any(func(o): return Vector2((a.x-o.cx)/o.rx,(a.y-o.cy)/o.ry).length_squared()<1.0)
+	if a.has("hitch_x") and (external_trip or covered):
+		a.erase("hitch_x")
+		a.erase("hitch_y")
+		if covered:
+			a.activity="Returning"
+			a.tx=home.x
+			a.ty=home.y
+		if external_trip: return false
 	# A decor replacement invalidates the old clasp before swimming to the new one.
 	if a.has("hitch_x") and (Vector2(a.hitch_x,a.hitch_y).distance_to(Vector2(a.home_x,a.home_y))>.001 or Vector2(a.x,a.y).distance_to(home)>8.0):
 		a.erase("hitch_x")
@@ -2101,6 +2111,9 @@ func _hold_home_pose(a: Dictionary, delta: float) -> bool:
 		_choose_seahorse(a)
 		if not a.has("hitch_x"): return false
 	a.lean=sin(state.elapsed*.35+a.id)*.08
+	a.heading=0.0 if a.direction>0 else PI
+	a.pitch=0.0
+	a.turn=0.0
 	a.vx=0.0
 	a.vy=0.0
 	a.speed=0.0
