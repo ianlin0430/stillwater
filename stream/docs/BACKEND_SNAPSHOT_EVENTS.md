@@ -31,10 +31,10 @@ Home-bound actors carry `home`, `home_x/y`; the home identity includes kind, slo
 
 ## Species behavior
 
-- **Chromis:** stable school in its daylight layer. At night an eligible shelter within 300 world pixels supplies a reachable resting target 40–60 pixels away. Otherwise it rests in place. Paired finite `night_roost_x/y` identify that target. Optional boolean `night_returning` keeps the extended swimming bounds during a legitimate dawn return; an arbitrary out-of-band fish does not acquire those bounds. Targets remain stable while resting.
-- **Clownfish:** shared anemone residence, nestling and nearby foraging. Shelter and return state belong to the backend. Required anemone slots cannot be empty.
+- **Chromis:** stable school in its daylight layer. At night an eligible shelter within 300 world pixels supplies a reachable resting target 40–60 pixels away. Otherwise it rests in place. Paired finite `night_roost_x/y` identify that target. Optional boolean `night_returning` keeps the extended swimming bounds during a legitimate dawn return; an arbitrary out-of-band fish does not acquire those bounds. Targets remain stable while resting, including settled follower destinations.
+- **Clownfish:** shared anemone residence, nestling and nearby foraging. Shelter and return state belong to the backend. Sleeping residents choose a stable clear point inside their anemone so the resting school need not move. Required anemone slots cannot be empty.
 - **Seahorse:** upright slow excursions between unique hitch homes, with actual tail contact from `hitch_x/y`. `lean` supplies posture; saved `hitch_path`, `hitch_departed_at` and `hitch_rest_until` preserve route and cadence. Activities include Hitched, Drifting, Returning, Feeding and Startled. A held horse intercepts nearby falling food. Required hitch plants cannot be empty. Excursion routes clear both obstacles and other fish bodies.
-- **Royal gramma:** hovering within its 50-pixel home radius; cave shelter on tapping or at night. `den_x/y`, `den_side` and `extend` control the physical retreat. `extend` transitions over approximately 0.8 seconds. Cave homes clip the retreat; fallback rock homes keep the body visible. With no caves, at least three reachable unique rock homes remain available.
+- **Royal gramma:** hovering within its 50-pixel home radius; cave shelter on tapping or at night. `den_x/y`, `den_side` and `extend` control the physical retreat. `extend` transitions over approximately 0.8 seconds. Cave homes clip the retreat and hold that residence during shelter/sleep; fallback rock homes keep the body visible. With no caves, at least three reachable unique rock homes remain available.
 
 ## Events and departures
 

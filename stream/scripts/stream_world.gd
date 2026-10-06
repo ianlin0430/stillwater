@@ -839,7 +839,9 @@ func _move(delta: float) -> void:
 		var face: float=0.0
 		if hovering or waiting or nestled:
 			face=a.direction
-		elif home_hover and _has_home_intent(a):
+		# An approach from outside the residence keeps its route facing until
+		# arrival. Routes chosen within the home disk retain their perch facing.
+		elif home_hover and _has_home_intent(a) and not (a.has("nav_tx") and Vector2(a.nav_x-a.home_x,a.nav_y-a.home_y).length()>HOME[species].radius):
 			face=float(a.home_intent_face)
 		# A nearby school slot can still be on an obstacle route. The route owns
 		# its facing until it ends; matching the leader here would undo trip intent.
@@ -964,8 +966,8 @@ func _avoid(a: Dictionary, p: Vector2, desired: Vector2, speed: float) -> Vector
 		var ahead: Vector2=rel+relv*t
 		var now: float=Vector2(rel.x/r.x,rel.y/r.y).length()
 		var q: float=minf(now,Vector2(ahead.x/r.x,ahead.y/r.y).length())
-		if landing:
-			# Perches are spaced by body boxes, including diagonal approaches.
+		if landing or horse_pair:
+			# Horse contact clipping uses body boxes throughout a trip, including corners.
 			now=maxf(absf(rel.x/r.x),absf(rel.y/r.y))
 			q=minf(now,maxf(absf(ahead.x/r.x),absf(ahead.y/r.y)))
 		if q>=1.0:
@@ -1538,6 +1540,10 @@ func _around(a: Dictionary, p: Vector2, t: Vector2, band: Array, radii: PackedVe
 		_forget_around(a)
 		return Vector2.ZERO
 	var to: Vector2=_navigate(a,p,t,travel)
+	# A substituted endpoint outside a resident's disk queues a bounded goal
+	# and clears this route. Replan that goal on the next tick.
+	if not a.has("nav_tx"):
+		return Vector2.ZERO
 	# (S5-fix) A route that ends where it is (nothing nearer its aim to reach) is no route: it hovers.
 	if p.distance_to(Vector2(a.nav_tx,a.nav_ty))<NAV.replan:
 		_forget_around(a)
@@ -1593,6 +1599,18 @@ func _navigate(a: Dictionary, p: Vector2, t: Vector2, radii: PackedVector2Array)
 		route=_route(a)
 	var end: Vector2=route[route.size()-1]
 	if end.distance_to(Vector2(a.nav_tx,a.nav_ty))>1.0:
+		# A grid endpoint still belongs to the resident's local home choice.
+		# Losing that identity disables its radius and makes facing oscillate.
+		if _has_home_intent(a):
+			var adjusted: bool=end.distance_to(Vector2(a.home_x,a.home_y))>HOME[a.species].radius
+			if adjusted: end=_bounded_home_aim(a,end)
+			a.home_intent_x=end.x
+			a.home_intent_y=end.y
+			if adjusted:
+				a.tx=end.x
+				a.ty=end.y
+				_forget_around(a)
+				return p
 		# Out of reach: settle for the end of the route.
 		a.tx=end.x
 		a.ty=end.y
@@ -1611,6 +1629,11 @@ func _navigate(a: Dictionary, p: Vector2, t: Vector2, radii: PackedVector2Array)
 		var planned: Vector2=route[k+1]-route[k]
 		_last_scull=planned.x*planned.x<0.2025*planned.length_squared() or planned.x*(route[k+1].x-p.x)<0.0
 		_leg=planned.normalized()
+		if k>0 and planned.length()<_body(a).x*.5 and planned.x*(route[k].x-route[k-1].x)<0:
+			# Grid corners can overshoot a moving school slot by a few pixels.
+			# Settle that short return with pectorals, preserving the approach facing.
+			_last_scull=true
+			_leg=Vector2(0,signf(planned.y))
 		return route[k+1]
 	var lo: float=0.0
 	var hi: float=1.0
@@ -1624,6 +1647,10 @@ func _navigate(a: Dictionary, p: Vector2, t: Vector2, radii: PackedVector2Array)
 	# earlier one: as the view round a corner opened and closed the facing had switched between the
 	# two legs, turning it round and back. nav_f is saved; a new or re-planned route starts at 0.)
 	var f: int=maxi(int(a.get("nav_f",0)),k+1 if lo>0.0 else k)
+	if f>k and f==route.size()-2 and (route[f+1]-route[f]).length()<_body(a).x*.5 and (route[f+1].x-route[f].x)*(route[k+1].x-route[k].x)<0:
+		# Seeing the first fraction of a short endpoint correction does not mean
+		# the body has completed its forward approach to the corner.
+		f=k
 	a.nav_f=f
 	_leg=(route[f+1]-route[f]).normalized()
 	_last_scull=absf(_leg.x)<0.45
@@ -2079,12 +2106,41 @@ func _in_water(species: String, x: float, y: float) -> float:
 func _clown_inside(p: Vector2) -> bool:
 	return Vector2((p.x-_anemone.cx)/_anemone.rx,(p.y-_anemone.cy)/_anemone.ry).length_squared()<=1.0
 
+# Sleeping clownfish stay inside the anemone and leave room for the resting
+# school. A chosen clear spot stays fixed; current and destination bodies count.
+func _clown_sleep_spot(a: Dictionary) -> Vector2:
+	var home:=Vector2(a.home_x,a.home_y)
+	var current:=Vector2(a.tx,a.ty)
+	var choices: Array[Vector2]=[]
+	if a.activity=="Sleeping" and _clown_inside(current) and current.distance_to(home)<=HOME.clownfish.radius: choices.append(current)
+	choices.append(home)
+	for y: float in [20.0,12.0,-12.0]:
+		for x: float in [0.0,24.0,-24.0,48.0,-48.0,36.0,-36.0]: choices.append(home+Vector2(x,y))
+	var best: Vector2=home
+	var room: float=-INF
+	for spot: Vector2 in choices:
+		spot.y=_in_water(a.species,spot.x,spot.y)
+		if not _clown_inside(spot): continue
+		var clearance: float=INF
+		for c: Dictionary in state.animals:
+			if c.species!="green_chromis": continue
+			var half: Vector2=(_body(a)+_body(c))*.5
+			for at: Vector2 in [Vector2(c.x,c.y),Vector2(c.tx,c.ty)]:
+				var distance: Vector2=(spot-at).abs()/half
+				clearance=minf(clearance,maxf(distance.x,distance.y))
+		if clearance>=1.05: return spot
+		if clearance>room:
+			room=clearance
+			best=spot
+	return best
+
 func _clown_return(a: Dictionary, activity: String = "Nestling") -> void:
 	var returning_from_food: bool=a.activity=="Feeding"
+	var target: Vector2=_clown_sleep_spot(a) if activity=="Sleeping" else Vector2(a.home_x,a.home_y)
 	a.activity=activity
 	a.nestle=1.0 if activity in ["Sleeping","Sheltering"] else 0.65
-	a.tx=a.home_x
-	a.ty=a.home_y
+	a.tx=target.x
+	a.ty=target.y
 	# A bite must not consume the shared motion sequence during mixed-tank feeding.
 	# Ordinary home decisions retain their scheduled motion RNG draw.
 	if activity=="Nestling":
@@ -2134,7 +2190,7 @@ func _choose_clown(a: Dictionary) -> void:
 	a.nestle=0.0 if foraging else 0.65
 	a.tx=spot.x
 	a.ty=spot.y
-	a.decision_at=state.elapsed+motion_rng.randf_range(8.0,12.0) if foraging else state.elapsed+motion_rng.randf_range(30.0,50.0)
+	a.decision_at=state.elapsed+motion_rng.randf_range(12.0,16.0) if foraging else state.elapsed+motion_rng.randf_range(30.0,50.0)
 
 # Hitch coordinates are the tail's contact, not the centre of the upright body.
 func _hitch_facing(a: Dictionary) -> float:
@@ -2149,7 +2205,7 @@ func _hitch_center(a: Dictionary) -> Vector2:
 func _horse_segment_clear(a: Dictionary, p: Vector2, target: Vector2) -> bool:
 	var way: Vector2=target-p
 	for o: Dictionary in state.animals:
-		if o.id==a.id or o.species!="seahorse": continue
+		if o.id==a.id: continue
 		var r: Vector2=(_body(a)+_body(o))*.4+Vector2.ONE*3.0
 		var at:=Vector2(o.x,o.y)
 		var first: float=0.0
@@ -2267,6 +2323,16 @@ func _hold_home_pose(a: Dictionary, delta: float) -> bool:
 			a.activity="Hovering"
 		var hidden: bool=a.activity in ["Sheltering","Sleeping"] and home_gap<HOME.royal_gramma.radius+_body(a).x*.5
 		a.extend=move_toward(a.extend,0.0 if hidden and a.home.kind!="rock" else 1.0,delta/.8)
+		var held_den: bool=hidden and a.home.kind!="rock" and (a.activity=="Sheltering" and state.elapsed<a.decision_at or a.activity=="Sleeping" and (state.light_hour<7 or state.light_hour>19))
+		if held_den:
+			# The rig owns the final clipped retreat into this den. Navigation must
+			# not replace that residence with an unrelated open-water destination.
+			a.vx=0.0
+			a.vy=0.0
+			a.speed=move_toward(a.get("speed",0.0),0.0,delta*SWIM.royal_gramma.brake)
+			a.thrust=0.0
+			_forget_around(a)
+			return true
 		return false
 	if a.species!="seahorse": return false
 	var home:=_hitch_center(a)
@@ -2277,6 +2343,15 @@ func _hold_home_pose(a: Dictionary, delta: float) -> bool:
 			a.tx=home.x
 			a.ty=home.y
 		var waypoint:=Vector2(a.hitch_path[0][0],a.hitch_path[0][1])
+		if Vector2(a.get("vx",0.0),a.get("vy",0.0)).length()<1.0 and not _horse_segment_clear(a,p,waypoint):
+			# An occupied perch can change after an excursion was planned. A stalled
+			# horse replans around the current bodies instead of pressing into them.
+			var alternative: Array=_hitch_path(a,home)
+			if not alternative.is_empty():
+				a.hitch_path=alternative
+				waypoint=Vector2(alternative[0][0],alternative[0][1])
+				a.tx=waypoint.x
+				a.ty=waypoint.y
 		if Vector2(a.x,a.y).distance_to(waypoint)<3.0:
 			a.hitch_path.pop_front()
 			var next: Vector2=Vector2(a.hitch_path[0][0],a.hitch_path[0][1]) if not a.hitch_path.is_empty() else home
@@ -2305,7 +2380,7 @@ func _hold_home_pose(a: Dictionary, delta: float) -> bool:
 			a.hitch_x=a.home_x
 			a.hitch_y=a.home_y
 			a.activity="Hitched"
-			a.hitch_rest_until=state.elapsed+maxf(20.0,4.0*(state.elapsed-a.get("hitch_departed_at",state.elapsed)))
+			a.hitch_rest_until=state.elapsed+maxf(20.0,5.0*(state.elapsed-a.get("hitch_departed_at",state.elapsed)))
 			a.decision_at=a.hitch_rest_until
 			a.erase("hitch_departed_at")
 		else: return false
@@ -2356,8 +2431,15 @@ func _choose_home(a: Dictionary) -> void:
 	a.home_intent_x=spot.x
 	a.home_intent_y=spot.y
 	var offset: Vector2=spot-Vector2(a.x,a.y)
-	a.home_intent_face=signf(offset.x) if absf(offset.x)>0.45*offset.length() and absf(offset.x)>SWIM[a.species].scull else a.direction
-	a.decision_at=state.elapsed+motion_rng.randf_range(h.dwell[0],h.dwell[1])
+	# A gramma turns for a meaningful lateral move, but sculls for small adjustments.
+	# A horse keeps its upright perch facing throughout short home corrections.
+	a.home_intent_face=signf(offset.x) if absf(offset.x)>0.45*offset.length() and absf(offset.x)>_body(a).x*(.25 if a.species=="royal_gramma" else 1.0) else a.direction
+	if a.home_intent_face!=a.direction:
+		# Let a resident complete and hold a deliberate turn before choosing its
+		# next perch. Reconsidering after five seconds can reverse it twice by a rock.
+		a.decision_at=state.elapsed+maxf(12.0,motion_rng.randf_range(h.dwell[0],h.dwell[1]))
+	else:
+		a.decision_at=state.elapsed+motion_rng.randf_range(h.dwell[0],h.dwell[1])
 
 # Intent belongs to an ordinary home choice, never an externally assigned trip.
 # Coordinate identity also makes food/startle/decor changes invalidate it without
@@ -2438,6 +2520,11 @@ func _home_landing_room(a: Dictionary, aim: Vector2) -> float:
 
 # A school member holds its own slot beside the leader, mirrored with the leader's heading.
 func _follow(a: Dictionary, lead: Dictionary) -> void:
+	if a.activity=="Resting" and lead.activity=="Resting" and (state.light_hour<7 or state.light_hour>19) and Vector2(a.tx-lead.x,a.ty-lead.y).length()<CHROMIS.regroup:
+		# Once settled at night, keep the actual resting destination. Following a
+		# slowly moving leader or changing formation phase moves a resting fish.
+		a.decision_at=state.elapsed
+		return
 	var k: float=float(a.id)*2.39996
 	var r: float=CHROMIS.spread[0]+float((int(a.id)*17)%int(CHROMIS.spread[1]-CHROMIS.spread[0]))
 	# The school's spacing breathes a little (slowly, +-`breathe`), side to side only: a vertical
