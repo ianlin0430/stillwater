@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Measure the packaged app; QA mode never writes the user's world."""
 import argparse, datetime, hashlib, json, pathlib, statistics, subprocess, sys, time
+from power_sample import sample_power
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--mode', choices=['foreground','background','hidden'], default='foreground')
@@ -42,7 +43,7 @@ for _ in range(40):
 if pid is None:
     raise RuntimeError('App did not start')
 print(json.dumps({'pid': pid, 'started': started, 'duration_seconds': 1860, 'mode':MODE}), flush=True)
-rows, thermal = [], []
+rows, thermal, power = [], [], []
 mode_cpu_seconds = mode_wall_seconds = 0.0
 last_observed_mode = None
 
@@ -72,7 +73,7 @@ def report(final=False):
             'mean_cpu_percent_requested_mode':100*mode_cpu_seconds/mode_wall_seconds if mode_wall_seconds else None,
             'mean_cpu_percent_one_core': mean,
             'max_rss_mib': max((r['rss_mib'] for r in rows), default=0),
-            'samples': rows, 'thermal_samples': thermal, 'qa': qa,
+            'samples': rows, 'thermal_samples': thermal, 'power_samples': power, 'qa': qa,
             'save_sha256_before': before, 'save_sha256_after': digest(), 'user_save_unchanged': before == digest()}
     if final:
         data['foreground_eligible'] = bool(qa and qa.get('foreground_30_minute_eligible'))
@@ -103,6 +104,7 @@ while time.monotonic() - begin < 1920:
         base_cpu, base_wall = total_cpu, tick
     last_cpu, last_wall = total_cpu, tick
     if sec >= next_thermal:
+        power.append({'second': round(sec,3), 'frame_mode': observed_mode, **sample_power()})
         result = subprocess.run([str(ROOT/'tools/thermal')], capture_output=True, text=True)
         try: thermal.append({'second': round(sec,3), **json.loads(result.stdout)})
         except ValueError: thermal.append({'second': round(sec,3), 'error': result.stderr})
@@ -115,6 +117,6 @@ for name in ['qa-performance.json','qa-performance-hidden.json','qa-progress.jso
     p=USER/name
     if p.exists() and p.stat().st_mtime >= start_epoch:
         (OUT/name).write_bytes(p.read_bytes())
-print(json.dumps({k:v for k,v in data.items() if k not in ['samples','thermal_samples']}), flush=True)
+print(json.dumps({k:v for k,v in data.items() if k not in ['samples','thermal_samples','power_samples']}), flush=True)
 
 sys.exit(0 if data["mode_acceptance_passed"] else 1)
