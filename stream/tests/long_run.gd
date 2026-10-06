@@ -8,26 +8,29 @@ func plant_max(world: StreamWorld, plant: String) -> float:
 
 # Live mode steps the same hours through advance_live, so movement takes part
 # instead of the offline approximation.
-const BANDS: Dictionary = StreamWorld.DEPTH
-# Population target band, derived from the cast (2026-09-25, four-species reef): the bottom is the
-# opening cast (12), the top the combined habitat caps (17). Same >= 80% share as before.
+# Population target band, derived from the cast (2026-09-28, reef v3): the bottom is the
+# opening cast (12), the top the combined habitat caps (18). Same >= 80% share as before.
 var POPULATION_BAND: Array=ACCEPTANCE.population_band()
 
-func audit_depth(world: StreamWorld, depth: Dictionary) -> void:
+# audit_space (S4 first version, plan §6.2; S5 adds the obstacles): every fish inside its scene
+# depth band and the scene's swimming width, above the bed, and its centre outside every obstacle of
+# the scene with its decor (violations). How far a new fish swimming about or resting at its home
+# got from it is reported (depth.farthest), not gated: an arrival swims home from an exit across
+# the pool.
+func audit_space(world: StreamWorld, depth: Dictionary) -> void:
+	var swim: Array=world.scene.bounds().swim_x
+	var obstacles: Array=world.scene.obstacles(world.state.decor[world.state.scene])
 	for a: Dictionary in world.state.animals:
 		depth.checked+=1
-		if a.species in StreamWorld.HOMES:
-			# Purple firefish never swim: exactly at their own burrow mouth.
-			if a.x!=a.burrow_x or a.y!=a.burrow_y or absf(a.y-StreamWorld.floor_y(a.x))>0.0001:
-				depth.violations+=1
-		elif a.species=="lawnmower_blenny":
-			# Perched, grazing or hopping, always on the bed.
-			if absf(a.y-StreamWorld.floor_y(a.x))>0.0001:
-				depth.violations+=1
-		else:
-			var band: Array=BANDS[a.species]
-			if a.y<band[0] or a.y>band[1]:
-				depth.violations+=1
+		var band: Array=world.band(a.species)
+		var inside: bool=obstacles.any(func(o): return Vector2((a.x-o.cx)/o.rx,(a.y-o.cy)/o.ry).length_squared()<1.0)
+		if inside:
+			depth.obstacle=depth.get("obstacle",0)+1
+		if a.y<band[0] or a.y>band[1] or a.x<swim[0] or a.x>swim[1] or a.y>=world.bed_y(a.x) or inside:
+			depth.violations+=1
+		elif a.has("home") and a.activity in ["Hovering","Resting"] and a.get("relocated_at",-1.0)<0.0:
+			var far: float=Vector2(a.x,a.y).distance_to(Vector2(a.home_x,a.home_y))
+			depth.farthest=maxf(depth.get("farthest",0.0),far)
 
 # --feed=daily: a pinch at 08, 11, 14 and 17 h (sim time since start) at rotating x, which is
 # the whole daily cap (StreamWorld.FOOD.daily); --feed=none (default) never calls feed().
@@ -42,13 +45,24 @@ func new_tally(world: StreamWorld) -> Dictionary:
 		present[species]=0
 	return {"day":0,"seconds":0.0,"chunks":[],"depth":{"checked":0,"violations":0},"rows":[],"peak":world.state.animals.size(),"max_residual":0.0,"invalid":0,"in_band":0,"present":present,"gap":present.duplicate(),"longest_gap":present.duplicate(),"plant_ok":{"stem":0,"floating":0,"biofilm":0},"plant_low":{"stem":INF,"floating":INF,"biofilm":INF},"first_old_age":-1,"removed_species":false,"fed":{"pinches":0,"refused":0},"detritus_max":0.0}
 
-func simulate(seed_value: int, days: int, mode: String = "offline", feed: String = "none") -> Dictionary:
+# A new world in `scene` with the named decor (ReefScene.preset: default, min or max; S5).
+func make_world(seed_value: int, scene: String, decor: String) -> StreamWorld:
+	var world:=StreamWorld.new(seed_value,0,scene)
+	var d: Dictionary=world.scene.preset(decor)
+	for slot: String in d:
+		world.set_decor(slot,d[slot])
+	return world
+
+func simulate(seed_value: int, days: int, mode: String = "offline", feed: String = "none", scene: String = "reef", decor: String = "default") -> Dictionary:
 	var start: int=Time.get_ticks_msec()
-	var world:=StreamWorld.new(seed_value)
+	var world: StreamWorld=make_world(seed_value,scene,decor)
 	var t: Dictionary=new_tally(world)
 	run_days(world,t,seed_value,days,days,mode,feed)
 	t.seconds=(Time.get_ticks_msec()-start)/1000.0
-	return summarize(world,t,seed_value,days,mode,feed)
+	var run: Dictionary=summarize(world,t,seed_value,days,mode,feed)
+	run.scene=scene
+	run.decor=decor
+	return run
 
 # Steps days t.day ..< to_day (0-based), updating the tally t in place.
 func run_days(world: StreamWorld, t: Dictionary, seed_value: int, days: int, to_day: int, mode: String, feed: String) -> void:
@@ -76,7 +90,7 @@ func run_days(world: StreamWorld, t: Dictionary, seed_value: int, days: int, to_
 						world.advance_live(1.0/60.0)
 				else:
 					world.advance_live(3600.0)
-				audit_depth(world,depth)
+				audit_space(world,depth)
 			t.peak=maxi(t.peak,world.state.animals.size())
 		t.max_residual=maxf(t.max_residual,absf(world.residual()))
 		t.detritus_max=maxf(t.detritus_max,world.state.resources.detritus)
@@ -127,7 +141,7 @@ func summarize(world: StreamWorld, t: Dictionary, seed_value: int, days: int, mo
 	var plants: Dictionary={}
 	for plant: String in PLANT_POOLS:
 		plants[plant]={"days_above_5pct":float(t.plant_ok[plant])/days,"lowest_share":t.plant_low[plant]}
-	return {"seed":seed_value,"mode":mode,"feed":feed,"fed":t.fed,"detritus_max":t.detritus_max,"absent_days":absent_days,"depth":t.depth,"days":days,"births":totals.birth,"arrivals":totals.arrival,"old_age":causes.get("old age",0),"first_old_age_day":t.first_old_age,"starvation":causes.get("starvation",0),"predation":totals.get("predation",0),"departures":totals.departure,"dispersal":totals.dispersal,"population_band":POPULATION_BAND,"band_share":float(t.in_band)/days,"max_population":t.peak,"presence":presence,"longest_absence":t.longest_gap,"plants":plants,"max_material_residual":t.max_residual,"invalid_days":t.invalid,"removed_species_returned":t.removed_species,"causes":causes,"totals":totals,"monthly":t.rows,"seconds":t.seconds}
+	return {"seed":seed_value,"mode":mode,"feed":feed,"fed":t.fed,"detritus_max":t.detritus_max,"absent_days":absent_days,"depth":t.depth,"days":days,"births":totals.birth,"arrivals":totals.arrival,"old_age":causes.get("old age",0),"first_old_age_day":t.first_old_age,"starvation":causes.get("starvation",0),"floor_hits":totals.get("floor_hits",0),"predation":totals.get("predation",0),"departures":totals.departure,"dispersal":totals.dispersal,"population_band":POPULATION_BAND,"band_share":float(t.in_band)/days,"max_population":t.peak,"presence":presence,"longest_absence":t.longest_gap,"plants":plants,"max_material_residual":t.max_residual,"invalid_days":t.invalid,"removed_species_returned":t.removed_species,"causes":causes,"totals":totals,"monthly":t.rows,"seconds":t.seconds}
 
 # A relative checkpoint path lives in res://artifacts/, like --out.
 func checkpoint_path(path: String) -> String:
@@ -169,6 +183,8 @@ func simulate_chunk(seed_value: int, o: Dictionary) -> Dictionary:
 	if o.to_day<o.days:
 		return {"saved":checkpoint_path(o.checkpoint_out)}
 	var run: Dictionary=summarize(world,t,seed_value,o.days,o.mode,o.feed)
+	run.scene="reef"
+	run.decor="default"
 	run.chunks=t.chunks
 	return run
 
@@ -194,11 +210,13 @@ func judge(run: Dictionary) -> Dictionary:
 	ok.reproduction=ACCEPTANCE.reproduction_passes(run)
 	ok.local_replacement=ACCEPTANCE.local_replacement_passes(run)
 	ok.old_age=ACCEPTANCE.old_age_passes(run)
-	ok.starvation=run.starvation<run.old_age
+	# Never starves, never dies out (2026-09-28, user decisions; plan §4.3): no starvation, the
+	# floor never met (S2 criterion C1), every species present every day.
+	ok.starvation=run.starvation==0 and run.floor_hits==0
 	# Predation was removed on 2026-09-23: no animal eats another.
 	ok.predation=run.predation==0 and not run.causes.has("predation")
 	ok.population=run.band_share>=0.8 and run.max_population<=POPULATION_BAND[1]
-	ok.presence=run.presence.values().all(func(v): return v>=0.95) and run.longest_absence.values().all(func(v): return v<=30)
+	ok.presence=run.presence.values().all(func(v): return v==1.0) and run.longest_absence.values().all(func(v): return v==0)
 	ok.no_departures=run.departures==0
 	ok.conservation=run.max_material_residual<0.00001
 	ok.plants=run.plants.values().all(func(p): return p.days_above_5pct>=0.95)
@@ -211,7 +229,8 @@ func options() -> Dictionary:
 	# no arguments keeps the original offline acceptance gate.
 	# Chunked (one seed): --from-day=N --to-day=M --checkpoint-in=<path> --checkpoint-out=<path>; days
 	# N..M of a --days run. Only the chunk that reaches --days judges and writes --out.
-	var o: Dictionary={"mode":"offline","days":180,"seeds":[42,812,240921],"out":"six-month-runs.json","year":true,"feed":"none","from_day":0,"to_day":-1,"checkpoint_in":"","checkpoint_out":""}
+	# --scene=reef|shipwreck --decor=default|min|max (S5; not yet for chunked runs, S14).
+	var o: Dictionary={"mode":"offline","days":180,"seeds":[42,812,240921],"out":"six-month-runs.json","year":true,"feed":"none","from_day":0,"to_day":-1,"checkpoint_in":"","checkpoint_out":"","scene":"reef","decor":"default"}
 	for arg: String in OS.get_cmdline_user_args():
 		var parts: PackedStringArray=arg.lstrip("-").split("=")
 		if parts.size()!=2:
@@ -221,6 +240,8 @@ func options() -> Dictionary:
 			"days": o.days=int(parts[1])
 			"out": o.out=parts[1]
 			"feed": o.feed=parts[1]
+			"scene": o.scene=parts[1]
+			"decor": o.decor=parts[1]
 			"year": o.year=parts[1]=="true"
 			"from-day": o.from_day=int(parts[1])
 			"to-day": o.to_day=int(parts[1])
@@ -238,6 +259,8 @@ func options() -> Dictionary:
 
 # "" when the chunk options make sense, else why not.
 func chunk_error(o: Dictionary) -> String:
+	if o.scene!="reef" or o.decor!="default":
+		return "--scene/--decor are not supported for chunked runs yet (S14)"
 	if o.seeds.size()!=1:
 		return "a chunked run takes exactly one --seeds"
 	if o.feed not in ["none","daily"]:
@@ -255,6 +278,12 @@ func _initialize() -> void:
 	var report: Dictionary={"days_per_seed":o.days,"mode":o.mode,"feed":o.feed,"runs":[],"failures":[]}
 	if o.feed not in ["none","daily"]:
 		report.failures.append("Unknown --feed="+o.feed)
+	if not ReefScene.ids().has(o.scene) or ReefScene.open(o.scene).preset(o.decor).is_empty():
+		report.failures.append("Unknown --scene=%s or --decor=%s" % [o.scene,o.decor])
+		write_report(report,o.out)
+		return
+	report.scene=o.scene
+	report.decor=o.decor
 	if POPULATION_BAND[1]!=StreamWorld.habitat_cap():
 		report.failures.append("POPULATION_BAND top %d is not the combined habitat caps %d" % [POPULATION_BAND[1],StreamWorld.habitat_cap()])
 	if o.chunked and chunk_error(o)!="":
@@ -274,7 +303,7 @@ func _initialize() -> void:
 				quit(0)
 				return
 		else:
-			run=simulate(seed_value,o.days,o.mode,o.feed)
+			run=simulate(seed_value,o.days,o.mode,o.feed,o.scene,o.decor)
 		run.offspring_produced=ACCEPTANCE.offspring_produced(run)
 		run.acceptance=judge(run)
 		for key: String in run.acceptance:
@@ -288,7 +317,7 @@ func _initialize() -> void:
 		return
 	var year: Dictionary=simulate(240921,365)
 	var last: Dictionary=year.monthly[-1]
-	year.acceptance={"species_persist":year.longest_absence.values().all(func(v): return v<=30) and StreamWorld.ACTIVE_SPECIES.all(func(k): return last[k]>0),"conservation":year.max_material_residual<0.00001,"valid":year.invalid_days==0}
+	year.acceptance={"species_persist":year.longest_absence.values().all(func(v): return v==0) and StreamWorld.ACTIVE_SPECIES.all(func(k): return last[k]>0),"starvation":year.starvation==0 and year.floor_hits==0,"conservation":year.max_material_residual<0.00001,"valid":year.invalid_days==0}
 	for key: String in year.acceptance:
 		if not year.acceptance[key]:
 			report.failures.append("365-day run failed "+key)

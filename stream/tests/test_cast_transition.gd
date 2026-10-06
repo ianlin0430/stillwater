@@ -65,24 +65,15 @@ func run() -> void:
 	changed.scene="missing_scene"
 	stage.apply_snapshot(changed)
 	check(stage.scene.id()=="reef","Unknown scene uses a safe reef fallback")
-	# Actual inspector and pointer handlers, without main's save/load lifecycle.
+	# Pointer handlers are independent of the removed fish inspector.
 	var app=load("res://scripts/main.gd").new()
 	app.world=StreamWorld.new(42,1000)
 	app.stage=stage
-	app.notes=RichTextLabel.new()
-	for species: String in ["clownfish","seahorse","royal_gramma","unknown_future_fish"]:
-		var a:=Fixture.actor(species,99,Vector2(640,350))
-		app.world.state.animals=[a]
-		app.world.state.archive=[]
-		app.selected=99
-		app._refresh_info()
-		check(StreamStage.species_label(species) in app.notes.text,species+": inspector tolerates absent backend metadata")
 	var motion:=InputEventMouseMotion.new()
 	app._world_pointer(motion,Vector2(640,350))
 	check(app.pointer==Vector2(640,350),"Pointer inside water is accepted through world floor API")
-	app._world_pointer(motion,Vector2(640,app.world.floor_y(640)+1))
+	app._world_pointer(motion,Vector2(640,app.world.bed_y(640)+1))
 	check(app.pointer==Vector2(-1,-1),"Pointer below active world floor is rejected")
-	app.notes.free()
 	app.free()
 	stage.free()
 	print(JSON.stringify({"checks":checks,"failures":failures}))

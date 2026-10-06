@@ -10,7 +10,7 @@ var base_opacity: Dictionary = {}
 const MAX_DEATHS: int = 24
 # Transitional cast: retain old rigs until backend S4 replaces the population.
 const PRESENTED_SPECIES: Array[String] = ["lawnmower_blenny","purple_firefish","green_chromis","yellow_tang","clownfish","seahorse","royal_gramma"]
-const NEW_CAST_RIG=preload("res://scripts/reef_new_cast_rig.gd")
+const NEW_CAST_RIG=preload("res://scripts/reef_home_rig.gd")
 const NEW_LABELS: Dictionary={"clownfish":"Clownfish","seahorse":"Seahorse","royal_gramma":"Royal gramma"}
 var scene: ReefScene=ReefScene.open("reef")
 var smoother=MotionSmoother.new()
@@ -98,7 +98,7 @@ func apply_snapshot(value: Dictionary) -> void:
 				interaction_layer.accept(event)
 				if event.kind=="ate" and rigs.has(event.id):
 					rigs[event.id].consume_food(event)
-			if event.get("live",false) and event.kind=="death" and event.get("cause","") in ["old age","starvation"]:
+			if event.get("live",false) and event.kind=="death" and not event.get("leaving",false) and event.get("cause","") in ["old age","starvation"]:
 				_begin_death(event,value)
 	event_cursor=latest
 	snapshot=value.duplicate(true)
@@ -108,7 +108,7 @@ func apply_snapshot(value: Dictionary) -> void:
 	interaction_layer.apply_snapshot(visible_snapshot,reset)
 	var present: Dictionary = {}
 	var jumps: Array = []
-	for a: Dictionary in value.animals:
+	for a: Dictionary in value.animals+value.get("departing",[]):
 		if not a.species in PRESENTED_SPECIES: continue
 		var size_factor: float=body_scale_for(a)
 		var p:=Vector2(a.x,a.y)
@@ -140,8 +140,8 @@ func apply_snapshot(value: Dictionary) -> void:
 		rig.target_body_scale=size_factor
 		rig.dim=0.64 if a.activity in ["Sheltering","Molting"] else 1.0
 		# As an animal enters its dark crevice, retain only a faint silhouette.
-		var shelter_depth: float=clampf(1.0-absf(a.x-float(a.get("shelter",a.x)))/75.0,0,1) if a.activity in ["Sheltering","Molting"] else 0.0
-		base_opacity[a.id]=1.0-shelter_depth*0.78
+		var shelter_depth: float=0.0
+		base_opacity[a.id]=float(a.get("opacity",1.0))
 		rig.modulate.a=base_opacity[a.id]
 	for id: int in rigs.keys():
 		if not present.has(id) and not deaths.has(id):

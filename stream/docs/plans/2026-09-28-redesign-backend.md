@@ -491,21 +491,34 @@
 - 完成：`test_world`、`test_presentation`、`test_lifecycle`、`test_persist_qa`、`test_long_run_chunks`、`test_natural_motion`、`test_roaming` 綠；`godot --path stream -- --qa` 開 10 秒無錯誤。
 - Codex：**H2**——告知存檔改名、舊世界不見是設計如此。**注意**：`main.gd:92` 從 `preferences.cfg` 讀 `world/path`，`:107` 又把路徑寫回去，所以舊使用者的設定裡存的是 `user://stream.world`；只改 `DEFAULT_PATH` 沒用——舊 v2 檔讀不進來時，`load_or_create`（`stream_store.gd:63–69`）會把新世界存到 `stream-recovery-<時間>.world`，而且**每次開啟都再開一個新的**。所以 `main.gd` 要改用新的設定鍵（例如 `world/path_v3`）或忽略舊鍵；這要 Codex 改（或 Codex 同意由 Claude 改這兩行）。S3 的測試要模擬「設定檔裡存著舊路徑」這種情況。
 
-**S4 換陣容（cutover）：新四種＋生態保證＋場景感知地形**
+**S4 換陣容（cutover）：新四種＋生態保證＋場景感知地形**　〔進度：2026-09-29 完成於分支 `s4-cast-swap`（前端 `test_frontend` 的「Cruising fish render」兩條要 Codex 改，見下）。後端測試全綠；`tools/cast_probe.gd` 32 個 WIDE seed 180 天與 365 天都 32/32 過 C1–C6（最差 seed 13，microfauna 最低 10.89，沒改任何設計數字，見 ecology.md「S4 re-run」）；`long_run.gd --mode=offline --days=180 --year=false` 32 seed 分 4 批都 `ACCEPTANCE PASS`；`--mode=live --days=1 --seeds=42` 的 `audit_space` 0 違規。`BODY` 用 Codex H3 交接值。另外：夜裡 chromis 只短程游（不橫越）；魚的身體不會低於床面（場景水層下緣比床面低的地方）〕
 - 目標：`ACTIVE_SPECIES`＝新四種；S2 定的數字；§4.3 兩個保證；床面／水層／出入口從 `ReefScene`（預設 `reef`）讀；刪 tang/blenny/firefish 全部程式；新魚先用**最簡單的行為**（在家附近的水層裡慢慢游，用 `_swim`），完整行為在 S6–S8。
 - 檔案：`scripts/stream_world.gd`、`tests/test_world.gd`、`tests/test_natural_motion.gd`、`tests/test_roaming.gd`、`tests/long_run.gd`（`audit_space` 初版）、`docs/BACKEND_SNAPSHOT_EVENTS.md`（陣容與欄位章節改寫，舊魚段落移到「已移除」）。
 - 先寫的失敗測試：`test_world`：「新世界的 `counts()` 等於新開場陣容」「池子全歸零 30 天沒有 `starvation`」「某物種剩 1 隻且過了壽命時不會老死、救援在 24 小時內到」；`test_world`：衍生閘門數字（由 S2 的常數算出後釘死）。
 - 完成：上列後端測試全綠；`long_run.gd --mode=offline --days=180 --seeds=<WIDE 全部> --year=false` 印 `ACCEPTANCE PASS`；`--mode=live --days=1 --seeds=42` 的 `audit_space` 0 違規。
 - Codex：**H3（最重要的交接）**——這片一落地，後端就不再送 tang/firefish/blenny。落地前要 Codex 先讓 stage 在「看到不認得的物種」時不當掉（畫佔位或不畫），並同意前端測試在那之後由 Codex 更新；`core` job 裡的 `test_frontend`、`test_reef_animation` 可能暫時紅，要事先講好（Q5 附帶）。
 
-**S5 裝飾障礙物與繞行、`set_decor`**
+**S5 裝飾障礙物與繞行、`set_decor`**　〔進度：2026-09-29/30 完成於分支 `s4-cast-swap`（疊在 S4 上）。`state.decor`（每場景一份）、`set_decor()`、`ReefScene.allows/valid_decor/obstacles/preset`。做法與草案不同：單一橢圓切線繞行會卡在重疊橢圓的縫裡（沉船場景），改成「直線可見就直走，否則走 10 px 格子 A* 路線、朝路線上看得到的最遠點游」；軟門檻的加寬用 0.8×半身。使用者 2026-09-29 的要求取代 §5.1 的「被新障礙蓋住就推到外緣」：改為自己平順游出來、不瞬移。`test_natural_motion` 的障礙檢查（2 場景 × min/max × 8 seed × 23 分鐘）：中心入侵 0、身體重疊最大 0.199、卡住 0、多餘翻身 0、繞行不比開放水域抖。`long_run.gd` 加 `--scene/--decor`（分段續跑暫不支援，S14）與障礙入侵審計。數字見 `ecology.md`「S5」與交接報告〕
 - 目標：§3.2；`state.decor`、`set_decor()`；chromis 繞障礙。
 - 檔案：`scripts/stream_world.gd`、`tests/test_natural_motion.gd`、`tests/test_world.gd`、`tests/long_run.gd`（`audit_space` 加障礙）。
 - 先寫的失敗測試：`test_natural_motion`：「`max` 裝飾組合、8 個 seed、白天 15 分鐘，任何魚的中心在障礙橢圓內的 tick 數＝0」。
 - 完成：該測試綠；「身體重疊 ≤0.2」「每 tick 速度變化上限」綠；`set_decor` 合法性檢查綠；即時 1 天 `audit_space` 0 違規。
 - Codex：告知 `decor` 欄位格式與 `set_decor()`（**H4**）。
 
+**S5-fix 判準（2026-09-30 先寫後量；取代 S5 看過結果後改的兩個定義）**
+獨立反方審查（新 seed 11,13,17,19,23,29,31,37）發現：S5 排除的「讓路窗」有 82% 發生在繞行路線上或障礙旁，障礙全拿掉時只剩 15 對 199，是障礙造成的塞車；另有兩條檢查在新 seed 上紅（障礙重疊 0.205 > 0.2、路線 kinks 0.297 > 0.25），S4 同 seed 全綠。以下判準在修正前寫定，量完不得再改：
+- **Seed**：所有障礙相關檢查改用 `seed_lists.gd` WIDE 清單前 16 個（motion() 的 8 個 + 11,13,17,19,23,29,31,37），兩個場景 × 「最少／最多」兩種裝飾。
+- **卡住**：任何 30 秒窗內前進 < 15 px 就算「沒進展」，**讓路窗不排除**，除了魚正在自己家（海葵、勾點、洞）1 個 radius 內停留。門檻：障礙相關的沒進展窗（在繞行路線上，或窗內超過一半時間在任一障礙 1.3 倍範圍內）＝ 0；而且任何一條魚都不得連續 2 個窗沒進展。
+- **翻身**：同一個導航目標（`nav_tx/nav_ty` 不變）內，翻身次數 ≤ 第一次規劃的路線要求的折返數 + 起步背對時的 1 次；中途重新規劃**不再加額度**。
+- **猶豫**：繞行中，同一障礙 1.5 倍範圍內 10 秒內翻身 ≥ 2 次的次數，每個 scene/decor/seed ≤ 同 seed、同位置但障礙全拿掉的對照組次數。
+- **原有門檻不動**：身體與障礙重疊 ≤ 0.2、中心入侵 0、`kinks < 0.25`、速度變化上限、`audit_space` 0 違規；在 16 個 seed 上都要過。
+- **做法**：修魚的行為（窄縫與沉船附近的互讓與排隊、路線留足身體間距、平順轉向），不改以上任何數字。
+- 〔進度 2026-10-04：**暫停，仍紅**（使用者決定）。`583a83d`：RED 測試 `tests/test_obstacles.gd`（`1766b02`）；行為修正 WIP（Claude WIP1–7，Codex 救援：只選連通的開闊水域目的地、整條路線預約窄道、固定讓路順序、沿路線方向閃避）。6 個最難 seed（23,240921,2,29,37,17）× 2 場景 × min/max：卡住窗 0、連續 ≤1、重疊最大 0.132、猶豫 0、kinks 0.160，**只剩 shipwreck/max seed 240921 gramma 多翻身 1 次**；完整 16 seed、其他 backend 測試未跑。每 tick 552 µs（S5 323 µs，同條件前景量，1.71×）。gramma 行為在 S8 重寫，所以先做 S6–S8，做完 S8 再讓本測試在 16 seed 全綠；判準不改。S6–S8 不得讓這 6 seed 面板變差（現況 1 個多翻身）。S4/S5 等本測試全綠才合併 main。〕
+- 〔進度 2026-10-05：**再次暫停，剩 6 處猶豫**（使用者決定 A）。導航重設計（`ecf6872`、`14f0e5f`，Codex）後，`a45f176`：test_world 248、test_clownfish 128、contract 52、save_v3 40、scene_data 168、long_run_chunks 19、frontend 80 全綠；S5-fix 6 seed 面板全綠；natural_motion 繞障礙翻身已修（8 seed 0 次）。完整 16 seed（首次跑）只剩 hesitation：reef/min seed 812,5,11,19,31、reef/max seed 11（最多 3 對 0），屬回家/覓食返回時的轉向；其餘 gate 全過、kinks 0.177。之後 C1–C9 共 9 個候選都在別的 seed 產生新失敗，未保留（C9 檔案備份在 scratchpad）。同機連續量測：a45f176 813 µs/tick、C9 835 µs（舊 472.7 µs 是不同機況，不可直接比）。S7/S8 會重寫海馬/gramma 回家行為，做完後以完整 16 seed 重驗本測試；判準不改；S4–S6 等本測試全綠才合併 main。〕
+
 **S6 clownfish 行為**
+- 〔進度 2026-10-04 15:24 UTC S6續跑：Foraging 真正離開海葵、遇裝飾擋路先試另一側；一般返家恢復 motion_rng 排程，只有追食返家用 saved id/tick timing。最終 S6 128/128、contract 52/52、feeding probe 4/4；最低橢圓比例0.954778（reef/42/7）、最遠82.323px／敲玻璃1.2s（shipwreck/240921/7）。固定六seed完整guard：centre0、excess flip1（reef/max seed17 clown7，S6新episode）；原四個shipwreck/max gramma excess episodes全消失，其他guard gates全通過。符合使用者≤1 baseline budget，但未改的zero-flip gate仍失敗，11/12，非全綠。bench reps1 mean472.84µs/tick（baseline551.96）、最慢seed240921=496.50。無harness／判準改動、無push；所有Godot串行並已結束。S5-fix來源失敗未處理，詳細handoff在../S6-PROGRESS.md。〕
+- 〔進度 2026-10-04 S6續跑：**WIP，完整guard待驗**。6b6df81修raw邊界：reef/max367ticks全為seed37 gramma12（非clown）；5c0f26a／93f92c2修混養飼料與返家抽共用RNG。最新：S6 128 checks/0 failures; min ratio 0.971778 (reef/3/7), max distance 78.642px (reef/812/7), max tap 0.8s (reef/5/7); contract 52/1 failures; reef/max all6 centre counts {'17': 0, '2': 0, '23': 0, '240921': 0, '29': 0, '37': 0}; feeding 4/0 failures, {'feeding': {'by_species': {'clownfish': 1, 'green_chromis': 2, 'royal_gramma': 1, 'seahorse': 2}, 'eaters': 6, 'same_species_overlap_max': 0.123}}。完整archive audit：c87f229 natural78/world248全綠；8bd7ce7 natural6失敗/world3失敗，S5-fix引入，未針對修正。固定四part六seed guard限時中斷，無最終JSON，不宣稱通過。詳細來源表與下一步在clone外../S6-PROGRESS.md；判準、harness未改，未push。〕
 - 目標：§3.1 clownfish 全部 activity、`nestle`、飼料、敲玻璃。
 - 檔案：`scripts/stream_world.gd`、`tests/test_natural_motion.gd`、`tests/test_world.gd`、`docs/BACKEND_SNAPSHOT_EVENTS.md`（clownfish 章節）。
 - 先寫的失敗測試：「白天 30 分鐘，clownfish 在海葵橢圓內的時間比例 ≥ 0.6、離海葵最遠 ≤ 120 px；敲玻璃後 3 秒內在海葵內」。

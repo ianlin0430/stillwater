@@ -12,12 +12,9 @@ var display: PixelDisplay
 var title: Label
 var status: Label
 var climate: Label
-var inspector: PanelContainer
-var notes: RichTextLabel
 var pause_button: Button
 var light_button: Button
 var help_panel: PanelContainer
-var selected: int = -1
 var paused: bool = false
 var suspended_view: bool = false
 var focused: bool = true
@@ -57,9 +54,14 @@ var pointer: Vector2 = Vector2(-1,-1)
 var pointer_rest: float = 0
 var notice_text: String = ""
 var notice_until: float = 0
+var scene_picker: OptionButton
+var decor_button: Button
+var decor_bar: HBoxContainer
+var scene_transition: bool=false
+var frame_mode: int=-1
 
 func _ready() -> void:
-	Engine.max_fps=30
+	FramePacer.apply(60)
 	Engine.physics_ticks_per_second=10
 	get_tree().auto_accept_quit=false
 	DisplayServer.window_set_min_size(Vector2i(900,620))
@@ -89,7 +91,7 @@ func _ready() -> void:
 	else:
 		settings.load(prefs_path)
 		viewing_light=settings.get_value("view","light",false)
-		var path: String = settings.get_value("world","path",StreamStore.DEFAULT_PATH) if persist_dir.is_empty() else persist_dir+"stream.world"
+		var path: String = settings.get_value("reef","path",StreamStore.DEFAULT_PATH) if persist_dir.is_empty() else persist_dir+"reef.world"
 		if not persist_dir.is_empty():
 			var pre: Dictionary=StreamStore.read(path)
 			persist_log={"mode":"persist-qa","launch":PersistQA.next_launch(persist_dir),"path":ProjectSettings.globalize_path(path),"preferences":ProjectSettings.globalize_path(prefs_path),"wall":last_wall,"pre":{"digest":PersistQA.digest(pre),"summary":PersistQA.summary(pre)}}
@@ -104,7 +106,7 @@ func _ready() -> void:
 		elif loaded.backup:
 			failure_status="Recovered the previous verified save."
 		_set_away(loaded.away)
-		settings.set_value("world","path",save_path)
+		settings.set_value("reef","path",save_path)
 		settings.save(prefs_path)
 		if not persist_dir.is_empty():
 			var post: Dictionary=world.export_state()
@@ -165,6 +167,16 @@ func _setup_ui() -> void:
 	header.add_child(spacer)
 	climate=_label("",12,MUTED)
 	header.add_child(climate)
+	scene_picker=OptionButton.new()
+	scene_picker.add_item("Reef",0)
+	scene_picker.add_item("Shipwreck garden",1)
+	scene_picker.selected=ReefScene.IDS.find(world.state.scene)
+	scene_picker.tooltip_text="The same fish, another place"
+	scene_picker.item_selected.connect(func(index: int) -> void: _change_scene(ReefScene.IDS[index]))
+	header.add_child(scene_picker)
+	decor_button=_button("Decor",_toggle_decor,"Change the fixed habitat slots")
+	decor_button.toggle_mode=true
+	header.add_child(decor_button)
 	light_button=_button("Viewing light",_toggle_light,"L · illuminate the view without changing the animals’ clock")
 	light_button.toggle_mode=true
 	light_button.button_pressed=viewing_light
@@ -190,6 +202,12 @@ func _setup_ui() -> void:
 	display.size_flags_vertical=Control.SIZE_EXPAND_FILL
 	display.gui_input.connect(_scene_input)
 	base.add_child(display)
+	decor_bar=HBoxContainer.new()
+	decor_bar.add_theme_constant_override("separation",12)
+	decor_bar.alignment=BoxContainer.ALIGNMENT_CENTER
+	base.add_child(decor_bar)
+	_rebuild_decor_bar()
+	decor_bar.hide()
 	var footer := MarginContainer.new()
 	footer.add_theme_constant_override("margin_left",24)
 	footer.add_theme_constant_override("margin_right",24)
@@ -199,23 +217,11 @@ func _setup_ui() -> void:
 	status=_label("",12,MUTED)
 	status.text_overrun_behavior=TextServer.OVERRUN_TRIM_ELLIPSIS
 	footer.add_child(status)
-	inspector=_panel(Vector2(24,88),Vector2(268,245))
-	var box := VBoxContainer.new()
-	inspector.add_child(box)
-	notes=RichTextLabel.new()
-	notes.bbcode_enabled=true
-	notes.fit_content=true
-	notes.scroll_active=false
-	notes.custom_minimum_size=Vector2(236,150)
-	notes.add_theme_color_override("default_color",CREAM)
-	box.add_child(notes)
-	box.add_child(_button("Close",func() -> void: _select(-1),"Escape"))
-	inspector.hide()
 	help_panel=_panel(Vector2(24,88),Vector2(420,300))
 	var help_box := VBoxContainer.new()
 	help_panel.add_child(help_box)
 	var help_text := Label.new()
-	help_text.text="A small reef beneath the surface\n\nClick an animal to read its story.\nDrag through water or plants to feel the current.\nR makes a ripple without the mouse.\nClick Feed, or press F, for a pinch of food (a few pinches a day).\nClick Tap, or press T, to tap the glass.\nRest the pointer in the water and curious fish may come to look.\nScroll or use + / − for 1× / 2× zoom. Tab selects the next animal.\nSpace pauses; Escape returns to the whole pool.\nL switches the viewing light. F11 toggles fullscreen.\n\nNatural food, arrivals, births and departures need no care;\nfeeding is a treat, never required.\nThe world advances while you’re away, up to three days.\nNothing runs on your Mac after you quit.\n\nReal species, a fictional shared habitat.\nQuiet mode: 30 FPS. Saves are automatic."
+	help_text.text="A small reef beneath the surface\n\nChoose Reef or Shipwreck garden to move the same fish.\nOpen Decor to change a habitat slot.\nThe anemone and hitch plant always stay.\n\nPress F or click Feed for an optional pinch of food.\nPress T or click Tap to tap the glass gently.\nRest the pointer in the water; curious fish may come closer.\nDrag through water or plants to feel the current.\nScroll or use + / − for 1× / 2× zoom.\nSpace pauses; Escape closes controls and resets the view.\nL switches the viewing light. F11 toggles fullscreen.\n\nFish grow, breed and quietly age. They need no care.\nThe reef advances while you are away, up to three days.\nSaves are automatic. No sound or background service."
 	help_text.add_theme_font_size_override("font_size",13)
 	help_box.add_child(help_text)
 	help_box.add_child(_button("Back to the reef",func() -> void: help_panel.hide()))
@@ -282,9 +288,7 @@ func _scene_input(event: InputEvent) -> void:
 						world.startle(stage.center.x,stage.center.y,1.0)
 						stage.tap_feedback(Vector2(640,360))
 					return
-				var hit: int=stage.pick(point)
-				_select(hit)
-				if hit<0 and not paused: stage.interact(point)
+				if not paused and not scene_transition: stage.interact(point)
 
 # Backend interactions only (Codex: keep this call in _scene_input; draw the cues yourself).
 # Tracks the pointer for the lure and F, and turns a click on the frame into a glass tap.
@@ -292,7 +296,7 @@ func _world_pointer(event: InputEventMouse, point: Vector2) -> void:
 	var at: Vector2=(point-stage.position)/stage.zoom
 	var inside: bool=Rect2(0,0,1280,720).has_point(point)
 	if event is InputEventMouseMotion:
-		pointer=at if inside and at.y>float(stage.scene.bounds().surface_y) and at.y<world.floor_y(at.x) else Vector2(-1,-1)
+		pointer=at if inside and at.y>float(stage.scene.bounds().surface_y) and at.y<world.bed_y(at.x) else Vector2(-1,-1)
 		pointer_rest=0
 	elif event is InputEventMouseButton and event.pressed and event.button_index==MOUSE_BUTTON_LEFT and not inside and not paused:
 		world.startle(clampf(at.x,0,1280),clampf(at.y,0,720),1.0)
@@ -311,18 +315,8 @@ func _update_lure(delta: float) -> void:
 	else:
 		world.clear_lure()
 
-func _select(id: int) -> void:
-	if id>=0 and not id in stage.visible_ids(): id=-1
-	selected=id
-	stage.selected=id
-	inspector.visible=id>=0
-	help_panel.hide()
-	_refresh_info()
-
 func _zoom(amount: float) -> void:
 	stage.zoom=clampf(stage.zoom+signf(amount),1,2)
-	if selected>=0 and stage.rigs.has(selected):
-		stage.center=stage.rigs[selected].position
 	if stage.zoom<=1:
 		stage.center=Vector2(640,360)
 
@@ -360,7 +354,9 @@ func _input(event: InputEvent) -> void:
 			KEY_MINUS:
 				_zoom(-0.15)
 			KEY_ESCAPE:
-				_select(-1)
+				help_panel.hide()
+				decor_bar.hide()
+				decor_button.button_pressed=false
 				stage.zoom=1
 				stage.center=Vector2(640,360)
 			KEY_R:
@@ -372,34 +368,6 @@ func _input(event: InputEvent) -> void:
 			KEY_T:
 				if not paused: world.startle(pointer.x if pointer.x>=0 else 640.0,pointer.y if pointer.x>=0 else 360.0,1.0)
 				get_viewport().set_input_as_handled()
-			KEY_TAB:
-				var ids: Array[int]=stage.visible_ids()
-				if not event.shift_pressed and not ids.is_empty():
-					_select(ids[(ids.find(selected)+1)%ids.size()])
-					get_viewport().set_input_as_handled()
-
-func _refresh_info() -> void:
-	if selected<0:
-		return
-	var found: Dictionary={}
-	for a: Dictionary in world.state.animals+world.state.archive:
-		if a.id==selected:
-			found=a
-			break
-	if found.is_empty():
-		notes.text="This animal’s detailed record has aged out of the journal."
-		return
-	var cfg: Dictionary=StreamWorld.SPECIES.get(found.species,{})
-	var text: String="[font_size=20]"+found.name+"[/font_size]\n[color=#a0b3aa]"+StreamStage.species_label(found.species)+" · #"+str(found.id)+"[/color]\n\n"
-	text+=(("Young" if found.age<float(cfg.mature) else "Adult")+" · " if cfg.has("mature") else "")+str(int(found.age))+" days old\n"
-	text+=found.activity if not found.has("cause") else "Left the pool" if found.cause=="departure" else "Died: "+found.cause
-	if found.parent>0:
-		text+="\nParent #"+str(found.parent)
-	text+="\n"
-	for e: Dictionary in found.recent.slice(-2):
-		text+="\n[color=#a0b3aa]"+e.text+"[/color]"
-	notes.text=text
-
 func _update_biological_clock() -> void:
 	var local: Dictionary=Time.get_datetime_dict_from_system()
 	world.state.light_hour=local.hour+local.minute/60.0
@@ -411,14 +379,13 @@ func _refresh() -> void:
 	stage.natural_light=clampf(sin((hour-6)/12*PI),0,1)
 	stage.viewing_light=viewing_light
 	climate.text=("Night" if hour<6 or hour>=20 else "Evening" if hour>=17 else "Morning" if hour<11 else "Daylight")+" · "+str(stage.visible_ids().size())+" fish in view"
-	status.text="Click a creature · Drag water or plants to explore · Scroll to look closer" if not paused else "Paused · the reef will continue when you resume"
+	status.text="F · feed   T · tap   Scroll · look closer" if not paused else "Paused · the reef will continue when you resume"
 	if qa_clock<away_until and not away_text.is_empty():
 		status.text=away_text
 	if qa_clock<notice_until:
 		status.text=notice_text
 	if not failure_status.is_empty():
 		status.text=failure_status
-	_refresh_info()
 
 func _set_away(report: Dictionary) -> void:
 	var text: String=Absence.text(report)
@@ -453,6 +420,10 @@ func _process(delta: float) -> void:
 		should_hide=qa_clock>8 and qa_clock<18
 	if should_hide!=suspended_view:
 		_set_suspended_view(should_hide)
+	var next_mode: int=FramePacer.mode(not should_hide,should_hide,DisplayServer.window_is_focused())
+	if next_mode!=frame_mode:
+		frame_mode=next_mode
+		FramePacer.apply(frame_mode)
 	if qa and qa_clock>5:
 		var measured_gap: float=maxf(0,gap)
 		if suspended_view:
@@ -508,8 +479,7 @@ func _set_suspended_view(value: bool) -> void:
 		absence=Absence.fresh(Time.get_unix_time_from_system())
 		absence_elapsed=world.state.elapsed
 		# Keep AppKit event/Accessibility delivery responsive while rendering is off.
-		Engine.max_fps=10
-		RenderingServer.render_loop_enabled=false
+		FramePacer.apply(0)
 		_save()
 	else:
 		if not paused:
@@ -519,8 +489,7 @@ func _set_suspended_view(value: bool) -> void:
 			PersistQA.write(persist_dir+"absence-%d.json" % PersistQA.next_index(persist_dir,"absence"),{"launch":persist_log.get("launch",0),"resumed":Time.get_unix_time_from_system(),"paused":paused,"absence":absence,"elapsed_at_hide":absence_elapsed,"elapsed_at_resume":world.state.elapsed,"away_text":away_text})
 		last_wall=Time.get_unix_time_from_system()
 		last_ticks=Time.get_ticks_msec()
-		Engine.max_fps=30
-		RenderingServer.render_loop_enabled=true
+		FramePacer.apply(60 if DisplayServer.window_is_focused() else 30)
 		_refresh()
 		_save()
 
@@ -540,44 +509,22 @@ func _notification(what: int) -> void:
 func _qa(delta: float) -> void:
 	if qa_clock>5:
 		qa_frames.append(delta)
-	if qa_clock>6 and not qa_snapshots.has("overview"):
-		qa_snapshots.overview=true
-		_capture("overview")
-	if qa_clock>10 and not qa_snapshots.has("select"):
-		qa_snapshots.select=true
-		_select(7)
-		_zoom(0.65)
-	if qa_clock>13 and not qa_snapshots.has("inspection"):
-		qa_snapshots.inspection=true
-		_capture("inspection")
-	if qa_clock>17 and not qa_snapshots.has("light"):
-		qa_snapshots.light=true
+	if qa_clock>6 and not qa_snapshots.has("reef"):
+		qa_snapshots.reef=true
+		_capture("reef")
+	if qa_clock>10 and not qa_snapshots.has("shipwreck_move"):
+		qa_snapshots.shipwreck_move=true
+		_change_scene("shipwreck")
+	if qa_clock>13 and not qa_snapshots.has("shipwreck"):
+		qa_snapshots.shipwreck=true
+		_capture("shipwreck")
+	if qa_clock>17 and not qa_snapshots.has("decor"):
+		qa_snapshots.decor=true
+		_toggle_decor()
 		_toggle_light()
-		_select(-1)
-		stage.zoom=1
-		stage.center=Vector2(640,360)
-	if qa_clock>20 and not qa_snapshots.has("lit"):
-		qa_snapshots.lit=true
-		_capture("lit")
-	if qa_clock>25 and not qa_snapshots.has("shrimp"):
-		qa_snapshots.shrimp=true
-		_select(1)
-		_zoom(0.65)
-	if qa_clock>28 and not qa_snapshots.has("shrimp_capture"):
-		qa_snapshots.shrimp_capture=true
-		_capture("shrimp")
-	if qa_clock>32 and not qa_snapshots.has("fish"):
-		qa_snapshots.fish=true
-		_select(12)
-		stage.center=stage.rigs[12].position
-	if qa_clock>35 and not qa_snapshots.has("fish_capture"):
-		qa_snapshots.fish_capture=true
-		_capture("fish")
-	if qa_clock>40 and not qa_snapshots.has("reset"):
-		qa_snapshots.reset=true
-		_select(-1)
-		stage.zoom=1
-		stage.center=Vector2(640,360)
+	if qa_clock>20 and not qa_snapshots.has("controls"):
+		qa_snapshots.controls=true
+		_capture("controls")
 	if qa_duration>0 and qa_clock>=qa_duration:
 		_finish_qa()
 
@@ -600,7 +547,7 @@ func _finish_qa() -> void:
 	data.visible_seconds=qa_visible_seconds
 	data.hidden_seconds=qa_hidden_seconds
 	data.focused_seconds=qa_focused_seconds
-	data.foreground_30_minute_eligible=qa_visible_seconds>=1800 and qa_focused_seconds>=1800 and qa_hidden_seconds<0.5 and qa_drawn_frames>=50400
+	data.foreground_30_minute_eligible=qa_visible_seconds>=1800 and qa_focused_seconds>=1800 and qa_hidden_seconds<0.5 and qa_drawn_frames>=100800
 	file.store_string(JSON.stringify(data,"  "))
 	print(JSON.stringify(data))
 	get_tree().quit()
@@ -608,3 +555,59 @@ func _finish_qa() -> void:
 func _qa_frame_drawn() -> void:
 	if qa_clock>5 and not suspended_view:
 		qa_drawn_frames+=1
+
+func _toggle_decor() -> void:
+	decor_bar.visible=not decor_bar.visible
+	decor_button.button_pressed=decor_bar.visible
+	help_panel.hide()
+
+func _rebuild_decor_bar() -> void:
+	for child: Node in decor_bar.get_children():
+		decor_bar.remove_child(child)
+		child.queue_free()
+	var current: ReefScene=world.scene
+	for slot: Dictionary in current.slots():
+		var group:=VBoxContainer.new()
+		group.add_theme_constant_override("separation",4)
+		decor_bar.add_child(group)
+		var caption: String="Anemone" if slot.id=="anemone" else "Hitch plant" if slot.id=="hitch_plant" else "Habitat "+slot.id.trim_prefix("s")
+		group.add_child(_label(caption,11,MUTED))
+		var picker:=OptionButton.new()
+		var styles: Array=slot.styles.duplicate()
+		if slot.required=="": styles.push_front("")
+		for style: String in styles:
+			picker.add_item("Empty" if style=="" else style.replace("_"," ").capitalize())
+		picker.selected=styles.find(world.state.decor[current.id()][slot.id])
+		picker.tooltip_text="Required habitat: choose a style" if slot.required!="" else "A shelter or obstacle for the fish"
+		picker.item_selected.connect(func(index: int) -> void:
+			if world.set_decor(slot.id,styles[index]):
+				_refresh()
+				_save())
+		group.add_child(picker)
+
+func _change_scene(scene_id: String) -> void:
+	if scene_transition or scene_id==world.state.scene: return
+	scene_transition=true
+	scene_picker.disabled=true
+	decor_button.disabled=true
+	decor_bar.hide()
+	decor_button.button_pressed=false
+	world.clear_lure()
+	stage.interaction_enabled=false
+	var fade:=create_tween()
+	fade.tween_property(display,"modulate",Color(0,0,0,1),.375).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	await fade.finished
+	world.set_scene(scene_id)
+	stage.zoom=1
+	stage.center=Vector2(640,360)
+	_refresh()
+	_rebuild_decor_bar()
+	_save()
+	fade=create_tween()
+	fade.tween_property(display,"modulate",Color(1,1,1,1),.375).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	await fade.finished
+	scene_picker.selected=ReefScene.IDS.find(world.state.scene)
+	scene_picker.disabled=false
+	decor_button.disabled=false
+	stage.interaction_enabled=true
+	scene_transition=false

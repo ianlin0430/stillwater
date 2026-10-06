@@ -194,6 +194,107 @@ Not a criterion, but reported: in the second half-year seeds 4321 and 999983 los
 - **Caveats.** These runs use today's `stream_world.gd` with the constants replaced; S4 removes code, adds the two guarantee mechanisms and places animals differently, which changes the RNG draw order, so S4 must re-run the 32 seeds (plan S4 "done" line). `floor_hits` = 0 here means the S4 floor mechanism would not engage on these trajectories. Seahorse and gramma at 4 and 3 depend on the S1 placeholder capacities; if Codex's coordinates reduce them, the caps must drop and be re-probed.
 - **Old probe tables and the broken `rescue_at` option (plan risk 9).** The option matched a `<=2` line that the same commit (`edec34c`, 2026-09-24) replaced with `RESCUE_AT`, so it did nothing from then until S0. The 2026-09-24/25 tables (P and Q rows) did not set it (they used the world's `RESCUE_AT` = 1) and are unaffected. The A–C rows of the pre-tang table compare "rescue ≤ 2" with "≤ 1"; whether they were run before that commit cannot be told from the repository, so their rescue column is unverified.
 
+### S4 re-run on the world itself (2026-09-29)
+
+S4 put the S2 numbers into `scripts/stream_world.gd` unchanged (`STREAM_IN.microfauna` 1.2, caps 8/3/4/3, opening 6/2/2/2 with ages 40–150, the three new `SPECIES` entries, `RESCUE_AT` 1), deleted the tang/firefish/blenny code, read the terrain from the reef scene file and added the two guarantees (plan §4.3, user decisions): the energy floor `FLOOR` = 0.1 × reserve (metabolism and growth never take energy below it; `totals.floor_hits` counts animal-minutes at it) and "never dies out" (the last one of a species outlives its lifespan until a companion arrives; a rescue is scheduled with one draw 2–22 h after the hourly check finds a species at `RESCUE_AT`, so it arrives within 24 h). The rescue draw replaces the old hourly 1/96 draw, so the ecology RNG sequence changes once any species falls to one. The criteria C1–C6 above were applied unchanged; nothing was loosened, and no design number had to change.
+
+Command (from `stream/`, one seed per process, four at a time; config `tools/probes/2026-09-28-s4-rerun.json` changes nothing but adds the `floor` measurement, which since S4 also counts minutes with unpaid metabolism):
+
+```
+godot --headless --path . --script tools/cast_probe.gd -- --config=tools/probes/2026-09-28-s4-rerun.json --seeds=<seed> --days=365 --mid=180
+python3 tools/probes/s2_sweep.py judge <all 32 lines>.jsonl          # 180 days (the at_180 checkpoint)
+python3 tools/probes/s2_sweep.py judge <all 32 lines>.jsonl --year   # 365 days
+```
+
+Result: **32/32 seeds pass at 180 days and at 365 days.** 180 days: floor hits 0 on every seed, microfauna minimum 10.89–17.65 (worst seed 13, 10.89, the same as S2: it is reached before any seed's trajectory diverges from the S2 run), population 12–18 on every day of every seed (mean 15.5–17.2), tightest retained births/arrivals 7/6 (seed 202), old-age deaths ≥ 7 with the first by day 66 (gates: ≥ 6, by day 76), no starvation, no species absent on any day. 365 days: floor hits 0, the same microfauna minimum, retained births > arrivals on every seed (tightest 16/12, seed 17), every species alive on day 365, no species absent on any day (population 11–18, in the band on ≥ 97.5% of days on every seed). The margin is still thin (0.89 above the break-even on seed 13, 7 births against 6 arrivals on seed 202), as S2 said; it did not get thinner.
+
+180 days, per seed:
+
+| seed | floor_hits | microfauna min (mean) | size range (mean) | days in [12,18] | retained births / arrivals | old age (first day) | fewest alive c/cl/sh/gr | days any species absent |
+|---|---|---|---|---|---|---|---|---|
+| 42 | 0 | 12.93 (24.3) | 12–18 (16.9) | 100% | 12 / 2 | 10 (40) | 6/2/2/2 | 0 |
+| 812 | 0 | 14.22 (23.0) | 12–18 (16.9) | 100% | 12 / 1 | 8 (34) | 6/2/2/2 | 0 |
+| 240921 | 0 | 13.86 (27.9) | 12–18 (16.9) | 100% | 8 / 5 | 8 (35) | 6/2/2/2 | 0 |
+| 1 | 0 | 15.09 (24.0) | 12–18 (16.9) | 100% | 10 / 2 | 7 (36) | 6/2/2/2 | 0 |
+| 2 | 0 | 15.18 (26.2) | 12–18 (16.8) | 100% | 12 / 2 | 8 (41) | 6/2/2/2 | 0 |
+| 3 | 0 | 14.93 (25.9) | 12–18 (16.8) | 100% | 14 / 3 | 12 (49) | 6/2/2/2 | 0 |
+| 5 | 0 | 16.34 (27.6) | 12–18 (16.2) | 100% | 12 / 4 | 11 (37) | 6/2/2/2 | 0 |
+| 7 | 0 | 15.98 (26.1) | 12–18 (16.3) | 100% | 12 / 4 | 12 (24) | 6/2/2/2 | 0 |
+| 11 | 0 | 12.79 (26.7) | 12–18 (16.4) | 100% | 10 / 5 | 10 (66) | 5/2/2/2 | 0 |
+| 13 | 0 | 10.89 (25.1) | 12–18 (17.0) | 100% | 11 / 3 | 10 (31) | 6/2/2/2 | 0 |
+| 17 | 0 | 15.13 (25.7) | 12–18 (16.5) | 100% | 11 / 3 | 8 (49) | 6/2/2/2 | 0 |
+| 19 | 0 | 14.81 (24.0) | 12–18 (16.8) | 100% | 10 / 3 | 8 (14) | 6/2/2/2 | 0 |
+| 23 | 0 | 11.91 (30.8) | 12–18 (15.8) | 100% | 10 / 3 | 8 (44) | 4/2/2/2 | 0 |
+| 29 | 0 | 13.24 (25.6) | 12–18 (16.8) | 100% | 13 / 3 | 10 (33) | 6/2/2/1 | 0 |
+| 31 | 0 | 12.95 (27.2) | 12–18 (16.7) | 100% | 11 / 5 | 10 (37) | 6/2/2/2 | 0 |
+| 37 | 0 | 16.64 (32.3) | 12–17 (15.5) | 100% | 10 / 6 | 12 (39) | 6/2/2/2 | 0 |
+| 101 | 0 | 17.65 (26.7) | 12–18 (16.9) | 100% | 11 / 2 | 8 (24) | 6/2/2/2 | 0 |
+| 202 | 0 | 13.23 (27.6) | 12–18 (16.7) | 100% | 7 / 6 | 7 (39) | 6/2/2/2 | 0 |
+| 303 | 0 | 13.62 (25.5) | 12–18 (16.9) | 100% | 12 / 3 | 9 (22) | 6/2/2/2 | 0 |
+| 404 | 0 | 15.04 (26.7) | 12–18 (16.6) | 100% | 12 / 2 | 9 (10) | 6/2/2/2 | 0 |
+| 505 | 0 | 14.30 (26.2) | 12–18 (16.5) | 100% | 12 / 3 | 10 (23) | 6/2/2/2 | 0 |
+| 606 | 0 | 15.34 (32.6) | 12–17 (15.9) | 100% | 11 / 5 | 11 (59) | 6/2/2/2 | 0 |
+| 707 | 0 | 12.22 (26.6) | 12–18 (16.7) | 100% | 11 / 4 | 11 (35) | 6/2/2/2 | 0 |
+| 808 | 0 | 14.26 (26.0) | 12–18 (16.5) | 100% | 13 / 3 | 12 (44) | 6/2/2/2 | 0 |
+| 909 | 0 | 14.38 (25.1) | 12–18 (16.7) | 100% | 11 / 2 | 10 (29) | 6/2/2/1 | 0 |
+| 1234 | 0 | 12.71 (24.5) | 13–18 (17.2) | 100% | 12 / 4 | 10 (18) | 6/2/3/2 | 0 |
+| 4321 | 0 | 16.63 (30.0) | 12–18 (16.2) | 100% | 11 / 4 | 10 (38) | 6/2/2/2 | 0 |
+| 9999 | 0 | 14.83 (25.6) | 12–18 (16.9) | 100% | 11 / 3 | 9 (47) | 6/2/2/2 | 0 |
+| 31337 | 0 | 15.45 (26.6) | 12–18 (16.7) | 100% | 10 / 3 | 9 (29) | 6/2/2/2 | 0 |
+| 65537 | 0 | 15.21 (30.6) | 12–18 (16.0) | 100% | 11 / 3 | 8 (42) | 5/2/2/2 | 0 |
+| 123456 | 0 | 11.86 (28.1) | 12–18 (16.8) | 100% | 8 / 6 | 10 (45) | 5/2/2/2 | 0 |
+| 999983 | 0 | 14.15 (26.9) | 12–18 (16.7) | 100% | 11 / 2 | 10 (56) | 6/2/2/2 | 0 |
+
+365 days, per seed:
+
+| seed | floor_hits | microfauna min (mean) | size range (mean) | retained births / arrivals | old age | alive on day 365 c/cl/sh/gr | fewest alive c/cl/sh/gr | days any species absent |
+|---|---|---|---|---|---|---|---|---|
+| 42 | 0 | 12.93 (36.0) | 12–18 (16.8) | 22 / 9 | 27 | 8/3/3/2 | 6/1/2/2 | 0 |
+| 812 | 0 | 14.22 (35.4) | 12–18 (16.5) | 24 / 4 | 24 | 8/3/3/2 | 5/2/2/2 | 0 |
+| 240921 | 0 | 13.86 (38.8) | 12–18 (16.4) | 21 / 11 | 27 | 8/3/3/3 | 6/2/2/1 | 0 |
+| 1 | 0 | 15.09 (36.9) | 12–18 (16.1) | 19 / 8 | 24 | 7/2/3/3 | 6/1/2/2 | 0 |
+| 2 | 0 | 15.18 (37.1) | 12–18 (16.5) | 26 / 4 | 25 | 8/3/3/3 | 6/2/2/2 | 0 |
+| 3 | 0 | 14.93 (36.7) | 12–18 (16.6) | 26 / 6 | 27 | 8/3/3/3 | 6/1/2/2 | 0 |
+| 5 | 0 | 16.34 (39.7) | 12–18 (15.8) | 21 / 8 | 26 | 7/3/2/3 | 6/2/2/1 | 0 |
+| 7 | 0 | 15.98 (37.0) | 12–18 (16.5) | 22 / 9 | 27 | 8/2/4/2 | 6/2/2/2 | 0 |
+| 11 | 0 | 12.79 (37.0) | 12–18 (16.2) | 17 / 10 | 27 | 5/2/2/3 | 5/2/2/2 | 0 |
+| 13 | 0 | 10.89 (37.1) | 12–18 (16.8) | 23 / 7 | 25 | 8/3/4/2 | 6/1/2/1 | 0 |
+| 17 | 0 | 15.13 (38.3) | 12–18 (16.0) | 16 / 12 | 25 | 8/3/2/2 | 6/2/1/2 | 0 |
+| 19 | 0 | 14.81 (34.9) | 12–18 (16.3) | 22 / 6 | 25 | 8/2/2/3 | 6/2/1/2 | 0 |
+| 23 | 0 | 11.91 (40.1) | 12–18 (16.1) | 21 / 9 | 24 | 8/3/4/3 | 4/2/2/2 | 0 |
+| 29 | 0 | 13.24 (36.1) | 12–18 (16.8) | 22 / 9 | 28 | 8/2/3/2 | 6/1/2/1 | 0 |
+| 31 | 0 | 12.95 (38.5) | 12–18 (16.8) | 18 / 12 | 27 | 7/2/3/3 | 6/1/2/2 | 0 |
+| 37 | 0 | 16.64 (40.8) | 12–18 (16.1) | 21 / 8 | 25 | 8/2/3/3 | 6/2/2/2 | 0 |
+| 101 | 0 | 17.65 (37.0) | 12–18 (16.5) | 24 / 3 | 24 | 8/2/3/2 | 5/2/2/2 | 0 |
+| 202 | 0 | 13.23 (38.6) | 12–18 (16.3) | 19 / 10 | 26 | 8/3/2/2 | 6/1/2/1 | 0 |
+| 303 | 0 | 13.62 (36.2) | 12–18 (16.7) | 23 / 9 | 27 | 8/3/4/2 | 6/2/2/2 | 0 |
+| 404 | 0 | 15.04 (40.0) | 12–18 (15.9) | 22 / 7 | 25 | 8/3/3/2 | 6/2/2/1 | 0 |
+| 505 | 0 | 14.30 (37.1) | 12–18 (16.3) | 23 / 7 | 26 | 7/3/4/2 | 6/1/2/2 | 0 |
+| 606 | 0 | 15.34 (41.9) | 12–18 (16.2) | 19 / 12 | 26 | 8/3/4/2 | 6/1/2/1 | 0 |
+| 707 | 0 | 12.22 (38.0) | 12–18 (16.4) | 22 / 8 | 26 | 8/3/2/3 | 6/2/2/2 | 0 |
+| 808 | 0 | 14.26 (36.6) | 12–18 (16.7) | 23 / 8 | 26 | 8/3/4/2 | 6/1/2/2 | 0 |
+| 909 | 0 | 14.38 (38.5) | 12–18 (16.3) | 23 / 6 | 23 | 8/3/4/3 | 6/1/2/1 | 0 |
+| 1234 | 0 | 12.71 (36.0) | 13–18 (16.8) | 19 / 11 | 26 | 8/2/3/3 | 6/1/3/1 | 0 |
+| 4321 | 0 | 16.63 (44.1) | 11–18 (14.8) | 20 / 10 | 25 | 7/3/4/3 | 1/2/2/2 | 0 |
+| 9999 | 0 | 14.83 (38.4) | 12–18 (16.2) | 20 / 10 | 26 | 7/3/3/3 | 6/2/1/2 | 0 |
+| 31337 | 0 | 15.45 (37.6) | 12–18 (16.3) | 22 / 7 | 24 | 8/3/3/3 | 6/2/2/1 | 0 |
+| 65537 | 0 | 15.21 (40.6) | 12–18 (16.0) | 22 / 8 | 24 | 8/3/4/3 | 5/1/2/2 | 0 |
+| 123456 | 0 | 11.86 (40.1) | 12–18 (16.4) | 19 / 11 | 24 | 8/3/4/3 | 5/2/2/2 | 0 |
+| 999983 | 0 | 14.15 (39.4) | 12–18 (16.4) | 23 / 8 | 26 | 8/2/4/3 | 6/2/2/2 | 0 |
+
+
+### S5: decor does not change the ecology (2026-09-30)
+
+S5 made decor slots and obstacles real (`state.decor`, `set_decor`, fish route round obstacles). Decor is presentation and habitat only: no food, no cap, no ecology RNG draw (homes are assigned by distance, positions pushed clear of obstacles without any draw). Criterion (plan Q3, written before the run): offline, no feeding, 180 days, all 32 `WIDE` seeds, each non-default scene/decor gives the same result as the reef with its default decor, and that result still passes C1–C6.
+
+Command (from `stream/`, one seed per process, six at a time; configs add `"scene"` and `"decor"` to `tools/probes/2026-09-28-s4-rerun.json`, e.g. `{"name":"mf1.2-8/3/4/3","floor":0.1,"scene":"shipwreck","decor":"max"}`):
+
+```
+godot --headless --path . --script tools/cast_probe.gd -- --config=<cfg>.json --seeds=<seed> --days=180
+python3 tools/probes/s2_sweep.py judge <32 lines>.jsonl
+```
+
+Result: for reef `min`, reef `max`, shipwreck `min` and shipwreck `max` the whole JSON line (every count, pool minimum and mean, sizes by day, births, deaths, arrivals, floor hits, residual; timing aside) is **identical** to reef `default` on **32/32** seeds. C1–C6: **32/32 pass** for every one of the five (worst seed 13, microfauna minimum 10.89; tightest retained births/arrivals 7/6 on seed 202; population 12–18) — the same numbers as the S4 re-run. `tests/test_world.gd` also checks it (6 scene/decor sets, 10 days offline and 2 hours live, byte-identical ecology).
 ## Sizing (offline probe before committing numbers)
 
 Superseded for the reef v3 cast by the section above; kept as the record of the earlier casts.

@@ -22,12 +22,23 @@ func _initialize() -> void:
 	print(JSON.stringify({"checks":checks,"failures":failures,"seconds":(Time.get_ticks_msec()-start)/1000.0}))
 	quit(0 if failures.is_empty() else 1)
 
-# Runs tests/long_run.gd in a child Godot; returns [exit code, output].
+# Execute the actual CLI code in this Godot process: no child process or default userdata
+# logger. Argument parsing, checkpoint files, report generation, output and exit gates are
+# unchanged; only the SceneTree/OS shell is replaced with a RefCounted capture adapter.
 func long_run(args: Array) -> Array:
-	var output: Array=[]
-	var all: Array=["--headless","--path",ProjectSettings.globalize_path("res://"),"--script","res://tests/long_run.gd","--"]
-	var code: int=OS.execute(OS.get_executable_path(),all+args,output,true)
-	return [code,"\n".join(output)]
+	var source: String=FileAccess.get_file_as_string("res://tests/long_run.gd")
+	source=source.replace("extends SceneTree","extends RefCounted")
+	source=source.replace("OS.get_cmdline_user_args()","_serial_args")
+	source=source.replace("print(","_serial_print(").replace("quit(","_serial_quit(")
+	source+="\nvar _serial_args: Array=[]\nvar _serial_output: Array[String]=[]\nvar _serial_code: int=0\nfunc _serial_print(value: Variant) -> void:\n\t_serial_output.append(str(value))\nfunc _serial_quit(code: int=0) -> void:\n\t_serial_code=code\n"
+	var script:=GDScript.new()
+	script.source_code=source
+	if script.reload()!=OK:
+		return [1,"CLI capture adapter failed to compile"]
+	var run: Variant=script.new()
+	run._serial_args=args
+	run._initialize()
+	return [run._serial_code,"\n".join(run._serial_output)]
 
 func report(name: String) -> Dictionary:
 	var parsed: Variant=JSON.parse_string(FileAccess.get_file_as_string(DIR+name))
