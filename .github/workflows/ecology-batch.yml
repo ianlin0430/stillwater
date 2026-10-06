@@ -126,14 +126,18 @@ jobs:
       # Godot exits 0 even when a test script fails to load, so a suite passes only
       # if it exits 0, its last result line has an empty/zero "failures", and the
       # log has no script or resource load error. A suite that hangs (a runtime
-      # error before quit()) is stopped after 15 minutes and fails.
+      # error before quit()) is stopped after 15 minutes and fails. The full
+      # 16-seed obstacle matrix gets 30 minutes; it takes ~13 minutes locally.
       - name: Core tests
         working-directory: stream
         run: |
+          python3 tools/test_cloud_acceptance.py
           fail=0
           for t in test_world test_swimmers test_roaming test_lifecycle test_persist_qa test_presentation test_frontend test_reef_animation test_natural_motion test_obstacles test_stage_scenes test_long_run_chunks test_scene_data test_scene_switch test_save_v3 test_home_layout_restore test_home_geometry test_home_behaviors test_seahorse test_gramma test_chromis_roost test_clownfish test_clownfish_contract test_departures test_frame_pacer test_cast_transition test_decor_art test_new_fish_art test_mirror_turn; do
             echo "== $t"
-            if timeout 900 godot --headless --path . --script "tests/$t.gd" 2>&1 | tee "../$t.log" \
+            budget=900
+            if [[ "$t" == test_obstacles ]]; then budget=1800; fi
+            if timeout "$budget" godot --headless --path . --script "tests/$t.gd" 2>&1 | tee "../$t.log" \
               && grep '^{.*"failures"' "../$t.log" | tail -1 | jq -e '.failures==[] or .failures==0' >/dev/null \
               && ! grep -qE 'SCRIPT ERROR|Parse Error|Failed loading resource' "../$t.log"; then
               echo "PASS $t"
