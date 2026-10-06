@@ -213,7 +213,7 @@ process is not a substitute for hardware sleep. A ready-to-run procedure is left
 ```sh
 cd stream
 /opt/homebrew/bin/godot --headless --path . --export-release macOS "$PWD/builds/Stillwater Reef.app"
-python3 tools/persistence_acceptance.py --modes hidden_resume --trigger external \
+python3 tools/persistence_acceptance.py --modes hardware_sleep --trigger external \
         --hidden-seconds 300 --external-timeout 3600
 ```
 
@@ -221,11 +221,14 @@ The harness launches the isolated persist-QA app, prints `ACTION NEEDED` and wri
 `artifacts/persistence-qa/<stamp>/pending-action.json` with the app's pid, then waits (up to
 `--external-timeout`) without touching the window. Put the Mac to sleep naturally (Apple menu → Sleep,
 or close the lid), leave it asleep for at least `--hidden-seconds`, then wake it and bring Stillwater
-back to the front. The harness resumes as soon as the app writes its absence report and checks the same
-things as the programmatic run: that several hidden advances were folded into one absence, that the
-absence covers the whole wall span, that elapsed advanced exactly once, and that a single summary was
-shown. `since` and `resumed` in `absence-N.json` are the before/after wall timestamps; `advances` says
-whether catch-up ran once or repeatedly. The user's real save files are only hashed, before and after.
+back to the front. In external mode the harness does not activate the window. The harness checks
+`kern.sleeptime` and `kern.waketime` to confirm a new hardware sleep and its requested duration;
+hiding a window cannot pass this check. Catch-up may run just once because the process does not run
+during hardware sleep. The app records either hidden-resume or direct drawable-window gap catch-up
+in isolated QA. The harness checks that the absence covers the whole wall span, elapsed advances
+exactly once, and a single summary appears. `since` and `resumed` in `absence-N.json` are the
+before/after wall timestamps. The user's real save files are only hashed. Missing kernel evidence
+is UNVERIFIED, and both failed and unverified runs exit nonzero.
 
 Two related mechanisms also remain UNVERIFIED from step 1 and were not retested here: a real window
 close-button click and a real Cmd-Q, because macOS Accessibility permission for the calling process is

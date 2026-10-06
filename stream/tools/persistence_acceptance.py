@@ -5,14 +5,16 @@ Never launches the app without --persist-qa. The user's real stream.world/.bak/p
 Exit triggers:
   auto      System Events (needs Accessibility for the calling process; denied -> mode UNVERIFIED).
   external  harness writes pending-action.json and waits for someone to perform the real UI action.
-hidden_close never needs Accessibility: NSRunningApplication.hide + terminate (quit Apple event).
+Auto hidden_close uses NSRunningApplication.hide + terminate (quit Apple event).
+External hidden_close asks the user to hide and quit via the Dock.
 
-Mode hidden_resume hides the app long enough for several 60s hidden advances, unhides it and checks
-that the whole absence was advanced exactly once and summarised once. With --trigger external the
-harness does not hide anything itself: it asks for a real hide/sleep and wake, which is how a natural
-machine sleep/wake is captured (see docs/validation.md, "Real sleep/wake procedure").
+Mode hidden_resume checks several 60s hidden advances folded into one absence.
+Mode hardware_sleep requires --trigger external: the user sleeps/wakes the Mac,
+and kernel sleep/wake timestamps distinguish this from a window hide. In external
+mode the harness does not activate, hide or unhide windows. Failed and unverified
+runs exit nonzero (see docs/validation.md, "Real sleep/wake procedure").
 """
-import argparse, datetime, hashlib, json, pathlib, subprocess, sys, time
+import argparse, datetime, hashlib, json, pathlib, re, subprocess, sys, time
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 APP = ROOT / 'builds/Stillwater Reef.app'
@@ -21,7 +23,18 @@ USER = pathlib.Path.home() / 'Library/Application Support/Godot/app_userdata/Sti
 REAL = ['reef.world', 'reef.world.bak', 'stream.world', 'stream.world.bak', 'preferences.cfg']
 PROC = 'Stillwater Reef.app/Contents/MacOS/Stillwater Reef'
 MODES = ['window_close', 'cmd_q', 'hidden_close']
-EXTRA_MODES = ['hidden_resume']
+EXTRA_MODES = ['hidden_resume', 'hardware_sleep']
+
+
+def kernel_time(name):
+    """Read the last actual system sleep/wake time, never initiate sleep."""
+    try:
+        value = subprocess.run(['sysctl', 'kern.' + name], capture_output=True,
+                               text=True, timeout=5, check=True).stdout
+        match = re.search(r'sec\s*=\s*(\d+),\s*usec\s*=\s*(\d+)', value)
+        return int(match[1]) + int(match[2])/1e6 if match else None
+    except (OSError, subprocess.SubprocessError):
+        return None
 
 
 def real_hashes():
@@ -73,7 +86,10 @@ class Run:
             if d and 'post' in d:
                 # A background launch starts occluded (window_can_draw false -> suspended view); bring it
                 # forward so the visible path (60s periodic save, live advance) is what gets exercised.
-                app_js(proc.pid, 'activateWithOptions(2)')
+                if self.trigger == 'auto':
+                    app_js(proc.pid, 'activateWithOptions(2)')
+                else:
+                    print('ACTION NEEDED: bring the isolated Stillwater window to the front before the requested action.', flush=True)
                 time.sleep(2)
                 return proc, d
             time.sleep(0.5)
@@ -156,8 +172,7 @@ class Run:
         return None
 
     def execute_hidden_resume(self):
-        """Hide the running app for a few minutes, unhide it, and check the absence was advanced
-        exactly once and reported once. --trigger external asks a human to hide/sleep and wake."""
+        """Check exactly-once absence catch-up after a hide or user hardware sleep."""
         print(f'== {self.mode} run_id={self.run_id}', flush=True)
         before = real_hashes()
         if running():
@@ -172,8 +187,12 @@ class Run:
         # A launch can start occluded and resume when we activate it, which already writes an
         # absence report. Only reports that began after this mark belong to the hide below.
         mark = time.time()
+        hardware = self.mode == 'hardware_sleep'
+        prior_wake = kernel_time('waketime') if hardware else None
         if self.trigger == 'external':
-            ok, msg = self.external(f'hide Stillwater (Cmd-H) or sleep the Mac, wait at least {self.hidden_seconds}s, then wake/unhide it', proc, mark)
+            action = (f'sleep the Mac naturally for at least {self.hidden_seconds}s, then wake and bring Stillwater to the front'
+                      if hardware else f'hide Stillwater (Cmd-H), wait at least {self.hidden_seconds}s, then unhide it')
+            ok, msg = self.external(action, proc, mark)
             self.check('external hide/wake performed', 'PASS' if ok else 'UNVERIFIED', msg)
             hidden_wall = None
         else:
@@ -197,8 +216,22 @@ class Run:
         name, a = found[0]
         acc, span = a['absence'], a['resumed'] - a['absence']['since']
         self.check('an absence report is written on resume', 'PASS', f"{name}: span {span:.1f}s, advances {acc['advances']}")
-        self.check('several 60s advances happened while hidden', 'PASS' if acc['advances'] >= 3 else 'FAIL',
-                   f"advances={acc['advances']} over {span:.1f}s hidden")
+        if hardware:
+            slept, woke = kernel_time('sleeptime'), kernel_time('waketime')
+            actual_sleep = (slept is not None and woke is not None and prior_wake is not None
+                            and slept >= mark and woke > prior_wake and woke > slept
+                            and woke <= a['resumed'] + 2)
+            self.check('kernel confirms a new hardware sleep/wake', 'PASS' if actual_sleep else 'UNVERIFIED',
+                       f'prior wake={prior_wake}, sleep={slept}, wake={woke}, action since={mark}')
+            sleep_seconds = woke - slept if actual_sleep else None
+            self.check('hardware sleep meets requested duration',
+                       'UNVERIFIED' if sleep_seconds is None else 'PASS' if sleep_seconds >= self.hidden_seconds else 'FAIL',
+                       f'kernel sleep span={sleep_seconds}s; required {self.hidden_seconds}s')
+            self.check('catch-up occurred after hardware sleep', 'PASS' if acc['advances'] >= 1 else 'FAIL',
+                       f"advances={acc['advances']} over absence {span:.1f}s; process does not run while asleep")
+        else:
+            self.check('several 60s advances happened while hidden', 'PASS' if acc['advances'] >= 3 else 'FAIL',
+                       f"advances={acc['advances']} over {span:.1f}s hidden")
         self.check('absence covers the whole hidden span', 'PASS' if abs(acc['seconds'] - span) < 2.0 else 'FAIL',
                    f"absence.seconds={acc['seconds']:.2f} vs wall span {span:.2f}s")
         advanced = a['elapsed_at_resume'] - a['elapsed_at_hide']
@@ -219,7 +252,7 @@ class Run:
         return self.result(before, real_hashes(), fb)
 
     def execute(self):
-        if self.mode == 'hidden_resume':
+        if self.mode in EXTRA_MODES:
             return self.execute_hidden_resume()
         print(f'== {self.mode} run_id={self.run_id}', flush=True)
         before = real_hashes()
@@ -245,6 +278,8 @@ class Run:
             ok, msg = self.close_window(proc)
         elif self.mode == 'cmd_q':
             ok, msg = self.cmd_q(proc)
+        elif self.trigger == 'external':
+            ok, msg = self.external('hide Stillwater with Cmd-H, then quit it from the Dock while it remains hidden', proc)
         else:
             app_js(proc.pid, 'hide')
             time.sleep(2)
@@ -302,7 +337,7 @@ class Run:
     def result(self, before, after, *fallbacks):
         self.check('user reef.world, stream.world, backups and preferences unchanged', 'PASS' if before == after else 'FAIL', json.dumps(after))
         status = 'FAIL' if any(c['status'] == 'FAIL' for c in self.checks) else 'UNVERIFIED' if any(fallbacks) or any(c['status'] == 'UNVERIFIED' for c in self.checks) else 'PASS'
-        return {'mode': self.mode, 'run_id': self.run_id, 'trigger': 'programmatic' if self.mode == 'hidden_close' else self.trigger,
+        return {'mode': self.mode, 'run_id': self.run_id, 'trigger': 'programmatic' if self.mode == 'hidden_close' and self.trigger == 'auto' else self.trigger,
                 'status': status, 'user_hashes_before': before, 'user_hashes_after': after, 'checks': self.checks,
                 'data_dir': str(self.dir)}
 
@@ -312,8 +347,15 @@ def main():
     ap.add_argument('--modes', default=','.join(MODES), help='any of ' + ','.join(MODES + EXTRA_MODES))
     ap.add_argument('--trigger', choices=['auto', 'external'], default='auto')
     ap.add_argument('--external-timeout', type=int, default=900)
-    ap.add_argument('--hidden-seconds', type=int, default=200, help='hidden_resume: how long to stay hidden')
+    ap.add_argument('--hidden-seconds', type=int, default=200, help='minimum hidden or hardware sleep duration')
     a = ap.parse_args()
+    modes = a.modes.split(',')
+    if any(m not in MODES + EXTRA_MODES for m in modes):
+        ap.error('unknown lifecycle mode')
+    if 'hardware_sleep' in modes and a.trigger != 'external':
+        ap.error('hardware_sleep requires --trigger external; the user performs actual sleep/wake')
+    if a.hidden_seconds < 180 or a.external_timeout <= 0:
+        ap.error('hidden-seconds must be at least180 and external-timeout must be positive')
     if not EXE.exists():
         sys.exit(f'missing {EXE}; export first')
     stamp = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
@@ -321,7 +363,7 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     print(f'report dir: {out}', flush=True)
     start = real_hashes()
-    runs = [Run(out, m, a.trigger, a.external_timeout, a.hidden_seconds).execute() for m in a.modes.split(',')]
+    runs = [Run(out, m, a.trigger, a.external_timeout, a.hidden_seconds).execute() for m in modes]
     end = real_hashes()
     report = {'app': str(APP), 'started': stamp, 'user_hashes_start': start, 'user_hashes_end': end,
               'user_files_unchanged': start == end, 'runs': runs}
@@ -332,7 +374,7 @@ def main():
         lines += [f"- {c['status']} {c['check']}: {c['evidence']}" for c in r['checks']] + ['']
     (out / 'summary.md').write_text('\n'.join(lines))
     print(f"done: {[(r['mode'], r['status']) for r in runs]} -> {out}")
-    sys.exit(1 if any(r['status'] == 'FAIL' for r in runs) or start != end else 0)
+    sys.exit(1 if any(r['status'] != 'PASS' for r in runs) or start != end else 0)
 
 
 if __name__ == '__main__':

@@ -455,8 +455,13 @@ func _process(delta: float) -> void:
 			_finish_qa()
 		return
 	if maxf(gap,now-last_wall)>2.0 and not paused:
+		var elapsed_before: float=world.state.elapsed
 		var report: Dictionary=world.advance_offline(maxf(0,now-last_wall))
 		_set_away(report)
+		if not persist_dir.is_empty() and now>last_wall:
+			# Hardware sleep can resume directly into a drawable window, without
+			# a hide notification. Record the same catch-up evidence in QA only.
+			PersistQA.write(persist_dir+"absence-%d.json" % PersistQA.next_index(persist_dir,"absence"),{"launch":persist_log.get("launch",0),"mechanism":"visible_gap","resumed":now,"paused":paused,"absence":{"since":last_wall,"simulated":now-last_wall,"seconds":report.seconds,"capped":report.capped,"advances":1,"events":report.events},"elapsed_at_hide":elapsed_before,"elapsed_at_resume":world.state.elapsed,"away_text":away_text})
 		_save()
 		_refresh()
 	elif not paused:
