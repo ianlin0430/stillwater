@@ -7,7 +7,7 @@ Only the eight known failing scene/decor/seed cases are added; S6 uses
 42,240921. Full suites remain mandatory.
 Engine logs and HOME are confined to ignored stream/artifacts/nav-redesign.
 """
-import argparse, json, os, pathlib, subprocess, sys, time
+import argparse, hashlib, json, os, pathlib, subprocess, sys, time
 parser = argparse.ArgumentParser()
 parser.add_argument('--label', required=True)
 parser.add_argument('--parts', help='Optional comma-separated parts for a serial diagnostic rerun')
@@ -57,9 +57,30 @@ if a.parts:
     if any(name not in [p[0] for p in parts] for name in requested):
         parser.error('unknown part')
     parts = [p for p in parts if p[0] in requested]
+def source_fingerprint():
+    digest = hashlib.sha256()
+    paths = [root/'stream/project.godot']
+    for directory in ['scripts', 'tests', 'data']:
+        paths += [p for p in (root/'stream'/directory).rglob('*')
+                  if p.is_file() and p.suffix in {'.gd', '.gdshader', '.json'}]
+    for path in sorted(paths):
+        digest.update(str(path.relative_to(root/'stream')).encode())
+        digest.update(b'\0')
+        digest.update(path.read_bytes())
+        digest.update(b'\0')
+    return digest.hexdigest()
+
+# Sequential subprocesses must judge one source revision. A mid-run edit must
+# never produce a composite green verdict from different controllers.
+fingerprint = source_fingerprint()
 results = {}
 started = time.monotonic()
 for name, script, args in parts:
+    if source_fingerprint() != fingerprint:
+        results[name] = {'checks':0, 'failures':['Source changed between gate parts; rerun on a frozen revision'],
+                         'source_sha256':fingerprint}
+        (out/'result.json').write_text(encode(results, indent=2))
+        break
     print('START '+name, flush=True)
     cmd = ['timeout', '-s', 'KILL', '1500', '/opt/homebrew/bin/godot', '--headless', '--path', str(root/'stream'), '--log-file', str(out/(name+'-engine.log')), '--script', script]
     if args: cmd += ['--'] + args
@@ -79,10 +100,16 @@ for name, script, args in parts:
         result['failures'].append('Engine exit '+str(proc.returncode))
     if engine_errors:
         result['failures'].extend(engine_errors)
+    result['source_sha256'] = fingerprint
+    source_changed = source_fingerprint() != fingerprint
+    if source_changed:
+        result['failures'].append('Source changed during gate part; rerun on a frozen revision')
     result['wall_seconds'] = round(time.monotonic()-t, 2)
     results[name] = result
     print('DONE '+name+' '+encode({'checks':result.get('checks'), 'failures':result['failures'], 'seconds':result['wall_seconds']}), flush=True)
     (out/'result.json').write_text(encode(results, indent=2))
+    if source_changed:
+        break
 failures = [name+': '+f for name,r in results.items() for f in r['failures']]
 print(encode({'failures':failures, 'parts':results, 'wall_seconds':round(time.monotonic()-started,2)}), flush=True)
 sys.exit(bool(failures))
