@@ -110,7 +110,7 @@ const BODY: Dictionary = {"green_chromis":[68.0,39.0],"clownfish":[69.0,44.0],"s
 const SWIM: Dictionary = {
 	"green_chromis":{"cruise":17.0,"turn":4.0,"pitch":0.7,"pitch_rate":0.8,"drag":0.9,"push":2.0,"gap":0.3,"brake":24.0,"scull":6.0,"drift":0.22},
 	"clownfish":{"cruise":12.0,"turn":3.0,"pitch":0.5,"pitch_rate":0.6,"drag":0.9,"push":2.0,"gap":0.3,"brake":20.0,"scull":5.0,"drift":0.15},
-	"seahorse":{"cruise":4.0,"turn":1.0,"pitch":0.2,"pitch_rate":0.3,"drag":0.6,"push":2.0,"gap":0.0,"respond":0.8,"row":0.05,"stroke":1.2,"brake":4.0,"scull":3.0,"drift":0.1},
+	"seahorse":{"cruise":4.0,"turn":1.0,"pitch":0.2,"pitch_rate":0.3,"drag":0.6,"push":2.0,"gap":0.0,"respond":0.8,"row":0.05,"stroke":1.2,"brake":4.0,"scull":3.6,"drift":0.1},
 	"royal_gramma":{"cruise":13.0,"turn":3.5,"pitch":0.6,"pitch_rate":0.7,"drag":0.9,"push":2.0,"gap":0.3,"brake":22.0,"scull":5.0,"drift":0.15},
 	"startle_speed":2.4,"startle_turn":4.0,"turn_gain":3.0,"edge":40.0,"ramp":2.0}
 const SEPARATE: Dictionary = {"margin":1.2,"look":5.0,"gain":1.6,"close":1.05,"same":1.25,"perch":1.15}
@@ -997,6 +997,8 @@ func _avoid(a: Dictionary, p: Vector2, desired: Vector2, speed: float) -> Vector
 			holding=0.85
 		if now<holding or yields>0.0:
 			var n: Vector2=Vector2(rel.x/(r.x*r.x),rel.y/(r.y*r.y)).normalized()
+			if landing:
+				n=Vector2(signf(rel.x),0) if absf(rel.x/r.x)>absf(rel.y/r.y) else Vector2(0,signf(rel.y))
 			var toward: float=-desired.dot(n)
 			if toward>0.0:
 				var k: float=1.0 if now<holding else yields*clampf((1.0-q)*3.0,0.0,1.0)
@@ -1007,7 +1009,7 @@ func _avoid(a: Dictionary, p: Vector2, desired: Vector2, speed: float) -> Vector
 				# A travelling fish passes on the tangent that continues its journey.
 				# Always retreating above a body below it creates a permanent descent queue.
 				if Vector2(a.tx-a.x,a.ty-a.y).length_squared()>1600.0:
-					if along.dot(desired)<0.0:
+					if along.dot(desired)<0.0 or absf(along.dot(desired))<.01 and absf(along.y)>.1 and signf(along.y)!=up:
 						along=-along
 					if forced_side and absf(along.y)>.1 and signf(along.y)!=up:
 						along=-along
@@ -1226,7 +1228,7 @@ func _radii_of(a: Dictionary) -> PackedVector2Array:
 		var o: Dictionary=_obstacles[i]
 		var r:=Vector2(o.rx+half.x,o.ry+half.y)
 		if a.is_empty() or a.has("home_x") and Vector2((a.home_x-o.cx)/r.x,(a.home_y-o.cy)/r.y).length_squared()<1.0:
-			r=Vector2(o.rx+OBSTACLE.pad,o.ry+OBSTACLE.pad)
+			r=Vector2(o.rx,o.ry) if a.get("species","")=="seahorse" else Vector2(o.rx+OBSTACLE.pad,o.ry+OBSTACLE.pad)
 		out[i]=r
 	return out
 
@@ -2145,6 +2147,10 @@ func _horse_segment_clear(a: Dictionary, p: Vector2, target: Vector2) -> bool:
 	return true
 
 func _hitch_path(a: Dictionary, target: Vector2) -> Array:
+	for o: Dictionary in state.animals:
+		if o.id==a.id: continue
+		var room: Vector2=(_body(a)+_body(o))*.4
+		if absf(target.x-o.x)<room.x and absf(target.y-o.y)<room.y: return []
 	var p:=Vector2(a.x,a.y)
 	if _horse_segment_clear(a,p,target): return [[target.x,target.y]]
 	var left: float=minf(p.x,target.x)
