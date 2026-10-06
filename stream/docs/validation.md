@@ -1,6 +1,8 @@
 # Validation — 2026-09-22
 
-**Performance baseline: fish-and-shrimp build 0.4.0 passes the 30-minute packaged foreground performance test. Real Cmd-H and Cmd-M hide/restore checks also pass. Hardware sleep/wake and complete behavioral visual acceptance remain open.**
+Current four-species reef candidate68c9966 passes local full16-seed obstacle, natural78, seahorse86, gramma224, world249, restore15/save40 and32-seed180-day offline plus365-day stability gates. [The24-case live180-day cloud run](https://github.com/ianlin0430/stillwater/actions/runs/37495479815) is pending. A same-source universal, ad-hoc signed local QA package passes isolated headless startup and21 packaged-resource checks. Actual visual controls, persistent Cmd-Q/hardware sleep, all three30-minute native measurements and the final CPU ceiling remain open. See [current completion evidence](APP_COMPLETION.md).
+
+**Historical performance baseline: fish-and-shrimp build0.4.0 passed the30-minute packaged foreground test and Cmd-H/Cmd-M checks below. These measurements do not certify the current reef candidate.**
 
 Blue crayfish were removed at the user's request on 2026-09-22. Their rig, atlases, and diagnostic scene were moved out of the project (to `../stream-crayfish-backup-*/moved/`). Older saves are still readable and record any crayfish as departures.
 
