@@ -41,6 +41,8 @@ var qa_snapshots: Dictionary = {}
 var recording: bool = false
 var capture_pending: bool = false
 var qa_drawn_frames: int = 0
+var qa_mode_drawn_frames: Dictionary={"0":0,"30":0,"60":0}
+var qa_report_interval: float=60.0
 var qa_visible_seconds: float = 0
 var qa_hidden_seconds: float = 0
 var qa_focused_seconds: float = 0
@@ -72,6 +74,8 @@ func _ready() -> void:
 	for arg: String in args:
 		if arg.begins_with("--duration="):
 			qa_duration=float(arg.trim_prefix("--duration="))
+		if arg.begins_with("--qa-report-interval="):
+			qa_report_interval=clampf(float(arg.trim_prefix("--qa-report-interval=")),1.0,60.0)
 	last_wall=Time.get_unix_time_from_system()
 	last_ticks=Time.get_ticks_msec()
 	started_ticks=last_ticks
@@ -440,9 +444,9 @@ func _process(delta: float) -> void:
 			qa_visible_seconds+=measured_gap
 			if DisplayServer.window_is_focused():
 				qa_focused_seconds+=measured_gap
-		if qa_clock-qa_progress_at>=60:
+		if qa_clock-qa_progress_at>=qa_report_interval:
 			var progress:=FileAccess.open("user://qa-progress.json",FileAccess.WRITE)
-			progress.store_string(JSON.stringify({"seconds":qa_clock,"visible_seconds":qa_visible_seconds,"hidden_seconds":qa_hidden_seconds,"focused_seconds":qa_focused_seconds,"drawn_frames":qa_drawn_frames}))
+			progress.store_string(JSON.stringify({"seconds":qa_clock,"visible_seconds":qa_visible_seconds,"hidden_seconds":qa_hidden_seconds,"focused_seconds":qa_focused_seconds,"drawn_frames":qa_drawn_frames,"mode_drawn_frames":qa_mode_drawn_frames,"frame_mode":frame_mode}))
 			qa_progress_at=qa_clock
 	if suspended_view:
 		if not paused and now-absence.since-absence.simulated>=60:
@@ -555,14 +559,17 @@ func _finish_qa() -> void:
 	data.visible_seconds=qa_visible_seconds
 	data.hidden_seconds=qa_hidden_seconds
 	data.focused_seconds=qa_focused_seconds
-	data.foreground_30_minute_eligible=qa_visible_seconds>=1800 and qa_focused_seconds>=1800 and qa_hidden_seconds<0.5 and qa_drawn_frames>=100800
+	data.mode_drawn_frames=qa_mode_drawn_frames
+	data.merge(FramePacer.acceptance(data))
 	file.store_string(JSON.stringify(data,"  "))
 	print(JSON.stringify(data))
 	get_tree().quit()
 
 func _qa_frame_drawn() -> void:
-	if qa_clock>5 and not suspended_view:
-		qa_drawn_frames+=1
+	if qa_clock>5:
+		var key: String=str(frame_mode)
+		qa_mode_drawn_frames[key]=int(qa_mode_drawn_frames.get(key,0))+1
+		if not suspended_view: qa_drawn_frames+=1
 
 func _toggle_decor() -> void:
 	decor_bar.visible=not decor_bar.visible

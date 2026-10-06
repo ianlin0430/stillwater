@@ -527,3 +527,19 @@ Commit `1f6a9ec` (natural-motion backend, resting chromis sideways slide, before
 | daily | 240921 | 1.0 | 17 | 0 | 11 | 12 | 0 | 1.0 | 0 | 720 |
 
 Offline smoke of the chunk chain first: run 36290742993 (offline 180 d, seed 42), all gates true. Still 未驗證: the motion changes after `1f6a9ec` (tang detour, tang grazing ease-in, BODY sizes for the new art) need one more live 180-day run before packaging.
+
+## Current reef three-mode performance procedure (2026-10-06)
+
+The current redesign requires three separate native measurements: focused60FPS, visible/unfocused30FPS, and hidden0 rendered FPS. Earlier30FPS/legacy-cast evidence above does not establish current acceptance. After the final package and real Cmd-Q/sleep-wake checks, close any running package and run these one at a time from `stream/`:
+
+```sh
+python3 tools/foreground_acceptance.py --mode foreground
+python3 tools/foreground_acceptance.py --mode background
+python3 tools/foreground_acceptance.py --mode hidden
+```
+
+Keep the app focused for foreground; keep it visible while focusing another window for background; hide with Cmd-H or minimize for hidden. Each invocation launches only isolated memory `--qa`, lasts31minutes, and writes separate `artifacts/performance-30m`, `performance-background-30m`, or `performance-hidden-30m` results. Do not run CPU-heavy regression suites during measurement.
+
+The app records actual post-draw frames by observed native pacing mode, visible/focused/hidden seconds and1-second progress. The harness samples CPU/RSS once per second and thermal pressure every30seconds. Requested-mode CPU uses cumulative CPU-time differences only across samples whose consecutive observed modes match; acceptance needs at least1800seconds of such CPU samples. Missing/stale telemetry cannot be counted. Background requires1800unfocused visible seconds and>=50400 actual30FPS draws; hidden requires1800hidden seconds and zero draws in hidden mode. Existing foreground thresholds remain1800focused visible seconds,>=100800draws and<.5hidden seconds. Short headless runs are ineligible for all three modes.
+
+Results include actual mode flags, per-mode CPU mean/sample duration, peak RSS, thermal samples and hashes for reef.world/.bak, old stream.world/.bak and preferences. A failed or unverified measurement exits nonzero. The inherited15% one-core CPU and350MB memory limits remain provisional conservative checks; the redesign's final CPU ceiling must be chosen and documented after inspecting all three native measurements. No current native three-mode performance result is claimed here.

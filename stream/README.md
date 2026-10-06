@@ -62,3 +62,5 @@ The **Ecology batch** workflow runs 180-day live or offline simulations in three
 The 32-seed offline and 24-case live reports are release requirements. A passing short checkpoint test or generated matrix is not proof that those 180-day runs passed. Final results belong in [App completion](docs/APP_COMPLETION.md).
 
 See [the approved scope](docs/REDESIGN_2026-09-28.md), [art provenance](assets/reef/PROVENANCE.md) and [snapshot/event contract](docs/BACKEND_SNAPSHOT_EVENTS.md). Older validation notes are historical evidence and may describe superseded species or controls.
+
+Final native performance acceptance measures three separate30-minute states: `python3 tools/foreground_acceptance.py --mode foreground`, then `--mode background`, then `--mode hidden`. These are isolated QA launches and require the actual window state. Results and the final CPU ceiling remain pending; procedure and evidence limits are in [Validation](docs/validation.md).
