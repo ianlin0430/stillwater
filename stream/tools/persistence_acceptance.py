@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Real quit -> relaunch persistence acceptance for the packaged app, in isolated --persist-qa mode.
 
-Never launches the app without --persist-qa. The user's real stream.world/.bak/preferences.cfg are only hashed.
+Never launches the app without --persist-qa. Real reef/legacy saves and preferences are only hashed.
 Exit triggers:
   auto      System Events (needs Accessibility for the calling process; denied -> mode UNVERIFIED).
   external  harness writes pending-action.json and waits for someone to perform the real UI action.
@@ -63,6 +63,17 @@ def load(p):
         return json.loads(p.read_text())
     except (FileNotFoundError, ValueError):
         return None
+
+
+def isolated_world_path(launch, directory):
+    """Use the app's reported v3 path; never fall back to a legacy/real save."""
+    path = pathlib.Path(launch.get('path', '')).resolve()
+    expected = directory.resolve() / 'reef.world'
+    if path != expected:
+        raise ValueError(f'expected isolated {expected}, app reported {path}')
+    if not path.is_file():
+        raise FileNotFoundError(f'app did not create isolated {path}')
+    return path
 
 
 class Run:
@@ -265,7 +276,13 @@ class Run:
             self.check('launch 1 writes launch-1.json', 'FAIL', 'timeout')
             return self.result(before, real_hashes())
         self.check('launch 1 isolated path', 'PASS' if '/persistence-qa/' + self.run_id + '/' in l1['path'] and l1['mode'] == 'persist-qa' else 'FAIL', l1['path'])
-        world = self.dir / 'stream.world'
+        try:
+            world = isolated_world_path(l1, self.dir)
+        except (OSError, ValueError) as error:
+            proc.kill()
+            proc.wait()
+            self.check('isolated reef save available for periodic check', 'FAIL', str(error))
+            return self.result(before, real_hashes())
         m0 = world.stat().st_mtime
         time.sleep(75)
         saved = world.stat().st_mtime > m0 + 30
@@ -273,7 +290,7 @@ class Run:
         # suspended path (saves on enter/leave instead). Launch log records those transitions.
         flips = [l for l in (self.out / f'{self.run_id}-launch-1.log').read_text().splitlines() if 'suspended_view=' in l and float(l.split(' at ')[-1]) > m0]
         self.check('periodic save while running', 'PASS' if saved else 'UNVERIFIED' if flips else 'FAIL',
-                   f'stream.world mtime +{world.stat().st_mtime - m0:.1f}s after launch save; suspend transitions: {flips}')
+                   f'{world.name} mtime +{world.stat().st_mtime - m0:.1f}s after launch save; suspend transitions: {flips}')
         if self.mode == 'window_close':
             ok, msg = self.close_window(proc)
         elif self.mode == 'cmd_q':
