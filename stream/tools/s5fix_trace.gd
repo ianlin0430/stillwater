@@ -35,10 +35,6 @@ func _initialize() -> void:
 			var s:="w%s t%.1f %s hd%.2f tn%.2f sp%.1f p(%.0f,%.0f) v(%.1f,%.1f) dir%d act %s t(%.0f,%.0f) aim %s" % [str(a.has("nav_wait")),t,a.species,a.heading,a.turn,a.speed,a.x,a.y,a.vx,a.vy,a.direction,a.activity,a.tx,a.ty,str(w._aim(a).round())]
 			s+=" avoid(%.1f,%.1f)" % [a.get("avoid_x",0.0),a.get("avoid_y",0.0)]
 			if a.has("nav_tx"):
-				var r: PackedVector2Array=w._radii_of(a)
-				var to: Vector2=w._navigate(a,Vector2(a.x,a.y),w._aim(a),r)
-				s+=" steer(%.0f,%.0f) wait %s" % [to.x,to.y,str(w._must_wait(a,Vector2(a.x,a.y),(to-Vector2(a.x,a.y)).normalized()))]
-			if a.has("nav_tx"):
 				s+=" nav k%d from(%.0f,%.0f) to(%.0f,%.0f) route %s" % [a.nav_k,a.nav_x,a.nav_y,a.nav_tx,a.nav_ty,str(Array(w._route(a)).map(func(v): return v.round()))]
 			var nb: Array=[]
 			for o in w.state.animals:

@@ -18,7 +18,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 APP = ROOT / 'builds/Stillwater Reef.app'
 EXE = APP / 'Contents/MacOS/Stillwater Reef'
 USER = pathlib.Path.home() / 'Library/Application Support/Godot/app_userdata/Stillwater Reef'
-REAL = ['stream.world', 'stream.world.bak', 'preferences.cfg']
+REAL = ['reef.world', 'reef.world.bak', 'stream.world', 'stream.world.bak', 'preferences.cfg']
 PROC = 'Stillwater Reef.app/Contents/MacOS/Stillwater Reef'
 MODES = ['window_close', 'cmd_q', 'hidden_close']
 EXTRA_MODES = ['hidden_resume']
@@ -300,7 +300,7 @@ class Run:
                    f"backup={l2['post']['backup']} preserved={l2['post']['preserved']} error={l2['post']['error']}")
 
     def result(self, before, after, *fallbacks):
-        self.check('user stream.world/.bak/preferences.cfg unchanged', 'PASS' if before == after else 'FAIL', json.dumps(after))
+        self.check('user reef.world, stream.world, backups and preferences unchanged', 'PASS' if before == after else 'FAIL', json.dumps(after))
         status = 'FAIL' if any(c['status'] == 'FAIL' for c in self.checks) else 'UNVERIFIED' if any(fallbacks) or any(c['status'] == 'UNVERIFIED' for c in self.checks) else 'PASS'
         return {'mode': self.mode, 'run_id': self.run_id, 'trigger': 'programmatic' if self.mode == 'hidden_close' else self.trigger,
                 'status': status, 'user_hashes_before': before, 'user_hashes_after': after, 'checks': self.checks,

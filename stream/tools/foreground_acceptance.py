@@ -8,8 +8,8 @@ USER = pathlib.Path.home() / 'Library/Application Support/Godot/app_userdata/Sti
 APP = ROOT / 'builds/Stillwater Reef.app'
 EXE = str(APP / 'Contents/MacOS/Stillwater Reef')
 def digest():
-    p = USER / 'stream.world'
-    return hashlib.sha256(p.read_bytes()).hexdigest() if p.exists() else None
+    names = ['reef.world', 'reef.world.bak', 'stream.world', 'stream.world.bak', 'preferences.cfg']
+    return {name: hashlib.sha256((USER/name).read_bytes()).hexdigest() if (USER/name).exists() else 'missing' for name in names}
 def write(name, data):
     tmp = OUT / (name + '.tmp')
     tmp.write_text(json.dumps(data, indent=2))
