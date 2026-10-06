@@ -313,7 +313,7 @@ func set_scene(scene_id: String) -> bool:
 		a.decision_at=state.elapsed
 		a.activity="Nestling" if a.species=="clownfish" else "Resting"
 		_forget_around(a)
-		for key: String in ["food_id","home_intent_x","home_intent_y","home_intent_face","trip_intent_x","trip_intent_y","trip_intent_face","trip_intent_route","pass_claims","pass_tx","pass_ty","pass_from_x","pass_from_y","pass_route","hitch_x","hitch_y","den_x","den_y"]:
+		for key: String in ["food_id","home_intent_x","home_intent_y","home_intent_face","trip_intent_x","trip_intent_y","trip_intent_face","trip_intent_route","pass_claims","pass_tx","pass_ty","pass_from_x","pass_from_y","pass_route","hitch_x","hitch_y","hitch_path","den_x","den_y"]:
 			a.erase(key)
 	# Pellets belong to their original habitat; recycle their material exactly.
 	for pellet: Dictionary in state.get("food",[]):
@@ -336,16 +336,22 @@ func _rehome() -> void:
 		if same.is_empty():
 			lost.append(a)
 		elif a.home_x!=same.x or a.home_y!=same.y:
+			a.erase("hitch_path")
 			a.home_x=same.x
 			a.home_y=same.y
 			a.decision_at=minf(a.decision_at,state.elapsed)
 	for a: Dictionary in lost:
 		# (Not counted as taken while it looks: its old key matches no home now.)
 		var h: Dictionary=_nearest_free(a.species,Vector2(a.home_x,a.home_y))
+		a.erase("hitch_path")
 		a.home={"kind":h.kind,"slot":h.slot,"i":h.i}
 		a.home_x=h.x
 		a.home_y=h.y
 		a.decision_at=minf(a.decision_at,state.elapsed)
+
+	for a: Dictionary in state.animals:
+		if a.species=="seahorse" and (not a.has("hitch_x") or Vector2(a.hitch_x,a.hitch_y).distance_to(Vector2(a.home_x,a.home_y))>.001):
+			a.hitch_path=_hitch_path(a,_hitch_center(a))
 
 # Depth band [top, bottom] of a species in this world's scene.
 func band(species: String) -> Array:
@@ -388,6 +394,7 @@ func spawn(species: String, age: float = 0, parent: int = 0) -> Dictionary:
 		a.nestle=0.65
 		a.activity="Nestling"
 	if species=="seahorse":
+		a.direction=_hitch_facing(a)
 		var held: Vector2=_hitch_center(a)
 		a.x=held.x
 		a.y=held.y
@@ -576,9 +583,13 @@ func _seek_food(a: Dictionary) -> bool:
 		for f: Dictionary in state.get("food",[]):
 			if f.settled or f.y>band[1]+FOOD.eat:
 				continue
-			if a.species=="clownfish" and Vector2(f.x-a.home_x,f.y-a.home_y).length()>120.0:
-				continue
-			var d: float=Vector2(a.x,a.y).distance_to(Vector2(f.x,clampf(f.y,band[0],band[1])))
+			var noticed_y: float=f.y
+			if a.species=="clownfish":
+				if absf(f.x-a.home_x)>120.0: continue
+				# Wait below a falling pellet within the home feeding radius.
+				var reach: float=sqrt(14400.0-pow(f.x-a.home_x,2.0))
+				noticed_y=clampf(f.y+FOOD.sink*3.0,a.home_y-reach,a.home_y+reach)
+			var d: float=Vector2(a.x,a.y).distance_to(Vector2(f.x,clampf(noticed_y,band[0],band[1])))
 			if d<gap:
 				best=f
 				gap=d
@@ -591,6 +602,9 @@ func _seek_food(a: Dictionary) -> bool:
 	a.tx=best.x
 	# Aim where the sinking pellet will be when the fish gets there (at most 3 s ahead).
 	a.ty=clampf(best.y+FOOD.sink*minf(3.0,Vector2(a.x,a.y).distance_to(Vector2(best.x,best.y))/SWIM[a.species].cruise),band[0],band[1])
+	if a.species=="clownfish":
+		var reach: float=sqrt(maxf(0.0,14400.0-pow(best.x-a.home_x,2.0)))
+		a.ty=clampf(a.ty,a.home_y-reach,a.home_y+reach)
 	# Choose again as soon as the food is gone.
 	a.decision_at=state.elapsed
 	return true
@@ -633,7 +647,7 @@ func _move(delta: float) -> void:
 		var follower: bool=chromis and a.id!=lead.id
 		if sleeping and not sheltered:
 			_clown_return(a,"Sleeping")
-		if not startled and not sheltered and not sleeping and not _seek_food(a):
+		if not startled and not sheltered and not sleeping and (species=="seahorse" or not _seek_food(a)):
 			if follower:
 				_follow(a,lead)
 			elif state.elapsed>=a.decision_at:
@@ -645,6 +659,7 @@ func _move(delta: float) -> void:
 					_choose_seahorse(a)
 				elif not _home_intent_pending(a,p):
 					_choose_home(a)
+		var hitch_trip: bool=species=="seahorse" and a.activity in ["Returning","Drifting"] and (a.has("hitch_path") and not a.hitch_path.is_empty() or Vector2(a.tx,a.ty).distance_to(_hitch_center(a))<8.0)
 		var clown_local: bool=species=="clownfish" and a.activity in ["Nestling","Foraging","Sheltering","Sleeping","Feeding"]
 		# Its band, but never so low that the body dips into the bed (a scene's band may reach below
 		# the bed where the sand rises, e.g. the royal gramma's; S4 audit_space).
@@ -654,7 +669,7 @@ func _move(delta: float) -> void:
 		var radii: PackedVector2Array=_radii_of(a)
 		# Select a real destination, rather than steering at a substitute while the
 		# decision system still believes the old destination is outstanding.
-		if not follower and not startled and not clown_local and not a.has("food_id") and not _obstacles.is_empty() and a.activity!="Resting" and a.ty>=band[0] and a.ty<=band[1]:
+		if not follower and not startled and not clown_local and not hitch_trip and not a.has("food_id") and not _obstacles.is_empty() and a.activity!="Resting" and a.ty>=band[0] and a.ty<=band[1]:
 			var chosen: Vector2=Vector2(a.tx,a.ty)
 			if not a.has("home_x") or chosen.distance_to(Vector2(a.home_x,a.home_y))>HOME[species].radius:
 				var open: Vector2=_open_target(a,chosen)
@@ -712,7 +727,7 @@ func _move(delta: float) -> void:
 		# Reserve all single-file spans before setting out, including straight approaches.
 		# A denied excursion chooses a staging destination in open water; it never queues
 		# inside the neck. Claims live on the animal so save/restore preserves ownership.
-		if not hovering and not resting and not home_hover and not startled and not _escaping and not follower and not clown_local and not a.has("food_id"):
+		if not hovering and not resting and not home_hover and not startled and not _escaping and not follower and not clown_local and not hitch_trip and not a.has("food_id"):
 			if not _reserve_route(a,p,target):
 				var staging: Vector2=_staging_target(a,p,target)
 				a.tx=staging.x
@@ -822,6 +837,9 @@ func _move(delta: float) -> void:
 			cfg=cfg.duplicate()
 			cfg.scull=speed
 			_last_scull=true
+		if species=="seahorse" and a.activity in ["Returning","Drifting"] and (p.distance_to(_hitch_center(a))<20.0 or hitch_trip and gap<20.0):
+			face=_hitch_facing(a)
+			_last_scull=true
 		var velocity: Vector2=_swim(a,desired,speed,cruise,cfg,delta,a.activity=="Startled",face,climbing)
 		var free: Vector2=p+velocity*delta
 		# Keep each fish in its own layer (the shoaling push once carried hatchetfish down).
@@ -831,6 +849,7 @@ func _move(delta: float) -> void:
 		if next.distance_to(free)>RELOCATION:
 			a.relocated_at=state.elapsed
 		# Its centre never enters an obstacle: a step across an edge slides along it (S5).
+		next=_keep_home_body_space(a,p,next)
 		var kept: Vector2=_keep_out(p,next,lo,hi,radii)
 		if kept!=next:
 			velocity=(kept-p)/delta
@@ -840,6 +859,16 @@ func _move(delta: float) -> void:
 		var ceiling_y: float=minf(_bands[species][1],bed_y(next.x)-_bodies[a.id].y*.5)
 		if next.y>ceiling_y:
 			next.y=ceiling_y
+			velocity=(next-p)/delta
+		if _has_home_intent(a):
+			var home:=Vector2(a.home_x,a.home_y)
+			if p.distance_to(home)<=HOME[species].radius+.001 and next.distance_to(home)>HOME[species].radius:
+				var bounded: Vector2=home+(next-home).limit_length(HOME[species].radius-.001)
+				next=bounded if _blocker(p,bounded,radii,-1)<0 else p
+		velocity=(next-p)/delta
+		var spaced: Vector2=_keep_home_body_space(a,p,next)
+		if spaced!=next:
+			next=spaced if _blocker(p,spaced,radii,-1)<0 else p
 			velocity=(next-p)/delta
 		a.x=next.x
 		a.y=next.y
@@ -860,6 +889,23 @@ func _body(a: Dictionary) -> Vector2:
 	return Vector2(b[0],b[1])*animal_scale(a)
 
 # Steers `desired` (px/s) so this swimmer's body keeps clear of the others (SEPARATE).
+# Same-species home residents may touch, but never pass through another body.
+# Clip only a new crossing of the allowed box; steering still owns the dodge.
+func _keep_home_body_space(a: Dictionary, p: Vector2, next: Vector2) -> Vector2:
+	if a.species not in ["seahorse","royal_gramma"]: return next
+	for o: Dictionary in state.animals:
+		if o.id==a.id or o.species!=a.species: continue
+		var r: Vector2=(_bodies[a.id]+_bodies[o.id])*.4+Vector2.ONE*.01
+		var at:=Vector2(o.x,o.y)
+		var rel: Vector2=next-at
+		if absf(rel.x)>=r.x or absf(rel.y)>=r.y: continue
+		var before: Vector2=p-at
+		if absf(before.x)>=r.x-.001:
+			next.x=at.x+signf(before.x)*r.x
+		elif absf(before.y)>=r.y-.001:
+			next.y=at.y+signf(before.y)*r.y
+	return next
+
 func _avoid(a: Dictionary, p: Vector2, desired: Vector2, speed: float) -> Vector2:
 	_dodge=0.0
 	# A resting chromis stays put; the others go around it.
@@ -868,7 +914,8 @@ func _avoid(a: Dictionary, p: Vector2, desired: Vector2, speed: float) -> Vector
 	var own: Vector2=_bodies[a.id]
 	var v:=Vector2(a.get("vx",0.0),a.get("vy",0.0))
 	var push:=Vector2.ZERO
-	var local: bool=a.activity=="Feeding" or a.has("home_x") and Vector2(a.tx-a.home_x,a.ty-a.home_y).length_squared()<=HOME[a.species].radius*HOME[a.species].radius
+	var local: bool=a.activity=="Feeding" or a.has("home_x") and Vector2(a.tx-a.home_x,a.ty-a.home_y).length_squared()<=HOME[a.species].radius*HOME[a.species].radius and p.distance_to(Vector2(a.home_x,a.home_y))<HOME[a.species].radius+own.x
+	if a.species=="seahorse" and a.activity in ["Returning","Drifting"]: local=false
 	var own_crossing: bool=a.species=="seahorse" and a.activity!="Resting" and absf(a.ty-a.y)>absf(a.tx-a.x) and Vector2(a.tx-a.x,a.ty-a.y).length_squared()>1600.0
 	var margin: float=SEPARATE.margin
 	var look: float=SEPARATE.look
@@ -882,13 +929,22 @@ func _avoid(a: Dictionary, p: Vector2, desired: Vector2, speed: float) -> Vector
 		# (S5-fix: two seahorses keep only SEPARATE.perch apart, enough that their bodies never
 		# overlap by a fifth: hitch points on one plant lie closer than the general spacing, and a
 		# seahorse kept off its own hitch by its neighbour hovered above it for minutes.)
-		var r: Vector2=(own+_bodies[o.id])*0.5*(SEPARATE.perch if not local and a.species=="seahorse" and o.species=="seahorse" else margin*(1.17 if mixed else SEPARATE.same))
+		var horse_pair: bool=a.species=="seahorse" and o.species=="seahorse"
+		var landing: bool=a.species=="seahorse" and a.activity in ["Returning","Drifting"] and (horse_pair or p.distance_to(_hitch_center(a))<30.0)
+		# Fixed neighbouring perches have authored spacing; do not hold an arriving
+		# horse outside its safe landing solely to preserve open-water spacing.
+		var spacing: float=.83 if landing else SEPARATE.perch if horse_pair else margin*(1.17 if mixed else SEPARATE.same)
+		var r: Vector2=(own+_bodies[o.id])*0.5*spacing
 		var rel: Vector2=p-Vector2(o.x,o.y)
 		var relv: Vector2=v-Vector2(o.get("vx",0.0),o.get("vy",0.0))
 		var t: float=clampf(-rel.dot(relv)/maxf(relv.length_squared(),0.0001),0.0,look)
 		var ahead: Vector2=rel+relv*t
 		var now: float=Vector2(rel.x/r.x,rel.y/r.y).length()
 		var q: float=minf(now,Vector2(ahead.x/r.x,ahead.y/r.y).length())
+		if landing:
+			# Perches are spaced by body boxes, including diagonal approaches.
+			now=maxf(absf(rel.x/r.x),absf(rel.y/r.y))
+			q=minf(now,maxf(absf(ahead.x/r.x),absf(ahead.y/r.y)))
 		if q>=1.0:
 			continue
 		var schooling: bool=a.species=="green_chromis"
@@ -911,6 +967,16 @@ func _avoid(a: Dictionary, p: Vector2, desired: Vector2, speed: float) -> Vector
 			continue
 		# Dodge up or down, away from the other (the upper fish rises; ids break a tie).
 		var up: float=signf(rel.y) if absf(rel.y)>1.0 else (1.0 if a.id>o.id else -1.0)
+		# A pass must fit the actual water, including the bed at the other body.
+		# Always passing on the current side traps a lower fish against the sand.
+		var low: float=minf(_bands[a.species][1],bed_y(o.x)-own.y*.5)
+		var forced_side: bool=false
+		if up>0.0 and o.y+r.y>low:
+			up=-1.0
+			forced_side=true
+		elif up<0.0 and o.y-r.y<_bands[a.species][0]:
+			up=1.0
+			forced_side=true
 		var side: float=signf(rel.x) if absf(rel.x)>1.0 else 0.0
 		var vertical: bool=not local and absf(desired.y)>absf(desired.x)
 		var dodge: Vector2=Vector2(side if side!=0.0 else (1.0 if a.id>o.id else -1.0),up*0.25) if vertical else Vector2(side*0.5,up)
@@ -942,6 +1008,8 @@ func _avoid(a: Dictionary, p: Vector2, desired: Vector2, speed: float) -> Vector
 				# Always retreating above a body below it creates a permanent descent queue.
 				if Vector2(a.tx-a.x,a.ty-a.y).length_squared()>1600.0:
 					if along.dot(desired)<0.0:
+						along=-along
+					if forced_side and absf(along.y)>.1 and signf(along.y)!=up:
 						along=-along
 				elif absf(along.y)>0.3 and signf(along.y)!=up or absf(along.y)<=0.3 and signf(along.x)!=aside:
 					along=-along
@@ -998,7 +1066,7 @@ func _swim(a: Dictionary, desired: Vector2, cap: float, cruise: float, cfg: Dict
 	# Headway: less while turning, hardly any while still facing away from the way to go.
 	# Headway: what lies ahead of the body (none while still facing away), and some to climb or dive.
 	# (Climbing round an obstacle steeper than it can pitch, S5: only the level part; it sculls the rest.)
-	var along: float=(0.0 if _last_scull else maxf(0.0,desired.x*cos(psi)))+(0.0 if climbing else absf(desired.y)*0.6)
+	var along: float=0.0 if _last_scull else maxf(0.0,desired.x*cos(psi))+(0.0 if climbing else absf(desired.y)*0.6)
 	along=minf(along,cruise*SWIM.startle_speed)
 	var full: float=cfg.push*cfg.drag*maxf(cruise,1.0)
 	var thrust: float=a.get("thrust",0.0)
@@ -1084,7 +1152,7 @@ func _home_spots(species: String) -> Array:
 # Whether an adult of the species can reach point p (moved clear of the obstacles and into its
 # band as its aim would be) from the main water: a cell of the main water within 2 cells of it.
 func _opens(species: String, p: Vector2) -> bool:
-	var grid: Array=_grid(species+"/"+str(1.0),species,1.0)
+	var grid: Array=_grid(species+"/"+str(1.0)+"/"+str(p.x)+"/"+str(p.y),species,1.0)
 	var part: PackedInt32Array=grid[3]
 	var w: int=int(1280.0/NAV.cell)
 	var h: int=int(720.0/NAV.cell)
@@ -1092,7 +1160,9 @@ func _opens(species: String, p: Vector2) -> bool:
 	var band: Array=[_bands[species][0],minf(_bands[species][1],bed_y(p.x)-half)]
 	var radii:=PackedVector2Array()
 	for o: Dictionary in _obstacles:
-		radii.append(Vector2(o.rx,o.ry)+Vector2(BODY[species][0],BODY[species][1])*0.5*OBSTACLE.body)
+		var r: Vector2=Vector2(o.rx,o.ry)+Vector2(BODY[species][0],BODY[species][1])*0.5*OBSTACLE.body
+		if Vector2((p.x-o.cx)/r.x,(p.y-o.cy)/r.y).length_squared()<1.0: r=Vector2(o.rx+OBSTACLE.pad,o.ry+OBSTACLE.pad)
+		radii.append(r)
 	var t: Vector2=_clear_of(Vector2(p.x,clampf(p.y,band[0],band[1])),band,radii,Vector2.INF)
 	var gx: int=int(t.x/NAV.cell)
 	var gy: int=int(t.y/NAV.cell)
@@ -1126,7 +1196,8 @@ func _nearest_free(species: String, from: Vector2) -> Dictionary:
 		used[key]=used.get(key,0)+1
 	var best: Dictionary=spots[0]
 	var gap: float=INF
-	for s: Dictionary in spots:
+	var caves: Array=spots.filter(func(h): return h.kind=="shelter" and used.get(_home_key(h),0)<h.capacity) if species=="royal_gramma" else []
+	for s: Dictionary in (caves if not caves.is_empty() else spots):
 		var d: float=from.distance_to(Vector2(s.x,s.y))
 		if used.get(_home_key(s),0)<s.capacity and d<gap:
 			best=s
@@ -2041,23 +2112,104 @@ func _choose_clown(a: Dictionary) -> void:
 	a.decision_at=state.elapsed+motion_rng.randf_range(8.0,12.0) if foraging else state.elapsed+motion_rng.randf_range(30.0,50.0)
 
 # Hitch coordinates are the tail's contact, not the centre of the upright body.
+func _hitch_facing(a: Dictionary) -> float:
+	var slot: Dictionary=scene.slot(a.home.slot)
+	return 1.0 if slot.is_empty() or a.home.i in [1,3] or a.home_x>=slot.anchor.x else -1.0
+
 func _hitch_center(a: Dictionary) -> Vector2:
-	var grip: Vector2=SEAHORSE_GRIP*Vector2(a.direction,1)*animal_scale(a)
+	var grip: Vector2=SEAHORSE_GRIP*Vector2(_hitch_facing(a),1)*animal_scale(a)
 	return Vector2(a.home_x,a.home_y)-grip
+
+# Seahorses travel around attached neighbors instead of crossing their bodies.
+func _horse_segment_clear(a: Dictionary, p: Vector2, target: Vector2) -> bool:
+	var way: Vector2=target-p
+	for o: Dictionary in state.animals:
+		if o.id==a.id or o.species!="seahorse": continue
+		var r: Vector2=(_body(a)+_body(o))*.4+Vector2.ONE*3.0
+		var at:=Vector2(o.x,o.y)
+		var first: float=0.0
+		var last: float=1.0
+		for axis: int in 2:
+			if absf(way[axis])<.0001:
+				if absf(p[axis]-at[axis])>=r[axis]: first=2.0
+			else:
+				var lo: float=(at[axis]-r[axis]-p[axis])/way[axis]
+				var hi: float=(at[axis]+r[axis]-p[axis])/way[axis]
+				first=maxf(first,minf(lo,hi))
+				last=minf(last,maxf(lo,hi))
+		if first<last:
+			var rel: Vector2=p-at
+			var outward: bool=rel.x*way.x>0.0 if absf(rel.x/r.x)>absf(rel.y/r.y) else rel.y*way.y>0.0
+			if first<=.0001 and outward: continue
+			return false
+	return true
+
+func _hitch_path(a: Dictionary, target: Vector2) -> Array:
+	var p:=Vector2(a.x,a.y)
+	if _horse_segment_clear(a,p,target): return [[target.x,target.y]]
+	var left: float=minf(p.x,target.x)
+	var right: float=maxf(p.x,target.x)
+	for o: Dictionary in state.animals:
+		if o.species!="seahorse" or o.id==a.id: continue
+		var room: float=(_body(a).x+_body(o).x)*.5*SEPARATE.perch+10.0
+		left=minf(left,o.x-room)
+		right=maxf(right,o.x+room)
+	var top: float=minf(p.y,target.y)
+	var bottom: float=maxf(p.y,target.y)
+	for o: Dictionary in state.animals:
+		if o.species!="seahorse" or o.id==a.id: continue
+		var room: float=(_body(a).y+_body(o).y)*.5*SEPARATE.perch+10.0
+		top=minf(top,o.y-room)
+		bottom=maxf(bottom,o.y+room)
+	var best: Array=[]
+	var shortest: float=INF
+	var options: Array=[]
+	for x: float in [left,right]:
+		options.append([p,Vector2(x,p.y),Vector2(x,target.y),target])
+		for y: float in [top,bottom]:
+			if y<_bands.seahorse[0] or y>minf(_bands.seahorse[1],bed_y(x)-_body(a).y*.5): continue
+			options.append([p,Vector2(x,p.y),Vector2(x,y),Vector2(target.x,y),target])
+	var radii: PackedVector2Array=_radii_of(a)
+	for points: Array in options:
+		for i in range(1,points.size()):
+			var v: Vector2=points[i]
+			var band: Array=[_bands.seahorse[0],minf(_bands.seahorse[1],bed_y(v.x)-_body(a).y*.5)]
+			points[i]=_clear_of(Vector2(clampf(v.x,_swim_x.x,_swim_x.y),clampf(v.y,band[0],band[1])),band,radii,Vector2.INF)
+		if points[-1].distance_to(target)>.001: continue
+		var length: float=0.0
+		var clear: bool=true
+		for i in range(1,points.size()):
+			clear=clear and _horse_segment_clear(a,points[i-1],points[i])
+			length+=points[i-1].distance_to(points[i])
+		if clear and length<shortest:
+			shortest=length
+			best=points.slice(1).map(func(v): return [v.x,v.y])
+	return best
 
 func _choose_seahorse(a: Dictionary) -> void:
 	var night: bool=state.light_hour<7 or state.light_hour>19
 	if a.has("hitch_x") and not night and motion_rng.randf()<0.12:
-		var next_home: Dictionary=_nearest_free(a.species,Vector2(a.home_x,a.home_y))
-		a.home={"kind":next_home.kind,"slot":next_home.slot,"i":next_home.i}
-		a.home_x=next_home.x
-		a.home_y=next_home.y
-		a.erase("hitch_x")
-		a.erase("hitch_y")
-		a.activity="Drifting"
+		var available: Array=_homes.seahorse.filter(func(h): return not state.animals.any(func(o): return o.species=="seahorse" and _home_key(o.home)==_home_key(h)))
+		available.sort_custom(func(h,j): return Vector2(h.x-a.home_x,h.y-a.home_y).length_squared()<Vector2(j.x-a.home_x,j.y-a.home_y).length_squared())
+		for h: Dictionary in available:
+			var candidate: Dictionary=a.duplicate()
+			candidate.home={"kind":h.kind,"slot":h.slot,"i":h.i}
+			candidate.home_x=h.x
+			candidate.home_y=h.y
+			var path: Array=_hitch_path(a,_hitch_center(candidate))
+			if path.is_empty(): continue
+			a.home=candidate.home
+			a.home_x=h.x
+			a.home_y=h.y
+			a.hitch_path=path
+			a.erase("hitch_x")
+			a.erase("hitch_y")
+			a.activity="Drifting"
+			break
 	else:
 		a.activity="Returning" if not a.has("hitch_x") else "Hitched"
 	var target: Vector2=_hitch_center(a)
+	if a.has("hitch_path") and not a.hitch_path.is_empty(): target=Vector2(a.hitch_path[0][0],a.hitch_path[0][1])
 	a.tx=target.x
 	a.ty=target.y
 	a.decision_at=state.elapsed+motion_rng.randf_range(60.0,180.0)
@@ -2078,11 +2230,26 @@ func _set_den(a: Dictionary) -> void:
 func _hold_home_pose(a: Dictionary, delta: float) -> bool:
 	if a.species=="royal_gramma":
 		_set_den(a)
-		var hidden: bool=a.activity in ["Sheltering","Sleeping"] and Vector2(a.x-a.home_x,a.y-a.home_y).length()<HOME.royal_gramma.radius
+		var home_gap: float=Vector2(a.x-a.home_x,a.y-a.home_y).length()
+		if a.activity=="Returning" and home_gap<=HOME.royal_gramma.radius:
+			a.activity="Hovering"
+		var hidden: bool=a.activity in ["Sheltering","Sleeping"] and home_gap<HOME.royal_gramma.radius+_body(a).x*.5
 		a.extend=move_toward(a.extend,0.0 if hidden and a.home.kind!="rock" else 1.0,delta/.8)
 		return false
 	if a.species!="seahorse": return false
 	var home:=_hitch_center(a)
+	if a.has("hitch_path") and not a.hitch_path.is_empty():
+		var p:=Vector2(a.x,a.y)
+		if _horse_segment_clear(a,p,home) and _blocker(p,home,_radii_of(a),-1)<0:
+			a.hitch_path=[[home.x,home.y]]
+			a.tx=home.x
+			a.ty=home.y
+		var waypoint:=Vector2(a.hitch_path[0][0],a.hitch_path[0][1])
+		if Vector2(a.x,a.y).distance_to(waypoint)<3.0:
+			a.hitch_path.pop_front()
+			var next: Vector2=Vector2(a.hitch_path[0][0],a.hitch_path[0][1]) if not a.hitch_path.is_empty() else home
+			a.tx=next.x
+			a.ty=next.y
 	var external_trip: bool=a.activity not in ["Hitched","Feeding","Startled"] and Vector2(a.tx,a.ty).distance_to(home)>8.0
 	var covered: bool=_obstacles.any(func(o): return Vector2((a.x-o.cx)/o.rx,(a.y-o.cy)/o.ry).length_squared()<1.0)
 	if a.has("hitch_x") and (external_trip or covered):
@@ -2102,7 +2269,7 @@ func _hold_home_pose(a: Dictionary, delta: float) -> bool:
 		a.ty=home.y
 		a.decision_at=state.elapsed
 	if not a.has("hitch_x"):
-		if a.activity in ["Returning","Drifting"] and Vector2(a.x,a.y).distance_to(home)<2.0:
+		if a.activity in ["Returning","Drifting"] and Vector2(a.x,a.y).distance_to(home)<2.0 and a.direction==_hitch_facing(a):
 			a.hitch_x=a.home_x
 			a.hitch_y=a.home_y
 			a.activity="Hitched"
@@ -2110,9 +2277,14 @@ func _hold_home_pose(a: Dictionary, delta: float) -> bool:
 	if state.elapsed>=a.decision_at:
 		_choose_seahorse(a)
 		if not a.has("hitch_x"): return false
+	var at:=Vector2(a.x,a.y)
+	var contact: Vector2=_keep_home_body_space(a,at,at.move_toward(home,SWIM.seahorse.scull*delta))
+	if _blocker(at,contact,_radii_of(a),-1)<0:
+		a.x=contact.x
+		a.y=contact.y
 	a.lean=sin(state.elapsed*.35+a.id)*.08
-	a.heading=0.0 if a.direction>0 else PI
-	a.pitch=0.0
+	if not a.has("heading"): a.heading=0.0 if a.direction>0 else PI
+	a.pitch=move_toward(float(a.get("pitch",0.0)),0.0,delta*SWIM.seahorse.pitch_rate)
 	a.turn=0.0
 	a.vx=0.0
 	a.vy=0.0
@@ -2143,7 +2315,7 @@ func _choose_home(a: Dictionary) -> void:
 	var home:=Vector2(a.home_x,a.home_y)
 	var sample:=home+Vector2(cos(angle),sin(angle)*0.6)*reach
 	var spot: Vector2=_bounded_home_aim(a,sample)
-	a.activity="Hovering"
+	a.activity="Returning" if Vector2(a.x,a.y).distance_to(home)>h.radius else "Hovering"
 	a.tx=spot.x
 	a.ty=spot.y
 	a.home_intent_x=spot.x
@@ -2465,7 +2637,7 @@ func _remove(a: Dictionary, cause: String) -> void:
 			ghost.exit_x=_swim_x.x if a.x<(_swim_x.x+_swim_x.y)*.5 else _swim_x.y
 			ghost.exit_y=clampf(a.y,_bands[a.species][0],_bands[a.species][1])
 			ghost.opacity=1.0
-			for key: String in ["hitch_x","hitch_y","food_id"]: ghost.erase(key)
+			for key: String in ["hitch_x","hitch_y","hitch_path","food_id"]: ghost.erase(key)
 			state.departing.append(ghost)
 		_event("death",a,a.name+" quietly left the reef.",{"cause":cause,"leaving":leaving})
 	state.causes[cause]=state.causes.get(cause,0)+1
@@ -2695,6 +2867,10 @@ static func validate(saved: Dictionary) -> bool:
 			if a.has(key) and not _number(a[key]): return false
 		if a.has("extend") and (a.extend<0.0 or a.extend>1.0): return false
 		if a.has("hitch_x")!=a.has("hitch_y"): return false
+		if a.has("hitch_path"):
+			if not a.hitch_path is Array or a.hitch_path.size()>4: return false
+			for point: Variant in a.hitch_path:
+				if not point is Array or point.size()!=2 or not _number(point[0]) or not _number(point[1]): return false
 		if a.has("nestle") and (not _number(a.nestle) or a.nestle<0.0 or a.nestle>1.0):
 			return false
 		# On a route round an obstacle (S5): planned from nav_x/nav_y to nav_tx/nav_ty, on leg nav_k.

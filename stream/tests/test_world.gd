@@ -848,15 +848,17 @@ func new_cast_checks() -> void:
 				continue
 			seen[x.activity]=true
 			if x.species=="seahorse" and x.activity=="Hitched": hitched_ticks[x.id]=hitched_ticks.get(x.id,0)+1
-			activities_ok=activities_ok and x.activity in (["Nestling","Foraging"] if x.species=="clownfish" else ["Hitched","Drifting","Returning"] if x.species=="seahorse" else ["Hovering","Sleeping","Resting"])
+			activities_ok=activities_ok and x.activity in (["Nestling","Foraging"] if x.species=="clownfish" else ["Hitched","Drifting","Returning"] if x.species=="seahorse" else ["Hovering","Sleeping","Resting","Returning"])
 			band_ok=band_ok and in_band(d,x)
-			far[x.species]=maxf(far.get(x.species,0.0),home_dist(x))
+			# S7 measures a held horse against its contact; drifting may traverse homes.
+			if x.species!="seahorse" or x.has("hitch_x"):
+				far[x.species]=maxf(far.get(x.species,0.0),home_dist(x))
 			travelled[x.id]=travelled.get(x.id,0.0)+Vector2(x.x,x.y).distance_to(before.get(x.id,Vector2(x.x,x.y)))
 	check(band_ok,"The new fish keep to their depth bands")
 	check(seen.has("Hovering") and seen.has("Nestling") and seen.has("Foraging") and activities_ok,"By day the new fish swim about their homes (%s)" % str(seen.keys()))
 	for species: String in NEW_CAST:
 		var r: float=StreamWorld.HOME[species].radius
-		check(far.get(species,INF)<=2.0*r,"A %s stays near its home (at most %.0f px away, limit %.0f)" % [species,far.get(species,INF),2.0*r])
+		check(far.get(species,INF)<=2.0*r,"A %s stays near its home while resident (at most %.0f px away, limit %.0f)" % [species,far.get(species,INF),2.0*r])
 	check(travelled.size()==6 and of(d,"clownfish").all(func(x): return travelled[x.id]>100.0) and of(d,"royal_gramma").all(func(x): return travelled[x.id]>100.0),"Clownfish and grammas move about (%s px in 30 min)" % str(travelled.values().map(func(v): return int(v))))
 	# S7 replaces the provisional S4 roam rule: seahorses spend >=80% of daylight hitched.
 	check(of(d,"seahorse").all(func(x): return hitched_ticks.get(x.id,0)>=9000*.8),"Seahorses spend at least 80% of daylight hitched")

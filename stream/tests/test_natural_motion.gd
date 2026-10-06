@@ -86,6 +86,7 @@ func kinematics_checks() -> void:
 		var lead: Dictionary=of(w,"green_chromis")[0]
 		var prev: Dictionary={}
 		var run: Dictionary={}
+		var previous_heading: Dictionary={}
 		for i in 3000:
 			w.advance_live(0.2)
 			for a: Dictionary in w.state.animals:
@@ -134,6 +135,7 @@ func kinematics_checks() -> void:
 		w.state.light_hour=12.0
 		w.state.ecology_remainder=-1.0e9
 		var run: Dictionary={}
+		var previous_heading: Dictionary={}
 		for i in 3000:
 			for a: Dictionary in w.state.animals:
 				if Vector2(a.x,a.y).distance_to(Vector2(a.tx,a.ty))<150.0:
@@ -143,6 +145,11 @@ func kinematics_checks() -> void:
 				a.decision_at=w.state.elapsed+1.0e6
 			w.advance_live(0.2)
 			for a: Dictionary in w.state.animals:
+				if previous_heading.has(a.id):
+					var dh: float=absf(a.heading-previous_heading[a.id])
+					heading_ok=heading_ok and dh<=SWIM.seahorse.turn*0.2+0.0001
+					max_turn.seahorse=maxf(max_turn.seahorse,dh)
+				previous_heading[a.id]=a.heading
 				var steady: bool=a.speed>1.0 and absf(cos(a.heading))>0.95 and Vector2(a.x,a.y).distance_to(Vector2(a.tx,a.ty))>120 and Vector2(a.avoid_x,a.avoid_y).length()<1.0
 				if steady:
 					run[a.id]=run.get(a.id,[])+[a.speed]
