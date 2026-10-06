@@ -238,6 +238,7 @@ func _use_scene(scene_id: String) -> void:
 	for species: String in ACTIVE_SPECIES:
 		var band: Vector2=scene.band(species)
 		_bands[species]=[band.x,band.y]
+	_sync_chromis_layer(false)
 	_use_decor()
 
 # Reads the obstacles and the homes of the current scene's decor (never saved).
@@ -274,6 +275,11 @@ func set_decor(slot: String, style: String) -> bool:
 		for key: String in ["pass_claims","pass_tx","pass_ty","pass_from_x","pass_from_y","pass_route"]:
 			a.erase(key)
 	_rehome()
+	for a: Dictionary in state.animals:
+		if a.has("night_roost_x") and not _night_shelters().any(func(h): return Vector2(a.night_roost_x-h.x,a.night_roost_y-h.y).length()<=60.0):
+			a.erase("night_roost_x")
+			a.erase("night_roost_y")
+			a.decision_at=minf(a.decision_at,state.elapsed)
 	return true
 
 # Scene changes are habitat changes: no ecological or motion RNG is consumed.
@@ -313,7 +319,7 @@ func set_scene(scene_id: String) -> bool:
 		a.decision_at=state.elapsed
 		a.activity="Nestling" if a.species=="clownfish" else "Resting"
 		_forget_around(a)
-		for key: String in ["food_id","home_intent_x","home_intent_y","home_intent_face","trip_intent_x","trip_intent_y","trip_intent_face","trip_intent_route","pass_claims","pass_tx","pass_ty","pass_from_x","pass_from_y","pass_route","hitch_x","hitch_y","hitch_path","den_x","den_y"]:
+		for key: String in ["food_id","home_intent_x","home_intent_y","home_intent_face","trip_intent_x","trip_intent_y","trip_intent_face","trip_intent_route","pass_claims","pass_tx","pass_ty","pass_from_x","pass_from_y","pass_route","hitch_x","hitch_y","hitch_path","hitch_departed_at","night_roost_x","night_roost_y","den_x","den_y"]:
 			a.erase(key)
 	# Pellets belong to their original habitat; recycle their material exactly.
 	for pellet: Dictionary in state.get("food",[]):
@@ -326,6 +332,7 @@ func set_scene(scene_id: String) -> bool:
 # one and choose their next move now. No rng draw.
 func _rehome() -> void:
 	var lost: Array=[]
+	var occupied: Dictionary={}
 	for a: Dictionary in state.animals:
 		if not a.has("home"):
 			continue
@@ -333,9 +340,12 @@ func _rehome() -> void:
 		for h: Dictionary in _homes[a.species]:
 			if _home_key(h)==_home_key(a.home):
 				same=h
-		if same.is_empty():
+		var key: String=a.species+"/"+_home_key(a.home)
+		if same.is_empty() or occupied.get(key,0)>=same.capacity:
 			lost.append(a)
-		elif a.home_x!=same.x or a.home_y!=same.y:
+			continue
+		occupied[key]=occupied.get(key,0)+1
+		if a.home_x!=same.x or a.home_y!=same.y:
 			a.erase("hitch_path")
 			a.home_x=same.x
 			a.home_y=same.y
@@ -404,7 +414,13 @@ func spawn(species: String, age: float = 0, parent: int = 0) -> Dictionary:
 		a.hitch_x=a.home_x
 		a.hitch_y=a.home_y
 		a.lean=0.0
+		a.hitch_rest_until=state.elapsed+60.0
 	if species=="royal_gramma":
+		var clear: Vector2=_clear_spot(species,Vector2(a.x,a.y),a)
+		a.x=clear.x
+		a.y=clear.y
+		a.tx=clear.x
+		a.ty=clear.y
 		_set_den(a)
 	state.next_id += 1
 	state.animals.append(a)
@@ -622,6 +638,7 @@ func _eat(a: Dictionary, f: Dictionary) -> void:
 	_live=false
 
 func _move(delta: float) -> void:
+	_sync_chromis_layer()
 	if not state.get("food",[]).is_empty():
 		_sink_food(delta)
 	# The lowest-id chromis leads the school (it decides; the others follow). Empty if none.
@@ -828,6 +845,10 @@ func _move(delta: float) -> void:
 			face=lead.direction
 		else:
 			face=_trip_facing(a,offset,way,cfg.scull)
+		# A hitch journey can shortcut its last obstacle leg. Its saved route
+		# facing then belongs to that old leg, rather than the remaining approach.
+		if hitch_trip and way==Vector2.ZERO and absf(offset.x)>maxf(cfg.scull,offset.length()*.45):
+			face=signf(offset.x)
 		if home_hover:
 			if _has_home_intent(a):
 				desired=_bound_home_steering(a,p,desired)
@@ -1271,11 +1292,11 @@ func _clear_of(t: Vector2, band: Array, radii: PackedVector2Array, fallback: Vec
 
 # A new fish's spot (spawn, birth, arrival, the opening school) kept `pad` px clear of every
 # obstacle, in its band above the bed.
-func _clear_spot(species: String, p: Vector2) -> Vector2:
+func _clear_spot(species: String, p: Vector2, a: Dictionary={}) -> Vector2:
 	for i in 3:
 		var band: Array=[_bands[species][0],minf(_bands[species][1],bed_y(p.x)-BODY[species][1]*0.5)]
 		p=Vector2(clampf(p.x,_swim_x.x,_swim_x.y),clampf(p.y,band[0],band[1]))
-		p=_clear_of(p,band,_radii_of({}),p)
+		p=_clear_of(p,band,_radii_of(a),p)
 	return p
 
 # Where fish a aims this tick: its target, in its band (above the sand there, its body clear of it)
@@ -2194,7 +2215,9 @@ func _hitch_path(a: Dictionary, target: Vector2) -> Array:
 
 func _choose_seahorse(a: Dictionary) -> void:
 	var night: bool=state.light_hour<7 or state.light_hour>19
-	if a.has("hitch_x") and not night and motion_rng.randf()<0.12:
+	# Finish intercepting food already falling toward this clasp before leaving.
+	var food_arriving: bool=SPECIES.seahorse.reserve-a.energy>=FOOD.mass*.8 and state.get("food",[]).any(func(f): return not f.settled and absf(f.x-a.x)<FOOD.eat and f.y<a.y+FOOD.eat and a.y-f.y<FOOD.notice)
+	if a.has("hitch_x") and not night and not food_arriving and state.elapsed>=a.get("hitch_rest_until",0.0) and motion_rng.randf()<0.5:
 		var available: Array=_homes.seahorse.filter(func(h): return not state.animals.any(func(o): return o.species=="seahorse" and _home_key(o.home)==_home_key(h)))
 		available.sort_custom(func(h,j): return Vector2(h.x-a.home_x,h.y-a.home_y).length_squared()<Vector2(j.x-a.home_x,j.y-a.home_y).length_squared())
 		for h: Dictionary in available:
@@ -2202,12 +2225,13 @@ func _choose_seahorse(a: Dictionary) -> void:
 			candidate.home={"kind":h.kind,"slot":h.slot,"i":h.i}
 			candidate.home_x=h.x
 			candidate.home_y=h.y
-			var path: Array=_hitch_path(a,_hitch_center(candidate))
+			var path: Array=_hitch_path(candidate,_hitch_center(candidate))
 			if path.is_empty(): continue
 			a.home=candidate.home
 			a.home_x=h.x
 			a.home_y=h.y
 			a.hitch_path=path
+			a.hitch_departed_at=state.elapsed
 			a.erase("hitch_x")
 			a.erase("hitch_y")
 			a.activity="Drifting"
@@ -2279,6 +2303,9 @@ func _hold_home_pose(a: Dictionary, delta: float) -> bool:
 			a.hitch_x=a.home_x
 			a.hitch_y=a.home_y
 			a.activity="Hitched"
+			a.hitch_rest_until=state.elapsed+maxf(20.0,4.0*(state.elapsed-a.get("hitch_departed_at",state.elapsed)))
+			a.decision_at=a.hitch_rest_until
+			a.erase("hitch_departed_at")
 		else: return false
 	if state.elapsed>=a.decision_at:
 		_choose_seahorse(a)
@@ -2413,6 +2440,7 @@ func _follow(a: Dictionary, lead: Dictionary) -> void:
 	var r: float=CHROMIS.spread[0]+float((int(a.id)*17)%int(CHROMIS.spread[1]-CHROMIS.spread[0]))
 	# The school's spacing breathes a little (slowly, +-`breathe`), side to side only: a vertical
 	# breath read as a slow bob while resting (2026-09-26, user: chromis jittered at night).
+	if lead.has("night_roost_x"): r=minf(r,44.0)
 	var breath: float=1.0+CHROMIS.breathe*sin(state.elapsed*0.23+float(a.id)*0.9)
 	var band: Array=_bands[a.species]
 	a.tx=clampf(lead.x+cos(k)*r*breath*lead.direction,_roam_x.x,_roam_x.y)
@@ -2424,11 +2452,72 @@ func _follow(a: Dictionary, lead: Dictionary) -> void:
 	a.activity="Resting" if lead.activity=="Resting" and settled else "Schooling"
 	a.decision_at=state.elapsed
 
+# Daylight depth is restored only after the whole school swims back into it.
+# This is derived habitat geometry, not ecology or a position relocation.
+func _night_shelters() -> Array:
+	var out: Array=[]
+	for slot: Dictionary in scene.slots():
+		for h: Dictionary in scene.effects(slot.id,state.decor[state.scene][slot.id]).shelters:
+			if "green_chromis_night" in h.use: out.append(h)
+	return out
+
+func _sync_chromis_layer(wake: bool=true) -> void:
+	var day: Vector2=scene.band("green_chromis")
+	var night: bool=state.light_hour<7 or state.light_hour>19
+	var bottom: float=day.y
+	var extended: bool=night and not _night_shelters().is_empty()
+	for a: Dictionary in state.animals:
+		if a.species!="green_chromis": continue
+		extended=extended or a.y>day.y+.001
+		if wake and not night and a.has("night_roost_x"):
+			a.erase("night_roost_x")
+			a.erase("night_roost_y")
+			a.decision_at=minf(a.decision_at,state.elapsed)
+	if extended:
+		for point: Array in scene.data.bed: bottom=maxf(bottom,point[1])
+	if _bands.green_chromis[1]!=bottom:
+		_bands.green_chromis=[day.x,bottom]
+		_grids.clear()
+		_routes.clear()
+		_open_targets.clear()
+
+func _night_roost(a: Dictionary) -> Vector2:
+	if a.has("night_roost_x"):
+		var previous:=Vector2(a.night_roost_x,a.night_roost_y)
+		if _night_shelters().any(func(h): return previous.distance_to(Vector2(h.x,h.y))<=60.0) and _obstacles.all(func(o): return Vector2((previous.x-o.cx)/o.rx,(previous.y-o.cy)/o.ry).length_squared()>=1.0): return previous
+		a.erase("night_roost_x")
+		a.erase("night_roost_y")
+	var nearest: Dictionary={}
+	var distance: float=300.0
+	var at:=Vector2(a.x,a.y)
+	for h: Dictionary in _night_shelters():
+		var gap: float=at.distance_to(Vector2(h.x,h.y))
+		if gap<=distance:
+			nearest=h
+			distance=gap
+	if nearest.is_empty(): return Vector2.INF
+	var home:=Vector2(nearest.x,nearest.y)
+	var radii: PackedVector2Array=_radii_of(a)
+	for radius: float in [60.0,56.0,48.0]:
+		for angle: float in [-.927,-1.2,-.6,-1.8,-2.1,-2.4,-PI*.5,0.0,PI]:
+			var sample: Vector2=home+Vector2(cos(angle)*nearest.side,sin(angle))*radius
+			var band: Array=[_bands.green_chromis[0],minf(_bands.green_chromis[1],bed_y(sample.x)-_body(a).y*.5-22.0)]
+			var target: Vector2=_clear_of(Vector2(clampf(sample.x,_roam_x.x,_roam_x.y),clampf(sample.y,band[0],band[1])),band,radii,Vector2.INF)
+			if target.distance_to(home)>60.0 or target.y>bed_y(target.x)-_body(a).y*.5-22.0: continue
+			if not _obstacles.all(func(o): return Vector2((target.x-o.cx)/o.rx,(target.y-o.cy)/o.ry).length_squared()>=1.0): continue
+			a.night_roost_x=target.x
+			a.night_roost_y=target.y
+			return target
+	return Vector2.INF
+
 # The school leader's next move: a trip across the pool or a pause (mostly pauses at night).
 func _choose_activity(a: Dictionary) -> void:
+	_sync_chromis_layer()
 	var r: float=motion_rng.randf()
 	var night: bool=state.light_hour<7 or state.light_hour>19
-	var band: Array=_bands[a.species]
+	var daylight: Vector2=scene.band(a.species)
+	var band: Array=[daylight.x,daylight.y]
+	if not night and a.y>daylight.y: r=1.0
 	a.decision_at=state.elapsed+motion_rng.randf_range(18,45)
 	a.activity="Schooling"
 	# Night trips are short and stay on this side (2026-09-28, S4; the yellow tang's night rule):
@@ -2443,7 +2532,11 @@ func _choose_activity(a: Dictionary) -> void:
 		# spot each choice and reversing up and down (2026-09-26).
 		if night:
 			a.tx=clampf(a.x,_roam_x.x,_roam_x.y)
-			a.ty=clampf(a.y,band[0]+CHROMIS.spread[1]*0.5,band[1]-CHROMIS.spread[1]*0.5)
+			a.ty=clampf(a.y,_bands[a.species][0]+CHROMIS.spread[1]*0.5,minf(_bands[a.species][1],bed_y(a.x)-_body(a).y*.5)-CHROMIS.spread[1]*0.5)
+			var roost: Vector2=_night_roost(a)
+			if roost!=Vector2.INF:
+				a.tx=roost.x
+				a.ty=roost.y
 	# Give trips enough time to reach a destination instead of repeatedly
 	# abandoning distant targets. Rest/feed choices keep their independent dwell time.
 	if a.activity=="Schooling":
@@ -2782,6 +2875,19 @@ func export_state() -> Dictionary:
 	saved.motion_rng=str(motion_rng.state)
 	return saved
 
+func _saved_homes_changed() -> bool:
+	var occupied: Dictionary={}
+	for a: Dictionary in state.animals:
+		if not HOME.has(a.species): continue
+		var matches: Array=_homes[a.species].filter(func(h): return _home_key(h)==_home_key(a.home))
+		if matches.is_empty(): return true
+		var h: Dictionary=matches[0]
+		if h.x!=a.home_x or h.y!=a.home_y: return true
+		var key: String=a.species+"/"+_home_key(a.home)
+		occupied[key]=occupied.get(key,0)+1
+		if occupied[key]>h.capacity: return true
+	return false
+
 func restore(saved: Dictionary) -> bool:
 	if not validate(saved):
 		return false
@@ -2794,6 +2900,9 @@ func restore(saved: Dictionary) -> bool:
 	state.erase("rng")
 	state.erase("motion_rng")
 	_use_scene(state.scene)
+	# v3 layouts may move authored contacts without changing ecological save format.
+	if _saved_homes_changed():
+		_rehome()
 	lure={}
 	return true
 
@@ -2873,6 +2982,10 @@ static func validate(saved: Dictionary) -> bool:
 			if a.has(key) and not _number(a[key]): return false
 		if a.has("extend") and (a.extend<0.0 or a.extend>1.0): return false
 		if a.has("hitch_x")!=a.has("hitch_y"): return false
+		for key: String in ["hitch_rest_until","hitch_departed_at"]:
+			if a.has(key) and (not _number(a[key]) or a[key]<0): return false
+		if a.has("night_roost_x")!=a.has("night_roost_y"): return false
+		if a.has("night_roost_x") and (not _number(a.night_roost_x) or not _number(a.night_roost_y)): return false
 		if a.has("hitch_path"):
 			if not a.hitch_path is Array or a.hitch_path.size()>4: return false
 			for point: Variant in a.hitch_path:

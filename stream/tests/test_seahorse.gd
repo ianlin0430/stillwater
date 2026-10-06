@@ -14,11 +14,14 @@ func _initialize() -> void:
 	for arg: String in OS.get_cmdline_user_args():
 		if arg.begins_with("--seeds="): selected=Array(arg.trim_prefix("--seeds=").split(",")).map(func(s): return int(s))
 	for scene_id: String in ReefScene.IDS:
+		var trips: int=0
 		for seed_value: int in selected:
 			var w:=StreamWorld.new(seed_value,1000,scene_id)
 			w.state.light_hour=12.0
 			var horses: Array=w.state.animals.filter(func(a): return a.species=="seahorse")
 			var held: Dictionary={}
+			var last_home: Dictionary={}
+			for a: Dictionary in horses: last_home[a.id]=StreamWorld._home_key(a.home)
 			var contacts_ok: bool=true
 			var homes_unique: bool=true
 			for i in 9000:
@@ -29,6 +32,9 @@ func _initialize() -> void:
 					if a.has("hitch_x"):
 						contacts_ok=contacts_ok and Vector2(a.hitch_x-a.home_x,a.hitch_y-a.home_y).length()<.001 and Vector2(a.x,a.y).distance_to(w._hitch_center(a))<=2.001 and a.y<a.home_y
 					var key: String=StreamWorld._home_key(a.home)
+					if key!=last_home[a.id]:
+						trips+=1
+						last_home[a.id]=key
 					homes_unique=homes_unique and not key in keys
 					keys.append(key)
 			var tag: String=scene_id+"/"+str(seed_value)
@@ -40,6 +46,9 @@ func _initialize() -> void:
 			w.advance_live(120)
 			check(horses.all(func(a): return a.activity=="Hitched"),tag+": all horses hitch at night")
 			numbers[tag]=shares
+		var minutes_per_trip: float=float(selected.size()*2*30)/maxi(trips,1)
+		check(trips>0 and minutes_per_trip<=8.0,scene_id+": daylight excursions average <=8min ("+str(minutes_per_trip)+")")
+		numbers[scene_id+"/excursions"]={"trips":trips,"mean_minutes":minutes_per_trip}
 	print(JSON.stringify({"checks":checks,"failures":failures,"numbers":numbers}))
 	quit(0 if failures.is_empty() else 1)
 

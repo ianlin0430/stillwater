@@ -283,6 +283,9 @@ func feeding_checks() -> void:
 			for c: Dictionary in of(w,"green_chromis"):
 				c.energy=1.0
 			w.state.ledger.initial=w.material()-w.state.ledger["in"]+w.state.ledger.out
+			# The school has been swimming for270s since the first spot sample.
+			# Feed beside its current leader, as this assertion requires.
+			spots[k]=of(w,"green_chromis")[0].x
 		w.feed(spots[k])
 		for i in 450:
 			w.advance_live(0.2)

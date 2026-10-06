@@ -152,11 +152,11 @@ func checkpoint_path(path: String) -> String:
 # Returns {"error": ...}, {"saved": path} after an intermediate chunk, or the finished run.
 func simulate_chunk(seed_value: int, o: Dictionary) -> Dictionary:
 	var start: int=Time.get_ticks_msec()
-	var world:=StreamWorld.new(seed_value)
+	var world:=make_world(seed_value,o.scene,o.decor)
 	var t: Dictionary
 	if o.from_day==0:
 		t=new_tally(world)
-		t.merge({"seed":seed_value,"mode":o.mode,"feed":o.feed,"days":o.days})
+		t.merge({"seed":seed_value,"mode":o.mode,"feed":o.feed,"days":o.days,"scene":o.scene,"decor":o.decor})
 	else:
 		var source: String=checkpoint_path(o.checkpoint_in)
 		var saved: Dictionary=StreamStore.read(source)
@@ -165,10 +165,12 @@ func simulate_chunk(seed_value: int, o: Dictionary) -> Dictionary:
 		if saved.is_empty() or not tally is Dictionary:
 			return {"error":"cannot read checkpoint "+source+" (+.tally)"}
 		t=tally
-		var wanted: Array=[seed_value,o.mode,o.feed,o.days,o.from_day]
-		var found: Array=[t.get("seed"),t.get("mode"),t.get("feed"),t.get("days"),t.get("day")]
+		var wanted: Array=[seed_value,o.mode,o.feed,o.days,o.from_day,o.scene,o.decor]
+		var found: Array=[t.get("seed"),t.get("mode"),t.get("feed"),t.get("days"),t.get("day"),t.get("scene","reef"),t.get("decor","default")]
 		if found!=wanted:
-			return {"error":"checkpoint %s holds seed/mode/feed/days/day %s, this chunk wants %s" % [source,str(found),str(wanted)]}
+			return {"error":"checkpoint %s holds seed/mode/feed/days/day/scene/decor %s, this chunk wants %s" % [source,str(found),str(wanted)]}
+		if saved.get("scene")!=o.scene or saved.get("decor",{}).get(o.scene,{})!=ReefScene.open(o.scene).preset(o.decor):
+			return {"error":"checkpoint habitat does not match requested scene/decor"}
 		if not world.restore(saved):
 			return {"error":"cannot restore the world from "+source}
 		print("RESUME seed %d from day %d (%s)" % [seed_value,o.from_day,source])
@@ -183,8 +185,8 @@ func simulate_chunk(seed_value: int, o: Dictionary) -> Dictionary:
 	if o.to_day<o.days:
 		return {"saved":checkpoint_path(o.checkpoint_out)}
 	var run: Dictionary=summarize(world,t,seed_value,o.days,o.mode,o.feed)
-	run.scene="reef"
-	run.decor="default"
+	run.scene=o.scene
+	run.decor=o.decor
 	run.chunks=t.chunks
 	return run
 
@@ -229,7 +231,7 @@ func options() -> Dictionary:
 	# no arguments keeps the original offline acceptance gate.
 	# Chunked (one seed): --from-day=N --to-day=M --checkpoint-in=<path> --checkpoint-out=<path>; days
 	# N..M of a --days run. Only the chunk that reaches --days judges and writes --out.
-	# --scene=reef|shipwreck --decor=default|min|max (S5; not yet for chunked runs, S14).
+	# --scene=reef|shipwreck --decor=default|min|max, including checkpointed runs.
 	var o: Dictionary={"mode":"offline","days":180,"seeds":[42,812,240921],"out":"six-month-runs.json","year":true,"feed":"none","from_day":0,"to_day":-1,"checkpoint_in":"","checkpoint_out":"","scene":"reef","decor":"default"}
 	for arg: String in OS.get_cmdline_user_args():
 		var parts: PackedStringArray=arg.lstrip("-").split("=")
@@ -259,8 +261,6 @@ func options() -> Dictionary:
 
 # "" when the chunk options make sense, else why not.
 func chunk_error(o: Dictionary) -> String:
-	if o.scene!="reef" or o.decor!="default":
-		return "--scene/--decor are not supported for chunked runs yet (S14)"
 	if o.seeds.size()!=1:
 		return "a chunked run takes exactly one --seeds"
 	if o.feed not in ["none","daily"]:

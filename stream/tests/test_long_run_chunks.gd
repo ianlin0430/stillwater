@@ -18,6 +18,7 @@ func _initialize() -> void:
 	for file: String in DirAccess.get_files_at(DIR):
 		DirAccess.remove_absolute(DIR+file)
 	chunked_cli()
+	habitat_chunks()
 	live_continuity()
 	print(JSON.stringify({"checks":checks,"failures":failures,"seconds":(Time.get_ticks_msec()-start)/1000.0}))
 	quit(0 if failures.is_empty() else 1)
@@ -84,6 +85,23 @@ func chunked_cli() -> void:
 	check(wrong[0]==1 and "CHUNK ERROR" in wrong[1] and not FileAccess.file_exists(DIR+"wrong.json"),"Resuming from a checkpoint of another day fails loudly")
 	var two_seeds: Array=long_run(["--mode=offline","--days=6","--seeds=42,812","--to-day=2","--checkpoint-out=chunk-test/x.world"])
 	check(two_seeds[0]==1 and "CHUNK ERROR" in two_seeds[1],"A chunked run refuses more than one seed")
+
+func habitat_chunks() -> void:
+	for scene_id: String in ReefScene.IDS:
+		for decor: String in ["min","max"]:
+			var tag: String=scene_id+"-"+decor
+			var prefix: String="chunk-test/"+tag
+			var base: Array=["--mode=offline","--days=6","--seeds=42","--year=false","--feed=daily","--scene="+scene_id,"--decor="+decor]
+			var whole: Array=long_run(base+["--out="+prefix+"-whole.json","--checkpoint-out="+prefix+"-whole.world"])
+			var first: Array=long_run(base+["--to-day=3","--checkpoint-out="+prefix+"-first.world"])
+			check(first[0]==0,tag+": first habitat chunk saves")
+			var second: Array=long_run(base+["--from-day=3","--checkpoint-in="+prefix+"-first.world","--out="+prefix+"-split.json","--checkpoint-out="+prefix+"-split.world"])
+			check(whole[0]==second[0] and "ACCEPTANCE" in second[1],tag+": same final acceptance verdict")
+			check(var_to_bytes(report(tag+"-whole.json"))==var_to_bytes(report(tag+"-split.json")),tag+": whole and split reports match")
+			check(var_to_bytes(StreamStore.read(DIR+tag+"-whole.world"))==var_to_bytes(StreamStore.read(DIR+tag+"-split.world")),tag+": whole and split worlds match")
+			check(var_to_bytes(tally(DIR+tag+"-whole.world"))==var_to_bytes(tally(DIR+tag+"-split.world")),tag+": whole and split accumulators match")
+			var wrong: Array=long_run(base+["--from-day=3","--checkpoint-in="+prefix+"-first.world","--decor="+("max" if decor=="min" else "min"),"--out="+prefix+"-wrong.json"])
+			check(wrong[0]==1 and "CHUNK ERROR" in wrong[1],tag+": mismatched habitat resume rejected")
 
 func first_difference(a: Variant, b: Variant, path: String) -> String:
 	if typeof(a)!=typeof(b):
