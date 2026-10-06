@@ -1,4 +1,5 @@
 extends SceneTree
+# Production animation contract for the approved four-species cast.
 var checks: int=0
 var failures: Array[String]=[]
 func check(value: bool, message: String) -> void:
@@ -10,165 +11,79 @@ func tick(stage: Node2D, seconds: float) -> void:
 func run() -> void:
 	var world:=StreamWorld.new(42,1000)
 	world.state.light_hour=12
-	var snapshot: Dictionary=preload("res://tools/review_fixtures/cast_snapshot.gd").snapshot(preload("res://tools/review_fixtures/cast_snapshot.gd").LEGACY)
-	for a: Dictionary in snapshot.animals:
-		if a.species in ["garden_eel","purple_firefish"]:
-			a.extend=1.0
-			a.activity="Swaying" if a.species=="garden_eel" else "Hovering"
+	var snapshot: Dictionary=world.snapshot()
 	var before: PackedByteArray=var_to_bytes(world.export_state())
 	var frozen: PackedByteArray=var_to_bytes(snapshot)
 	var stage:=StreamStage.new()
 	root.add_child(stage)
-	stage.apply_snapshot(world.snapshot())
-	check(stage.rigs.size()==world.state.animals.size(),"Every individual in the current backend has a visible rig")
 	stage.apply_snapshot(snapshot)
-	tick(stage,0.5)
+	tick(stage,.5)
+	check(stage.rigs.size()==world.state.animals.size(),"Every individual in the current backend has a visible rig")
 	var by_species: Dictionary={}
 	for id: int in stage.rigs:
 		var rig: ReefRig=stage.rigs[id]
 		by_species[rig.species]=rig
-		check(rig.fish.texture==rig.art_texture(),"Uses new reef textures")
-	check(not by_species.has("garden_eel"),"Deferred garden eel has no rig or visible hole")
-	var fire: ReefRig=by_species.purple_firefish
-	var blenny: ReefRig=by_species.lawnmower_blenny
-	var tang: ReefRig=by_species.yellow_tang
+		check(rig.fish.texture==rig.art_texture(),rig.species+": approved reef texture")
+		check(rig.body_visible,rig.species+": daylight body is visible")
+	check(by_species.size()==4,"The production cast has exactly four species")
 	var chromis: ReefRig=by_species.green_chromis
-	check(fire.portal!=null and fire.portal.get_index()<fire.fish.get_index(),"Burrow rear wall draws above background and behind the fish")
-	check(fire.portal.z_index==0 and fire.portal.front.z_index==1,"Raised burrow lip occludes the fish while the rear wall remains above the backdrop")
-	check(tang.extent.x>blenny.extent.x and blenny.extent.x>fire.extent.x and fire.extent.x>chromis.extent.x,"Tang is largest and chromis smallest")
-	var night: Dictionary=snapshot.duplicate(true)
-	for a: Dictionary in night.animals:
-		if a.species in ["garden_eel","purple_firefish"]:
-			a.extend=0.0
-			a.activity="Sleeping"
-	stage.apply_snapshot(night)
-	tick(stage,1.1)
-	check(not fire.body_visible,"Sleeping burrow fish have no visible body")
-	stage.apply_snapshot(snapshot)
-	tick(stage,2)
-	check(fire.body_visible and fire.extension>0.99,"Purple firefish smoothly returns from its hole")
-	check(absf(fire.visual_offset.y+fire.actor.hover_y)<2,"Hover height follows the backend's per-individual field")
-	check(stage.pick(fire.selection_position())==fire.individual_id,"Picking tracks visible hovering body rather than buried anchor")
-	var grazing: Dictionary=tang.actor.duplicate(true)
-	grazing.activity="Grazing"
-	grazing.direction=-1.0
-	grazing.heading=PI
-	grazing.contact_x=tang.position.x-tang.extent.x*.5*tang.body_scale
-	grazing.contact_y=tang.position.y
-	tang.face_target=-1
-	tang.apply_actor(grazing)
-	for i in 40: tang.animate(1.0/30)
-	check(is_equal_approx(tang.contact_projection,1.0),"Grazing preserves tang body proportions instead of squeezing to the contact distance")
-	check(tang.mouth_position().distance_to(Vector2(grazing.contact_x,grazing.contact_y))<0.05,"Grazing mouth meets backend contact without moving body center")
-	check(tang.contact_offset.length()<0.05,"Size-scaled backend grazing reach needs no compensating body displacement")
-	var root_point: Vector2=blenny.position
-	var launch: Dictionary=blenny.actor.duplicate(true)
-	launch.activity="Hopping"
-	launch.thrust=1.0
-	launch.speed=30.0
-	blenny.apply_actor(launch)
-	blenny.position.x+=2
-	blenny.animate(1.0/30)
-	check(blenny.hop_height>0 and blenny.position.y==root_point.y,"Hop lifts visual body only, backend ground anchor preserved")
-	blenny.activity="Perching"
-	for i in 30: blenny.animate(1.0/30)
-	check(blenny.hop_height==0,"Perching settles precisely onto the substrate")
-	var hop_probe: Dictionary=blenny.actor.duplicate(true)
-	hop_probe.activity="Hopping"
-	hop_probe.speed=30.0
-	hop_probe.thrust=0.5
-	blenny.last_thrust=0
-	blenny.apply_actor(hop_probe)
-	for i in 8: blenny.animate(1.0/30)
-	var airborne_age: float=blenny.hop_age
-	hop_probe.thrust=1.0
-	blenny.apply_actor(hop_probe)
-	check(blenny.hop_age==airborne_age,"A stronger thrust snapshot cannot restart an airborne hop at the ground")
-	hop_probe.speed=0.0
-	hop_probe.thrust=0.0
-	hop_probe.activity="Perching"
-	blenny.apply_actor(hop_probe)
-	for i in 6: blenny.animate(1.0/30)
-	check(blenny.hop_height>0,"Stopping movement completes the landing arc instead of snapping the body to the sand")
-	for i in 3: blenny.animate(1.0/30)
-	check(blenny.hop_height==0,"First hop lands before queued stronger thrust begins")
-	for i in 8: blenny.animate(1.0/30)
-	check(blenny.hop_height>0,"Stronger airborne thrust is queued for the next complete hop")
-	for i in 30: blenny.animate(1.0/30)
-	var grazing_blenny: Dictionary=blenny.actor.duplicate(true)
-	grazing_blenny.activity="Grazing"
-	grazing_blenny.thrust=0.0
-	grazing_blenny.speed=0.0
-	grazing_blenny.pitch=0.0
-	var perched_offset: float=blenny.visual_offset.y
-	blenny.apply_actor(grazing_blenny)
-	blenny.animate(1.0/30)
-	check(absf(blenny.visual_offset.y-perched_offset)<5,"Entering grazing does not drop the blenny body through the substrate in one frame")
-	for i in 60: blenny.animate(1.0/30)
-	check(absf(blenny.visual_pitch)>0.29,"Grazing pitch converges to the intended bend instead of restarting its easing each frame")
-	grazing_blenny.activity="Perching"
-	var feeding_offset: float=blenny.visual_offset.y
-	blenny.apply_actor(grazing_blenny)
-	blenny.animate(1.0/30)
-	check(absf(blenny.visual_offset.y-feeding_offset)<5,"Leaving grazing smoothly releases the ground contact pose")
-	var turning: Dictionary=chromis.actor.duplicate(true)
-	turning.heading=PI
-	turning.direction=-1
-	chromis.face_target=-1
-	chromis.apply_actor(turning)
-	for i in 60: chromis.animate(1.0/30)
-	check(is_equal_approx(chromis.facing,chromis.face_target) and is_equal_approx(chromis.tail_facing,chromis.facing),"Direct mirror changes body and tail together")
-	fire.target_extension=0
-	fire.extension=0
-	fire.begin_arrival()
-	fire.animate(0.1)
-	check(fire.body_visible and fire.visual_pitch==0 and fire.visual_offset.y<0,"Night arrival swims above sand before hiding")
-	for i in 210: fire.animate(1.0/30)
-	check(not fire.body_visible,"Night arrival finishes by entering the burrow")
-	fire.arrival_age=-1
-	fire.target_extension=1
-	fire.extension=1
-	fire.animate(1.0/30)
-	fire.target_extension=0
-	for i in 6: fire.animate(1.0/30)
-	check(fire.body_visible and fire.extension>0,"Retreat remains readable after 0.2 s instead of instantly hiding")
-	check(absf(fire.visual_pitch)>.6 and absf(fire.visual_pitch)<1.4 and fire.visual_offset.y<0,"Head bends toward the entrance above sand before the body descends")
-	check(fire.fish_material.get_shader_parameter("portal") and not fire.fish_material.get_shader_parameter("clip_sand"),"Firefish uses its local aperture, never a whole-scene sand-plane cut")
-	for i in 20: fire.animate(1.0/30)
-	check(not fire.body_visible and fire.visual_offset.y>fire.extent.x*.5,"Body is hidden only after the tail has passed below the sand")
-	fire.target_extension=1
-	for i in 18: fire.animate(1.0/30)
-	var emergence_pitch: float=fire.visual_pitch
-	fire.target_extension=0
-	fire.animate(1.0/30)
-	check(absf(fire.visual_pitch-emergence_pitch)<0.5,"A new hide request during emergence cannot flip the visible fish upside down")
-	for i in 90: fire.animate(1.0/30)
-	check(not fire.body_visible,"Buffered hide request still reaches the shelter within a bounded transition")
-	fire.target_extension=1
-	for i in 45: fire.animate(1.0/30)
-	fire.target_extension=0
-	for i in 8: fire.animate(1.0/30)
-	var entry_pitch: float=fire.visual_pitch
-	fire.target_extension=1
-	fire.animate(1.0/30)
-	check(absf(fire.visual_pitch-entry_pitch)<0.5,"An early wake request during entry cannot reverse the visible pose")
-	for i in 90: fire.animate(1.0/30)
-	check(fire.body_visible and fire.extension>0.999,"Buffered wake request completes entry and then emerges fully")
+	var horse=by_species.seahorse
+	var gramma=by_species.royal_gramma
+	var clown=by_species.clownfish
+	check(horse.tail_contact().distance_to(Vector2(horse.actor.hitch_x,horse.actor.hitch_y))<.05,"Held tail meets the backend hitch exactly")
+	var anchor: Vector2=horse.position
+	var lean_pose: Dictionary=horse.actor.duplicate(true)
+	lean_pose.lean=.25
+	horse.apply_actor(lean_pose)
+	for i in 60: horse.animate(1.0/30)
+	check(horse.position==anchor and horse.tail_contact().distance_to(Vector2(lean_pose.hitch_x,lean_pose.hitch_y))<.05,"Gentle lean preserves fish centre and tail contact")
+	check(horse.clasp_blend>.999 and horse.fish_material.get_shader_parameter("clasp")>.999,"Held pose closes the tail clasp")
+	var drifting: Dictionary=lean_pose.duplicate(true)
+	drifting.erase("hitch_x")
+	drifting.erase("hitch_y")
+	drifting.activity="Drifting"
+	horse.apply_actor(drifting)
+	for i in 120: horse.animate(1.0/30)
+	check(horse.clasp_blend<.001 and horse.held_offset.length()<.01,"Release eases the clasp and visual offset back to swimming")
+	var hidden: Dictionary=gramma.actor.duplicate(true)
+	hidden.home={"kind":"shelter","slot":"cave","i":0}
+	hidden.den_x=gramma.position.x
+	hidden.den_y=gramma.position.y
+	hidden.den_side=-1.0
+	hidden.extend=0.0
+	hidden.activity="Sleeping"
+	gramma.apply_actor(hidden)
+	for i in 30: gramma.animate(1.0/30)
+	check(not gramma.body_visible and gramma.den_extension==0,"Night gramma body hides fully in the den")
+	check(gramma.fish_material.get_shader_parameter("den_clip"),"Den entry uses the local cave clipping shader")
+	hidden.extend=1.0
+	hidden.activity="Hovering"
+	gramma.apply_actor(hidden)
+	for i in 30: gramma.animate(1.0/30)
+	check(gramma.body_visible and gramma.den_extension==1,"Day gramma emerges fully")
+	check(not gramma.fish_material.get_shader_parameter("den_clip") and gramma.visual_offset==Vector2.ZERO,"Fully emerged gramma releases cave clipping and offset")
+	hidden.home.kind="rock"
+	hidden.extend=0.0
+	hidden.activity="Sleeping"
+	gramma.apply_actor(hidden)
+	for i in 30: gramma.animate(1.0/30)
+	check(gramma.body_visible and not gramma.fish_material.get_shader_parameter("den_clip"),"Rock fallback residents remain visible at night")
+	check(clown.nestle>0 and clown.visual_offset.y>0,"Clownfish nestling pose settles among the anemone")
 	var eating: Dictionary=snapshot.duplicate(true)
-	eating.events.append({"seq":eating.next_event,"kind":"ate","id":fire.individual_id,"live":true})
+	eating.events.append({"seq":eating.next_event,"kind":"ate","id":gramma.individual_id,"live":true})
 	eating.next_event+=1
 	stage.apply_snapshot(eating)
-	check(fire.bite_timer==0.35 and tang.bite_timer==0,"Explicit ate event animates only its actor")
+	check(gramma.bite_timer==.35 and horse.bite_timer==0,"Explicit ate event animates only its actor")
 	stage.animate(0)
-	check(fire.bite_timer==0.35,"Pause freezes the actual bite")
-	tick(stage,0.5)
+	check(gramma.bite_timer==.35,"Pause freezes the actual bite")
+	tick(stage,.5)
 	stage.apply_snapshot(eating)
-	check(fire.bite_timer==0,"The event cursor prevents repeated bites")
-	var offline_bite: Dictionary=eating.duplicate(true)
-	offline_bite.events.append({"seq":offline_bite.next_event,"kind":"ate","id":fire.individual_id,"live":false})
-	offline_bite.next_event+=1
-	stage.apply_snapshot(offline_bite)
-	check(fire.bite_timer==0,"Offline food events do not replay mouth animation")
+	check(gramma.bite_timer==0,"The event cursor prevents repeated bites")
+	var offline: Dictionary=eating.duplicate(true)
+	offline.events.append({"seq":offline.next_event,"kind":"ate","id":gramma.individual_id,"live":false})
+	offline.next_event+=1
+	stage.apply_snapshot(offline)
+	check(gramma.bite_timer==0,"Offline food events do not replay mouth animation")
 	check(var_to_bytes(snapshot)==frozen,"Rig updates never mutate snapshots")
 	check(var_to_bytes(world.export_state())==before,"Rig interactions preserve simulation and both random states")
 	# Replay a complete turn as 0.2 s snapshots, rendering six frames per snapshot.
@@ -215,15 +130,6 @@ func run() -> void:
 	chromis.apply_actor(side_step)
 	for i in 60: chromis.animate(1.0/30)
 	check(chromis.pectoral_effort<.001,"Spacing recovery stroke eases to rest when displacement stops")
-	var flick_pose: Dictionary=fire.actor.duplicate(true)
-	flick_pose.flick=1
-	fire.apply_actor(flick_pose)
-	fire.animate(1.0/30)
-	check(fire.ray_flick>0,"Firefish flick raises the dorsal ray")
-	flick_pose.flick=0
-	fire.apply_actor(flick_pose)
-	for i in 90: fire.animate(1.0/30)
-	check(absf(fire.ray_flick)<.001,"Dorsal ray returns after the flick instead of staying raised")
 	stage.queue_free()
 	print(JSON.stringify({"checks":checks,"failures":failures}))
 	quit(0 if failures.is_empty() else 1)

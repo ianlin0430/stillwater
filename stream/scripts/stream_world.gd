@@ -280,6 +280,8 @@ func set_decor(slot: String, style: String) -> bool:
 			a.erase("night_roost_x")
 			a.erase("night_roost_y")
 			a.decision_at=minf(a.decision_at,state.elapsed)
+		if a.species=="green_chromis" and _bands.green_chromis[1]>scene.band("green_chromis").y and a.y>scene.band("green_chromis").y:
+			a.night_returning=true
 	return true
 
 # Scene changes are habitat changes: no ecological or motion RNG is consumed.
@@ -319,7 +321,7 @@ func set_scene(scene_id: String) -> bool:
 		a.decision_at=state.elapsed
 		a.activity="Nestling" if a.species=="clownfish" else "Resting"
 		_forget_around(a)
-		for key: String in ["food_id","home_intent_x","home_intent_y","home_intent_face","trip_intent_x","trip_intent_y","trip_intent_face","trip_intent_route","pass_claims","pass_tx","pass_ty","pass_from_x","pass_from_y","pass_route","hitch_x","hitch_y","hitch_path","hitch_departed_at","night_roost_x","night_roost_y","den_x","den_y"]:
+		for key: String in ["food_id","home_intent_x","home_intent_y","home_intent_face","trip_intent_x","trip_intent_y","trip_intent_face","trip_intent_route","pass_claims","pass_tx","pass_ty","pass_from_x","pass_from_y","pass_route","hitch_x","hitch_y","hitch_path","hitch_departed_at","night_roost_x","night_roost_y","night_returning","den_x","den_y"]:
 			a.erase(key)
 	# Pellets belong to their original habitat; recycle their material exactly.
 	for pellet: Dictionary in state.get("food",[]):
@@ -2466,9 +2468,13 @@ func _sync_chromis_layer(wake: bool=true) -> void:
 	var night: bool=state.light_hour<7 or state.light_hour>19
 	var bottom: float=day.y
 	var extended: bool=night and not _night_shelters().is_empty()
+	var returning: bool=state.animals.any(func(a): return a.species=="green_chromis" and (a.has("night_roost_x") or a.get("night_returning",false)))
 	for a: Dictionary in state.animals:
 		if a.species!="green_chromis": continue
-		extended=extended or a.y>day.y+.001
+		extended=extended or returning and a.y>day.y+.001
+		if wake and not night:
+			if returning and a.y>day.y+.001: a.night_returning=true
+			else: a.erase("night_returning")
 		if wake and not night and a.has("night_roost_x"):
 			a.erase("night_roost_x")
 			a.erase("night_roost_y")
@@ -2986,6 +2992,7 @@ static func validate(saved: Dictionary) -> bool:
 			if a.has(key) and (not _number(a[key]) or a[key]<0): return false
 		if a.has("night_roost_x")!=a.has("night_roost_y"): return false
 		if a.has("night_roost_x") and (not _number(a.night_roost_x) or not _number(a.night_roost_y)): return false
+		if a.has("night_returning") and not a.night_returning is bool: return false
 		if a.has("hitch_path"):
 			if not a.hitch_path is Array or a.hitch_path.size()>4: return false
 			for point: Variant in a.hitch_path:

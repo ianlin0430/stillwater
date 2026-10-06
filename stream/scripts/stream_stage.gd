@@ -8,8 +8,8 @@ var deaths: Dictionary = {}
 var events_layer: Node2D
 var base_opacity: Dictionary = {}
 const MAX_DEATHS: int = 24
-# Transitional cast: retain old rigs until backend S4 replaces the population.
-const PRESENTED_SPECIES: Array[String] = ["lawnmower_blenny","purple_firefish","green_chromis","yellow_tang","clownfish","seahorse","royal_gramma"]
+# Presentation and simulation share the final four-species cast.
+const PRESENTED_SPECIES: Array[String] = ["green_chromis","clownfish","seahorse","royal_gramma"]
 const NEW_CAST_RIG=preload("res://scripts/reef_home_rig.gd")
 const NEW_LABELS: Dictionary={"clownfish":"Clownfish","seahorse":"Seahorse","royal_gramma":"Royal gramma"}
 var scene: ReefScene=ReefScene.open("reef")
@@ -175,7 +175,7 @@ func animate(delta: float) -> void:
 				base_opacity.erase(id)
 				continue
 			var t: float=death.age/2.0
-			rig.position=death.origin if rig.species in ["garden_eel","purple_firefish","lawnmower_blenny"] else death.origin+Vector2(0,minf(28.0,maxf(0,640-death.origin.y))*t)
+			rig.position=death.origin+Vector2(0,minf(28.0,maxf(0,640-death.origin.y))*t)
 			rig.animate(delta)
 			rig.modulate.a=death.opacity*(1-t)*(1-t)
 		else:

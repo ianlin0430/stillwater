@@ -29,12 +29,25 @@ func _initialize() -> void:
 	var duplicate:=StreamWorld.new()
 	check(duplicate.restore(same) and var_to_bytes(duplicate.export_state())==var_to_bytes(same),"Current-layout save restores byte-for-byte")
 	var roost:=StreamWorld.new(42,1000)
+	var shelter: Dictionary=roost._night_shelters()[0]
+	var leader: Dictionary=roost.state.animals.filter(func(a): return a.species=="green_chromis")[0]
+	leader.x=shelter.x+40
+	leader.y=shelter.y-140
 	roost.state.light_hour=0
+	for i in 20:
+		roost._choose_activity(leader)
+		if leader.activity=="Resting": break
+	leader.decision_at=roost.state.elapsed+300
 	roost.advance_live(180)
 	roost.state.light_hour=12
 	var dawn: Dictionary=roost.export_state()
 	var copy:=StreamWorld.new()
 	check(copy.restore(dawn) and var_to_bytes(copy.export_state())==var_to_bytes(dawn),"Dawn snapshot restores without eager state mutation")
+	roost.advance_live(1)
+	copy.advance_live(1)
+	var returning: Dictionary=roost.export_state()
+	check(returning.animals.any(func(a): return a.get("night_returning",false)),"Dawn checkpoint records a real roost return")
+	check(copy.restore(returning) and var_to_bytes(copy.export_state())==var_to_bytes(returning),"Mid-return snapshot restores byte-for-byte")
 	roost.advance_live(180)
 	copy.advance_live(180)
 	check(var_to_bytes(copy.export_state())==var_to_bytes(roost.export_state()),"Dawn layer and wakeup continue deterministically after restore")

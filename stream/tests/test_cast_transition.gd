@@ -14,9 +14,9 @@ func run() -> void:
 	var original:=var_to_bytes(snap)
 	stage.apply_snapshot(snap)
 	stage.animate(.1)
-	check(stage.rigs.size()==7 and stage.visible_ids().size()==7,"Both casts coexist during H3")
+	check(stage.rigs.size()==4 and stage.visible_ids().size()==4,"Only the final four species are presented")
 	check(not stage.rigs.has(999) and StreamStage.create_rig("unknown_future_fish")==null,"Unknown species never creates a rig")
-	check(stage.habitat.animals.size()==7,"Unknown species excluded from wakes and plants")
+	check(stage.habitat.animals.size()==4,"Unknown species excluded from wakes and plants")
 	for a: Dictionary in snap.animals:
 		if a.id==999: continue
 		var rig: ReefRig=stage.rigs[a.id]
@@ -53,15 +53,17 @@ func run() -> void:
 	changed.scene="shipwreck"
 	stage.apply_snapshot(changed)
 	check(stage.scene.id()=="shipwreck" and stage.events_layer.scene==stage.scene,"Stage selects scene data and shares it with arrival effects")
-	# Legacy arrival floor follows the chosen scene, never static StreamWorld terrain.
-	var grounded:=Fixture.snapshot(["lawnmower_blenny"])
+	# Removed species must not return through snapshots or archived events.
+	var grounded:=Fixture.snapshot(Fixture.LEGACY)
+	grounded.animals=grounded.animals.filter(func(a): return a.species!="green_chromis")
 	grounded.scene="shipwreck"
 	grounded.elapsed=.4
 	stage.apply_snapshot(grounded)
-	stage.events_layer.accept({"kind":"arrival","id":1},grounded)
-	stage.animate(.5)
-	var bottom: ReefRig=stage.rigs[1]
-	check(is_equal_approx(bottom.position.y,stage.scene.floor_y(bottom.position.x)),"Ground arrival samples the active scene bed")
+	check(stage.rigs.is_empty() and stage.visible_ids().is_empty(),"Removed legacy species have no visible rigs")
+	for a: Dictionary in grounded.animals:
+		check(StreamStage.create_rig(a.species)==null,a.species+": legacy rig route is closed")
+		stage._begin_death({"id":a.id},{"archive":[a]})
+	check(stage.deaths.is_empty(),"Archived legacy species cannot create death rigs")
 	changed.scene="missing_scene"
 	stage.apply_snapshot(changed)
 	check(stage.scene.id()=="reef","Unknown scene uses a safe reef fallback")
