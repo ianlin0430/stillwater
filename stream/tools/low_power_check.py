@@ -13,8 +13,8 @@ import time
 
 
 def run(command, wall_seconds=20):
-    if os.name != 'posix' or not 0 < wall_seconds <= 30:
-        raise ValueError('POSIX only; wall budget must be positive and at most30 seconds')
+    if os.name != 'posix' or not 0 < wall_seconds <= 120:
+        raise ValueError('POSIX only; wall budget must be positive and at most120 seconds')
     start=time.monotonic()
     before=resource.getrusage(resource.RUSAGE_CHILDREN)
     child=subprocess.Popen(command, start_new_session=True)

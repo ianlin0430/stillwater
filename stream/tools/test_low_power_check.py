@@ -18,6 +18,11 @@ class CheckTests(unittest.TestCase):
         self.assertLess(result['wall_seconds'],1)
         self.assertLess(result['child_cpu_seconds'],.2)
 
+    def test_invalid_budgets_cannot_launch_a_worker(self):
+        for budget in [0,-1,121]:
+            with self.subTest(budget=budget), self.assertRaises(ValueError):
+                run(['this-command-must-never-be-launched'],budget)
+
 
 if __name__=='__main__':
     unittest.main()
