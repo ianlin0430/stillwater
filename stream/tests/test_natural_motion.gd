@@ -6,7 +6,6 @@ extends SceneTree
 var checks: int=0
 var failures: Array[String]=[]
 var numbers: Dictionary={}
-var trace_rest: bool="--trace-rest" in OS.get_cmdline_user_args()
 # Read at run time so this suite reports failing checks (not a parse error) on older backends.
 var SWIM: Dictionary=(StreamWorld as Script).get_script_constant_map().get("SWIM",{"startle_turn":1.0,"green_chromis":{"turn":0.0,"cruise":17.0,"pitch":0.45}})
 const NEW: Array[String] = ["clownfish","seahorse","royal_gramma"]
@@ -352,7 +351,6 @@ func night_rest_checks() -> void:
 		var rest: Dictionary={}
 		var at: Dictionary={}
 		var episode: Dictionary={}
-		var traced_targets: Dictionary={}
 		for i in 3000:
 			w.advance_live(0.2)
 			ticks+=1
@@ -363,11 +361,6 @@ func night_rest_checks() -> void:
 					pairs+=1
 					if o>0.25: seed_deep+=1
 			for a: Dictionary in of(w,"green_chromis"):
-				if trace_rest:
-					var target:=Vector2(a.tx,a.ty)
-					if episode.has(a.id) and traced_targets.get(a.id,target)!=target:
-						print("[DIAG-rest] seed=%d id=%d t=%.1f active-target-change %s -> %s activity=%s" % [seed_value,a.id,w.state.elapsed,traced_targets[a.id],target,a.activity])
-					traced_targets[a.id]=target
 				var giving: bool=Vector2(a.get("avoid_x",0.0),a.get("avoid_y",0.0)).length()>0.2
 				# Last time it was giving way to a body (a tang swimming past).
 				if giving:
@@ -382,7 +375,6 @@ func night_rest_checks() -> void:
 					var e: Vector2=episode.get(a.id,Vector2.ZERO)
 					episode[a.id]=e+(Vector2(absf(a.x-was.x),absf(a.y-was.y)) if episode.has(a.id) else Vector2.ZERO)
 				elif episode.has(a.id):
-					if trace_rest: print("[DIAG-rest] seed=%d id=%d end=%.1f travel=%s target=%s roost=%s" % [seed_value,a.id,w.state.elapsed,episode[a.id],Vector2(a.tx,a.ty),Vector2(a.get("night_roost_x",INF),a.get("night_roost_y",INF))])
 					episodes.append(episode[a.id])
 					episode.erase(a.id)
 				if a.activity!="Resting":
@@ -408,7 +400,6 @@ func night_rest_checks() -> void:
 						own_rev+=1
 					way[a.id]=-d
 					ext[a.id]=a.y
-		if trace_rest: print("[DIAG-rest] seed=%d unfinished=%s" % [seed_value,episode])
 		episodes.append_array(episode.values())
 		for id in rest:
 			if rest[id]>=60.0:
@@ -425,7 +416,6 @@ func night_rest_checks() -> void:
 	for sp: String in NEW:
 		for dy: float in [0.0,-30.0,30.0]:
 			var r: Dictionary=night_pass(sp,dy)
-			if trace_rest: print("[DIAG-rest] controlled %s dy=%s result=%s" % [sp,dy,r])
 			if r.passed:
 				episodes.append(r.travel)
 			else:

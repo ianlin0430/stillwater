@@ -1,0 +1,12 @@
+{
+  "kind": "isolated artificial world; never a user save",
+  "source": "8f7f858f6c1112801a84ab4271a5dfa1b01a4a42",
+  "capture_run": 37580427017,
+  "scene": "shipwreck",
+  "seed": 3,
+  "trigger": "9000 live ticks of0.2s at light12, then light0 and120s live",
+  "pre_fix_failure": "horse9 still Returning,28.874px from home after120s",
+  "post_fix_run": 37581237672,
+  "post_fix": "both horses Hitched at exact home centres; diagnostic restore and trace equality pass",
+  "sha256": "4caaa0979a27fcc8a9d620c76709e5d057d23b8df2150d81bab391fc6aa381f7"
+}
