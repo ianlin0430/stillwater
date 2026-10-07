@@ -33,6 +33,15 @@ class PlanTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             plan(180,[42],mode='unknown')
 
+    def test_extra_year_runs_once_without_dropping_any_cases(self):
+        for mode,broad,seeds in [('offline',False,list(range(1,33))),('live',True,[42,812,240921])]:
+            p=plan(180,seeds,broad=broad,mode=mode,year=True)
+            self.assertEqual(sum(case['year'] for case in p['cases']),1)
+            self.assertTrue(p['cases'][0]['year'])
+            self.assertEqual(len(p['cases']),len(seeds)*(8 if broad else 1))
+            self.assertEqual(p['bounds'][-1],180)
+        self.assertTrue(all(not case['year'] for case in plan(180,[42,812])['cases']))
+
 
 if __name__=='__main__':
     unittest.main()

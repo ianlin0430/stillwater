@@ -90,6 +90,7 @@ jobs:
         env:
           RUN_DAYS: ${{ inputs.days }}
           RUN_MODE: ${{ inputs.mode }}
+          RUN_YEAR: ${{ inputs.year }}
           RUN_SEEDS: ${{ inputs.seeds }}
           RUN_SCENE: ${{ inputs.scene }}
           RUN_DECOR: ${{ inputs.decor }}
@@ -174,7 +175,7 @@ jobs:
           scene: ${{ matrix.scene }}
           decor: ${{ matrix.decor }}
           feed: ${{ matrix.feed }}
-          year: ${{ inputs.year }}
+          year: ${{ matrix.year }}
           from-day: ${{ needs.plan.outputs.from1 }}
           to-day: ${{ needs.plan.outputs.to1 }}
           index: '1'
@@ -199,7 +200,7 @@ jobs:
           scene: ${{ matrix.scene }}
           decor: ${{ matrix.decor }}
           feed: ${{ matrix.feed }}
-          year: ${{ inputs.year }}
+          year: ${{ matrix.year }}
           from-day: ${{ needs.plan.outputs.from2 }}
           to-day: ${{ needs.plan.outputs.to2 }}
           index: '2'
@@ -224,7 +225,7 @@ jobs:
           scene: ${{ matrix.scene }}
           decor: ${{ matrix.decor }}
           feed: ${{ matrix.feed }}
-          year: ${{ inputs.year }}
+          year: ${{ matrix.year }}
           from-day: ${{ needs.plan.outputs.from3 }}
           to-day: ${{ needs.plan.outputs.to3 }}
           index: '3'
@@ -249,7 +250,7 @@ jobs:
           scene: ${{ matrix.scene }}
           decor: ${{ matrix.decor }}
           feed: ${{ matrix.feed }}
-          year: ${{ inputs.year }}
+          year: ${{ matrix.year }}
           from-day: ${{ needs.plan.outputs.from4 }}
           to-day: ${{ needs.plan.outputs.to4 }}
           index: '4'
@@ -274,7 +275,7 @@ jobs:
           scene: ${{ matrix.scene }}
           decor: ${{ matrix.decor }}
           feed: ${{ matrix.feed }}
-          year: ${{ inputs.year }}
+          year: ${{ matrix.year }}
           from-day: ${{ needs.plan.outputs.from5 }}
           to-day: ${{ needs.plan.outputs.to5 }}
           index: '5'
@@ -299,7 +300,7 @@ jobs:
           scene: ${{ matrix.scene }}
           decor: ${{ matrix.decor }}
           feed: ${{ matrix.feed }}
-          year: ${{ inputs.year }}
+          year: ${{ matrix.year }}
           from-day: ${{ needs.plan.outputs.from6 }}
           to-day: ${{ needs.plan.outputs.to6 }}
           index: '6'
@@ -324,7 +325,7 @@ jobs:
           scene: ${{ matrix.scene }}
           decor: ${{ matrix.decor }}
           feed: ${{ matrix.feed }}
-          year: ${{ inputs.year }}
+          year: ${{ matrix.year }}
           from-day: ${{ needs.plan.outputs.from7 }}
           to-day: ${{ needs.plan.outputs.to7 }}
           index: '7'
@@ -349,7 +350,7 @@ jobs:
           scene: ${{ matrix.scene }}
           decor: ${{ matrix.decor }}
           feed: ${{ matrix.feed }}
-          year: ${{ inputs.year }}
+          year: ${{ matrix.year }}
           from-day: ${{ needs.plan.outputs.from8 }}
           to-day: ${{ needs.plan.outputs.to8 }}
           index: '8'
@@ -374,7 +375,7 @@ jobs:
           scene: ${{ matrix.scene }}
           decor: ${{ matrix.decor }}
           feed: ${{ matrix.feed }}
-          year: ${{ inputs.year }}
+          year: ${{ matrix.year }}
           from-day: ${{ needs.plan.outputs.from9 }}
           to-day: ${{ needs.plan.outputs.to9 }}
           index: '9'
@@ -399,7 +400,7 @@ jobs:
           scene: ${{ matrix.scene }}
           decor: ${{ matrix.decor }}
           feed: ${{ matrix.feed }}
-          year: ${{ inputs.year }}
+          year: ${{ matrix.year }}
           from-day: ${{ needs.plan.outputs.from10 }}
           to-day: ${{ needs.plan.outputs.to10 }}
           index: '10'
