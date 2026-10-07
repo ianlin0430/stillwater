@@ -57,6 +57,7 @@ func launch(prefs: String, now: float) -> Dictionary:
 	return loaded
 
 func _initialize() -> void:
+	preload("res://tests/test_store_truncated.gd").framing_checks(check)
 	# --- The format ---
 	check(StreamWorld.VERSION==3,"World format is version 3")
 	check(StreamStore.DEFAULT_PATH=="user://reef.world","The save lives in user://reef.world")

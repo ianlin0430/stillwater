@@ -36,14 +36,24 @@ static func save(path: String, world: StreamWorld) -> Error:
 			return error
 	return DirAccess.rename_absolute(path+".tmp",path)
 
-static func read(path: String) -> Dictionary:
+static func _envelope(path: String) -> Dictionary:
 	if not FileAccess.file_exists(path):
 		return {}
 	var f := FileAccess.open(path,FileAccess.READ)
-	if f==null or f.get_length()>4000000:
+	if f==null or f.get_length()<8 or f.get_length()>4000000:
 		return {}
+	# FileAccess.store_var prefixes the encoded Variant with its 32-bit size.
+	# Reject incomplete records before get_var allocates/reads their payload.
+	var length: int=f.get_32()
+	if length<4 or length>f.get_length()-4:
+		return {}
+	f.seek(0)
 	var envelope: Variant = f.get_var(false)
-	if not envelope is Dictionary or envelope.get("format")!=FORMAT:
+	return envelope if envelope is Dictionary else {}
+
+static func read(path: String) -> Dictionary:
+	var envelope: Dictionary=_envelope(path)
+	if envelope.get("format")!=FORMAT:
 		return {}
 	var bytes: Variant = envelope.get("payload")
 	if not bytes is PackedByteArray or envelope.get("hash")!=_digest(bytes):
@@ -54,13 +64,8 @@ static func read(path: String) -> Dictionary:
 # Only the envelope label is looked at; the old world inside is never decoded.
 static func _legacy(path: String) -> bool:
 	for candidate: String in [path,path+".bak"]:
-		if not FileAccess.file_exists(candidate):
-			continue
-		var f := FileAccess.open(candidate,FileAccess.READ)
-		if f==null or f.get_length()>4000000:
-			continue
-		var envelope: Variant = f.get_var(false)
-		if envelope is Dictionary and envelope.get("format")==LEGACY_FORMAT:
+		var envelope: Dictionary=_envelope(candidate)
+		if envelope.get("format")==LEGACY_FORMAT:
 			return true
 	return false
 
