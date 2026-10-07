@@ -27,8 +27,24 @@ class TracedWorld:
 
 func _initialize() -> void:
 	var w:=StreamWorld.new(3,1000,"shipwreck")
-	w.state.light_hour=12.0
-	for i in 9000: w.advance_live(.2)
+	var input_fixture: String=""
+	for arg: String in OS.get_cmdline_user_args():
+		if arg.begins_with("--fixture="): input_fixture=arg.trim_prefix("--fixture=")
+	if input_fixture.is_empty():
+		w.state.light_hour=12.0
+		for i in 9000: w.advance_live(.2)
+	else:
+		var source:=FileAccess.open(input_fixture,FileAccess.READ)
+		if source==null:
+			printerr("ERROR: missing isolated night fixture")
+			quit(2)
+			return
+		var original: Dictionary=source.get_var()
+		source.close()
+		if not w.restore(original) or var_to_bytes(w.export_state())!=var_to_bytes(original):
+			printerr("ERROR: fixture does not restore byte-identically")
+			quit(2)
+			return
 	var before: Dictionary=w.export_state()
 	DirAccess.make_dir_recursive_absolute("res://artifacts/night-horse")
 	var fixture:=FileAccess.open("res://artifacts/night-horse/before.var",FileAccess.WRITE)

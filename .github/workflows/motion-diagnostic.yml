@@ -37,13 +37,18 @@ jobs:
       - name: Import
         working-directory: stream
         run: godot --headless --path . --import --quit-after 2000
+      - name: Download exact pre-fix failing snapshot
+        if: inputs.mode == 'horse-night'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run download 37580427017 --repo "$GITHUB_REPOSITORY" -n night-horse-diagnostic --dir stream/artifacts/night-horse-source
       - name: Isolated original night-horse trigger
         if: inputs.mode == 'horse-night'
         working-directory: stream
         run: |
           mkdir -p ../motion-results
           set +e
-          timeout 600 godot --headless --path . --script tools/diagnostic_seahorse_night.gd 2>&1 | tee ../motion-results/night-horse.log
+          timeout 600 godot --headless --path . --script tools/diagnostic_seahorse_night.gd -- --fixture=res://artifacts/night-horse-source/stream/artifacts/night-horse/before.var 2>&1 | tee ../motion-results/night-horse.log
           code=${PIPESTATUS[0]}
           set -e
           echo "$code" > ../motion-results/night-horse.exit
