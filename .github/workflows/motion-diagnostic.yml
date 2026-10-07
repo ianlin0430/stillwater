@@ -7,7 +7,7 @@ on:
     inputs:
       mode:
         type: choice
-        options: [full, horse-night]
+        options: [full, horse-night, obstacle-stall]
         default: full
   workflow_call:
     inputs:
@@ -37,6 +37,35 @@ jobs:
       - name: Import
         working-directory: stream
         run: godot --headless --path . --import --quit-after 2000
+      - name: Reproduce the two original obstacle stalls
+        if: inputs.mode == 'obstacle-stall'
+        working-directory: stream
+        run: |
+          mkdir -p ../motion-results
+          fail=0
+          for case in min:17 max:42; do
+            preset=${case%:*}
+            seed=${case#*:}
+            log="../motion-results/shipwreck-$preset-$seed.log"
+            set +e
+            timeout 600 godot --headless --path . --script tests/test_obstacles.gd -- --seeds="$seed" --scenes=shipwreck --presets="$preset" --parts=obstacles --trace-hitch-path 2>&1 | tee "$log"
+            code=${PIPESTATUS[0]}
+            set -e
+            echo "$code" > "${log%.log}.exit"
+            if [[ "$code" != 0 ]] \
+              || ! grep '^{.*"failures"' "$log" | tail -1 | jq -e '.failures==[] or .failures==0' >/dev/null \
+              || grep -qE '^ERROR:|SCRIPT ERROR|Parse Error|Failed loading resource' "$log"; then
+              fail=1
+            fi
+          done
+          exit "$fail"
+      - uses: actions/upload-artifact@v4
+        if: always() && inputs.mode == 'obstacle-stall'
+        with:
+          name: obstacle-stall-diagnostic
+          path: |
+            motion-results/
+            stream/artifacts/obstacle-stall/
       - name: Isolated original night-horse trigger
         if: inputs.mode == 'horse-night'
         working-directory: stream

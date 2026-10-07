@@ -17,7 +17,7 @@ on:
       motion_case:
         description: full motion regression or the isolated failing night-horse trigger
         type: choice
-        options: [full, horse-night]
+        options: [full, horse-night, obstacle-stall]
         default: full
       motion_diagnostic:
         description: only reproduce known motion failures; no ecology or full acceptance
