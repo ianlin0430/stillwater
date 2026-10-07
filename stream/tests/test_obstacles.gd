@@ -158,18 +158,18 @@ func run(seed_value: int, scene_id: String, preset: String, bare: bool) -> Dicti
 		if trace_hitch_path and i>=4500:
 			for a: Dictionary in of(w,"seahorse"):
 				requested[a.id]=Vector2(a.tx,a.ty)
-				if not bare and not captured and a.activity=="Hovering" and not a.get("hitch_path",[]).is_empty():
+				if not bare and not captured and i== (5900 if preset=="min" else 5000):
 					DirAccess.make_dir_recursive_absolute("res://artifacts/obstacle-stall")
 					var file:=FileAccess.open("res://artifacts/obstacle-stall/%s-%s-%d-before.var" % [scene_id,preset,seed_value],FileAccess.WRITE)
 					file.store_var(w.export_state())
 					file.close()
 					captured=true
 		w.advance_live(0.2)
-		if trace_hitch_path and i>=4500 and i%150==0:
+		if trace_hitch_path and i>=4500 and i%5==0 and (1180<=i*.2 and i*.2<=1250 if preset=="min" else 1000<=i*.2 and i*.2<=1100):
 			var horses: Array=[]
 			for a: Dictionary in of(w,"seahorse"):
-				horses.append({"id":a.id,"activity":a.activity,"at":Vector2(a.x,a.y),"requested":requested[a.id],"actual":Vector2(a.tx,a.ty),"aim":w._aim(a),"home":w._hitch_center(a),"hitch_path":a.get("hitch_path",[]),"nav_target":Vector2(a.get("nav_tx",INF),a.get("nav_ty",INF)),"nav_wait":a.get("nav_wait",0),"claims":a.get("pass_claims",[]),"velocity":Vector2(a.vx,a.vy)})
-			print("[DIAG-stall] "+JSON.stringify({"scene":scene_id,"preset":preset,"seed":seed_value,"bare":bare,"t":(i+1)*.2,"horses":horses}))
+				horses.append({"id":a.id,"activity":a.activity,"at":Vector2(a.x,a.y),"requested":requested[a.id],"actual":Vector2(a.tx,a.ty),"aim":w._aim(a),"home":w._hitch_center(a),"hitch_path":a.get("hitch_path",[]),"nav_target":Vector2(a.get("nav_tx",INF),a.get("nav_ty",INF)),"nav_wait":a.get("nav_wait",0),"claims":a.get("pass_claims",[]),"velocity":Vector2(a.vx,a.vy),"heading":a.heading,"direction":a.direction,"trip_face":a.get("trip_intent_face",0),"trip_route":a.get("trip_intent_route",false),"avoid":Vector2(a.get("avoid_x",0),a.get("avoid_y",0)),"body":w._body(a)})
+			print("[DIAG-stall] "+JSON.stringify({"scene":scene_id,"preset":preset,"seed":seed_value,"bare":bare,"t":(i+1)*.2,"horses":horses,"neighbors":w.state.animals.filter(func(a): return a.species!="seahorse").map(func(a): return {"id":a.id,"species":a.species,"at":Vector2(a.x,a.y),"velocity":Vector2(a.vx,a.vy),"body":w._body(a),"activity":a.activity})}))
 		var t: float=(i+1)*0.2
 		for a: Dictionary in w.state.animals:
 			var p:=Vector2(a.x,a.y)
