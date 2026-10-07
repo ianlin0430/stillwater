@@ -5,6 +5,7 @@ const Seeds=preload("res://tests/seed_lists.gd")
 var checks: int=0
 var failures: Array[String]=[]
 var numbers: Dictionary={}
+var trace_hitch: bool="--trace-hitch" in OS.get_cmdline_user_args()
 func check(ok: bool, message: String) -> void:
 	checks+=1
 	if not ok: failures.append(message)
@@ -21,6 +22,7 @@ func _initialize() -> void:
 			var horses: Array=w.state.animals.filter(func(a): return a.species=="seahorse")
 			var held: Dictionary={}
 			var last_home: Dictionary={}
+			var last_activity: Dictionary={}
 			for a: Dictionary in horses: last_home[a.id]=StreamWorld._home_key(a.home)
 			var contacts_ok: bool=true
 			var homes_unique: bool=true
@@ -28,6 +30,9 @@ func _initialize() -> void:
 				w.advance_live(.2)
 				var keys: Array=[]
 				for a: Dictionary in horses:
+					if trace_hitch and last_activity.get(a.id,"")!=a.activity:
+						print("[DIAG-hitch] %s seed=%d id=%d t=%.1f activity=%s at=%s home=%s target=%s" % [scene_id,seed_value,a.id,w.state.elapsed,a.activity,Vector2(a.x,a.y),Vector2(a.home_x,a.home_y),Vector2(a.tx,a.ty)])
+					last_activity[a.id]=a.activity
 					if a.activity=="Hitched": held[a.id]=held.get(a.id,0)+1
 					if a.has("hitch_x"):
 						contacts_ok=contacts_ok and Vector2(a.hitch_x-a.home_x,a.hitch_y-a.home_y).length()<.001 and Vector2(a.x,a.y).distance_to(w._hitch_center(a))<=2.001 and a.y<a.home_y
@@ -72,6 +77,7 @@ func geometry_checks() -> void:
 					var b: Dictionary=horses[j]
 					var r: Vector2=(w._body(a)+w._body(b))*.5
 					overlap=maxf(overlap,minf(1-absf(a.x-b.x)/r.x,1-absf(a.y-b.y)/r.y))
+			if trace_hitch: print("[DIAG-hitch] geometry %s/%s horses=%s" % [scene_id,style,horses.map(func(a): return {"id":a.id,"at":Vector2(a.x,a.y),"home":Vector2(a.home_x,a.home_y),"body":w._body(a)})])
 			check(overlap<=.2,scene_id+"/"+style+": full-cap bodies overlap <=20% ("+str(overlap)+")")
 			var saved: Dictionary=w.export_state()
 			check(StreamWorld.validate(saved),scene_id+"/"+style+": route state validates")

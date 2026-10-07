@@ -1,0 +1,67 @@
+name: Motion diagnostic
+
+# Short cloud reproductions. These never constitute full app acceptance.
+on:
+  workflow_dispatch:
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  reproduce:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install Godot
+        run: |
+          curl -fsSL -o godot.zip https://github.com/godotengine/godot-builds/releases/download/4.6.3-stable/Godot_v4.6.3-stable_linux.x86_64.zip
+          unzip -q godot.zip
+          mv Godot_v4.6.3-stable_linux.x86_64 /usr/local/bin/godot
+          chmod +x /usr/local/bin/godot
+      - name: Import
+        working-directory: stream
+        run: godot --headless --path . --import --quit-after 2000
+      - name: Reproduce and compare avoidance
+        working-directory: stream
+        run: |
+          mkdir -p ../motion-results
+          cp scripts/stream_world.gd ../motion-results/candidate-world.gd
+          for variant in candidate original-avoid; do
+            if [[ "$variant" == original-avoid ]]; then
+              python3 - <<'PY'
+          from pathlib import Path
+          import subprocess
+          p=Path('scripts/stream_world.gd')
+          old=subprocess.check_output(['git','show','68c9966:stream/scripts/stream_world.gd'],text=True)
+          current=p.read_text()
+          def bounds(s):
+              start=s.index('func _avoid(')
+              return start,s.index('\nfunc ',start+1)
+          a,b=bounds(current)
+          x,y=bounds(old)
+          p.write_text(current[:a]+old[x:y]+current[b:])
+          PY
+            fi
+            # Run every reproduction even when one fails. Each receipt records
+            # the actual exit; artifact JSON gates remain unchanged.
+            set +e
+            timeout 900 godot --headless --path . --script tools/diagnostic_night_rest.gd -- --trace-rest > "../motion-results/$variant-night.log" 2>&1
+            echo "$?" > "../motion-results/$variant-night.exit"
+            timeout 900 godot --headless --path . --script tests/test_seahorse.gd -- --seeds=1 --trace-hitch > "../motion-results/$variant-horse.log" 2>&1
+            echo "$?" > "../motion-results/$variant-horse.exit"
+            timeout 900 godot --headless --path . --script tests/test_obstacles.gd -- --seeds=42 --scenes=reef --presets=min --parts=obstacles > "../motion-results/$variant-reef42.log" 2>&1
+            echo "$?" > "../motion-results/$variant-reef42.exit"
+            timeout 900 godot --headless --path . --script tests/test_obstacles.gd -- --seeds=2,29 --scenes=shipwreck --presets=max > "../motion-results/$variant-ship.log" 2>&1
+            echo "$?" > "../motion-results/$variant-ship.exit"
+            set -e
+          done
+          cp ../motion-results/candidate-world.gd scripts/stream_world.gd
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: motion-diagnostic
+          path: motion-results/
