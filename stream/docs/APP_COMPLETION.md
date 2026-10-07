@@ -1,6 +1,6 @@
 # App completion — current acceptance status
 
-Goal: 完成整個 app. **Not complete.** Current application candidate: `f779924ccc098f12b2d88b0fa3edf31818d98db1`, branch `codex/app-completion-20261007`. Later evidence-only documentation commits do not change that candidate. Motion implementation is unchanged from2ee7c78; f779924 adds truncated-save framing guards and regression coverage. QA uses memory-only `--qa` or isolated `--persist-qa`; never use real saves for tests.
+Goal: 完成整個 app. **Not complete.** Current application candidate: `c5018cc`, branch `codex/app-completion-20261007`. Later evidence-only documentation commits do not change that candidate. Motion implementation remains from2ee7c78; f779924 adds truncated-save framing guards and regression coverage; c5018cc moves one seagrass contact3px on the existing opaque leaf. The latter needs cloud regression acceptance. QA uses memory-only `--qa` or isolated `--persist-qa`; never use real saves for tests.
 
 The user requires low power use (「不要用太多電力」). Keep local checks short, serial and bounded with `tools/low_power_check.py`. The user explicitly selected「雲端完成長測試，本機只收結果」on2026-10-07; full cloud acceptance is now authorized and dispatched. Do not launch long local simulations. At the latest recorded process check, no test/collector remained active. User authorization for visible native control remains unanswered; physical Cmd-Q and sleep/wake require the user under the approved sequence.
 
