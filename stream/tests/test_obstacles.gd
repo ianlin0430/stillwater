@@ -31,6 +31,7 @@ extends SceneTree
 # Arguments after `--`: --seeds=a,b --scenes=reef --presets=min --parts=obstacles,kinks (to split a
 # local run; the default is everything, for CI).
 const Trips=preload("res://tests/obstacle_trip_driver.gd")
+const StallFixture=preload("res://tests/obstacle_stall_fixture.gd")
 const Seeds=preload("res://tests/seed_lists.gd")
 const COUNT: int = 16
 var SWIM: Dictionary=(StreamWorld as Script).get_script_constant_map().get("SWIM",{})
@@ -39,8 +40,6 @@ var checks: int=0
 var failures: Array[String]=[]
 var numbers: Dictionary={}
 var verbose: bool="--verbose" in OS.get_cmdline_user_args()
-var stable_horse_pass: bool="--stable-horse-pass" in OS.get_cmdline_user_args()
-var trace_hitch_path: bool="--trace-hitch-path" in OS.get_cmdline_user_args()
 
 func check(value: bool, message: String) -> void:
 	checks+=1
@@ -89,6 +88,7 @@ func reversals(route: PackedVector2Array, facing: float) -> int:
 
 func _initialize() -> void:
 	var started: int=Time.get_ticks_msec()
+	numbers.seahorse_stall=StallFixture.run(check)
 	var parts: Array=arg("parts",["obstacles","kinks"])
 	if not StreamWorld.new(42,1000).has_method("set_decor"):
 		check(false,"StreamWorld.set_decor exists (S5)")
@@ -108,12 +108,6 @@ func seed_list() -> Array:
 # ends are the same; obstacles are still measured where they would be).
 func run(seed_value: int, scene_id: String, preset: String, bare: bool) -> Dictionary:
 	var w: StreamWorld=StreamWorld.new(seed_value,1000,scene_id)
-	if trace_hitch_path and not bare:
-		w=load("res://tests/obstacle_stall_trace.gd").new(seed_value,1000,scene_id)
-		w.set("trace_start",1180.0 if preset=="min" else 1000.0)
-		w.set("trace_end",1250.0 if preset=="min" else 1100.0)
-	if stable_horse_pass:
-		w=load("res://tests/obstacle_horse_pass_probe.gd").new(seed_value,1000,scene_id)
 	var d: Dictionary=w.scene.preset(preset)
 	var dressed: bool=true
 	for slot: String in d:
@@ -138,29 +132,10 @@ func run(seed_value: int, scene_id: String, preset: String, bare: bool) -> Dicti
 	var episode: Dictionary={}
 	var last_flip: Dictionary={}
 	var last_going: Dictionary={}
-	var captured: bool=false
 	for i in 7000:
 		if i>=4500:
 			Trips.step(w,trips,obs)
-		var requested: Dictionary={}
-		if trace_hitch_path and i>=4500:
-			for a: Dictionary in of(w,"seahorse"):
-				requested[a.id]=Vector2(a.tx,a.ty)
-				if not bare and not captured and i== (5900 if preset=="min" else 5000):
-					DirAccess.make_dir_recursive_absolute("res://artifacts/obstacle-stall")
-					var file:=FileAccess.open("res://artifacts/obstacle-stall/%s-%s-%d-before.var" % [scene_id,preset,seed_value],FileAccess.WRITE)
-					file.store_var(w.export_state())
-					var context:=FileAccess.open("res://artifacts/obstacle-stall/%s-%s-%d-%s-context.var" % [scene_id,preset,seed_value,"stable" if stable_horse_pass else "baseline"],FileAccess.WRITE)
-					context.store_var({"world":w.export_state(),"trips":trips,"tick":i,"window":window,"runs":runs,"obstacles":obs})
-					context.close()
-					file.close()
-					captured=true
 		w.advance_live(0.2)
-		if trace_hitch_path and i>=4500 and i%5==0 and (1180<=i*.2 and i*.2<=1250 if preset=="min" else 1000<=i*.2 and i*.2<=1100):
-			var horses: Array=[]
-			for a: Dictionary in of(w,"seahorse"):
-				horses.append({"id":a.id,"activity":a.activity,"at":Vector2(a.x,a.y),"requested":requested[a.id],"actual":Vector2(a.tx,a.ty),"aim":w._aim(a),"home":w._hitch_center(a),"hitch_path":a.get("hitch_path",[]),"nav_target":Vector2(a.get("nav_tx",INF),a.get("nav_ty",INF)),"nav_wait":a.get("nav_wait",0),"claims":a.get("pass_claims",[]),"velocity":Vector2(a.vx,a.vy),"heading":a.heading,"direction":a.direction,"trip_face":a.get("trip_intent_face",0),"trip_route":a.get("trip_intent_route",false),"avoid":Vector2(a.get("avoid_x",0),a.get("avoid_y",0)),"body":w._body(a)})
-			print("[DIAG-stall] "+JSON.stringify({"scene":scene_id,"preset":preset,"seed":seed_value,"bare":bare,"t":(i+1)*.2,"horses":horses,"neighbors":w.state.animals.filter(func(a): return a.species!="seahorse").map(func(a): return {"id":a.id,"species":a.species,"at":Vector2(a.x,a.y),"velocity":Vector2(a.vx,a.vy),"body":w._body(a),"activity":a.activity})}))
 		var t: float=(i+1)*0.2
 		for a: Dictionary in w.state.animals:
 			var p:=Vector2(a.x,a.y)

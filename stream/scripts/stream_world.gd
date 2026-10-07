@@ -1064,7 +1064,12 @@ func _avoid(a: Dictionary, p: Vector2, desired: Vector2, speed: float) -> Vector
 				var aside: float=side if side!=0.0 else (1.0 if a.id>o.id else -1.0)
 				# A travelling fish passes on the tangent that continues its journey.
 				# Always retreating above a body below it creates a permanent descent queue.
-				if Vector2(a.tx-a.x,a.ty-a.y).length_squared()>1600.0:
+				if horse_pair and absf(along.y)>.1:
+					# Opposing horses take separate vertical passing sides. Letting
+					# both tangents follow their destinations cancels headway while
+					# they travel together upward (S5 shipwreck/min17 and max42).
+					if signf(along.y)!=up: along=-along
+				elif Vector2(a.tx-a.x,a.ty-a.y).length_squared()>1600.0:
 					if along.dot(desired)<0.0 or absf(along.dot(desired))<.01 and absf(along.y)>.1 and signf(along.y)!=up:
 						along=-along
 					if forced_side and absf(along.y)>.1 and signf(along.y)!=up:

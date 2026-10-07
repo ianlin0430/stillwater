@@ -16,7 +16,7 @@ import subprocess
 import tempfile
 
 SUITES = {'test_natural_motion': 78, 'test_seahorse': 90,
-          'test_obstacles': 12, 'test_decor_art': 75}
+          'test_obstacles': 20, 'test_decor_art': 75}
 SEEDS = [42, 812, 240921, 1, 2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37]
 SCOPES = ['stream', ':(exclude)stream/docs', ':(exclude)stream/README.md',
           ':(exclude)stream/DESIGN.md', ':(exclude)stream/PRODUCT.md',

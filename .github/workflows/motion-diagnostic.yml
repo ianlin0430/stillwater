@@ -54,34 +54,25 @@ jobs:
             echo "$code" > "${log%.log}.exit"
             if [[ "$code" != 0 ]] || grep -qE '^ERROR:|SCRIPT ERROR|Parse Error|Failed loading resource' "$log"; then exit 1; fi
           done
-          for variant in baseline stable; do
-          extra=()
-          if [[ "$variant" == stable ]]; then extra+=(--stable-horse-pass); fi
           set +e
-          timeout 600 godot --headless --path . --script tests/test_obstacle_stall_regression.gd -- "${extra[@]}" 2>&1 | tee "../motion-results/replay-$variant.log"
+          timeout 600 godot --headless --path . --script tests/test_obstacle_stall_regression.gd 2>&1 | tee ../motion-results/replay.log
           code=${PIPESTATUS[0]}
           set -e
-          echo "$code" > "../motion-results/replay-$variant.exit"
-          if [[ "$code" != 0 ]]; then fail=1; fi
-          if [[ "$MOTION_MODE" == obstacle-replay ]]; then continue; fi
-          for case in min:17 max:42; do
-            preset=${case%:*}
-            seed=${case#*:}
-            log="../motion-results/shipwreck-$preset-$seed-$variant.log"
-            extra=()
-            if [[ "$variant" == stable ]]; then extra+=(--stable-horse-pass); fi
-            set +e
-            timeout 600 godot --headless --path . --script tests/test_obstacles.gd -- --seeds="$seed" --scenes=shipwreck --presets="$preset" --parts=obstacles --trace-hitch-path "${extra[@]}" 2>&1 | tee "$log"
-            code=${PIPESTATUS[0]}
-            set -e
-            echo "$code" > "${log%.log}.exit"
-            if [[ "$code" != 0 ]] \
-              || ! grep '^{.*"failures"' "$log" | tail -1 | jq -e '.failures==[] or .failures==0' >/dev/null \
-              || grep -qE '^ERROR:|SCRIPT ERROR|Parse Error|Failed loading resource' "$log"; then
-              fail=1
-            fi
-          done
-          done
+          echo "$code" > ../motion-results/replay.exit
+          if [[ "$code" != 0 ]] || ! grep '^{.*"failures"' ../motion-results/replay.log | tail -1 | jq -e '.failures==[]' >/dev/null || grep -qE '^ERROR:|SCRIPT ERROR|Parse Error|Failed loading resource' ../motion-results/replay.log; then fail=1; fi
+          if [[ "$MOTION_MODE" == obstacle-stall ]]; then
+            for case in min:17 max:42; do
+              preset=${case%:*}
+              seed=${case#*:}
+              log="../motion-results/shipwreck-$preset-$seed.log"
+              set +e
+              timeout 600 godot --headless --path . --script tests/test_obstacles.gd -- --seeds="$seed" --scenes=shipwreck --presets="$preset" --parts=obstacles 2>&1 | tee "$log"
+              code=${PIPESTATUS[0]}
+              set -e
+              echo "$code" > "${log%.log}.exit"
+              if [[ "$code" != 0 ]] || ! grep '^{.*"failures"' "$log" | tail -1 | jq -e '.failures==[]' >/dev/null || grep -qE '^ERROR:|SCRIPT ERROR|Parse Error|Failed loading resource' "$log"; then fail=1; fi
+            done
+          fi
           exit "$fail"
       - uses: actions/upload-artifact@v4
         if: always() && (inputs.mode == 'obstacle-stall' || inputs.mode == 'obstacle-replay')
@@ -89,7 +80,6 @@ jobs:
           name: obstacle-stall-diagnostic
           path: |
             motion-results/
-            stream/artifacts/obstacle-stall/
       - name: Isolated original night-horse trigger
         if: inputs.mode == 'horse-night'
         working-directory: stream

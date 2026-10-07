@@ -1,7 +1,7 @@
 extends RefCounted
 const Trips=preload("res://tests/obstacle_trip_driver.gd")
 
-static func run(check: Callable, variant: bool=false) -> Dictionary:
+static func run(check: Callable) -> Dictionary:
 	var results: Dictionary={}
 	var home_rules: Dictionary=(StreamWorld as Script).get_script_constant_map().get("HOME",{})
 	for label: String in ["shipwreck-min-17","shipwreck-max-42"]:
@@ -11,7 +11,6 @@ static func run(check: Callable, variant: bool=false) -> Dictionary:
 		var context: Dictionary=file.get_var()
 		file.close()
 		var w: StreamWorld=StreamWorld.new()
-		if variant: w=load("res://tests/obstacle_horse_pass_probe.gd").new()
 		# S5 deliberately freezes ecology with a negative test-only remainder.
 		# Validate every real save field with a legal remainder, then restore the
 		# original freeze before checking exact state. Do not weaken save rules.
