@@ -1,6 +1,7 @@
 name: Motion diagnostic
 
-# Short cloud reproductions. These never constitute full app acceptance.
+# Complete motion regressions in the cloud. Full app acceptance also requires
+# the complete core, ecology matrices, native review and physical acceptance.
 on:
   workflow_dispatch:
   workflow_call:
@@ -26,43 +27,44 @@ jobs:
       - name: Import
         working-directory: stream
         run: godot --headless --path . --import --quit-after 2000
-      - name: Reproduce and compare avoidance
+      - name: Complete natural motion, seahorse and decor gates
         working-directory: stream
         run: |
           mkdir -p ../motion-results
-          cp scripts/stream_world.gd ../motion-results/candidate-world.gd
-          for variant in candidate original-avoid; do
-            if [[ "$variant" == original-avoid ]]; then
-              python3 - <<'PY'
-          from pathlib import Path
-          import subprocess
-          p=Path('scripts/stream_world.gd')
-          old=subprocess.check_output(['git','show','68c9966:stream/scripts/stream_world.gd'],text=True)
-          current=p.read_text()
-          def bounds(s):
-              start=s.index('func _avoid(')
-              return start,s.index('\nfunc ',start+1)
-          a,b=bounds(current)
-          x,y=bounds(old)
-          p.write_text(current[:a]+old[x:y]+current[b:])
-          PY
-            fi
-            # Run every reproduction even when one fails. Each receipt records
-            # the actual exit; artifact JSON gates remain unchanged.
+          fail=0
+          for suite in test_natural_motion test_seahorse test_decor_art; do
             set +e
-            timeout 900 godot --headless --path . --script tools/diagnostic_night_rest.gd -- --trace-rest > "../motion-results/$variant-night.log" 2>&1
-            echo "$?" > "../motion-results/$variant-night.exit"
-            timeout 900 godot --headless --path . --script tests/test_seahorse.gd -- --seeds=1 --trace-hitch > "../motion-results/$variant-horse.log" 2>&1
-            echo "$?" > "../motion-results/$variant-horse.exit"
-            timeout 900 godot --headless --path . --script tests/test_obstacles.gd -- --seeds=42 --scenes=reef --presets=min --parts=obstacles > "../motion-results/$variant-reef42.log" 2>&1
-            echo "$?" > "../motion-results/$variant-reef42.exit"
-            timeout 900 godot --headless --path . --script tests/test_obstacles.gd -- --seeds=2,29 --scenes=shipwreck --presets=max > "../motion-results/$variant-ship.log" 2>&1
-            echo "$?" > "../motion-results/$variant-ship.exit"
+            timeout 900 godot --headless --path . --script "tests/$suite.gd" 2>&1 | tee "../motion-results/$suite.log"
+            code=${PIPESTATUS[0]}
             set -e
+            echo "$code" > "../motion-results/$suite.exit"
+            if [[ "$code" != 0 ]] \
+              || ! grep '^{.*"failures"' "../motion-results/$suite.log" | tail -1 | jq -e '.failures==[] or .failures==0' >/dev/null \
+              || grep -qE '^ERROR:|SCRIPT ERROR|Parse Error|Failed loading resource' "../motion-results/$suite.log"; then
+              echo "::error::$suite failed"; fail=1
+            fi
           done
-          cp ../motion-results/candidate-world.gd scripts/stream_world.gd
+          exit "$fail"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: motion-diagnostic
+          name: motion-regression-first
+          path: motion-results/
+      # Only spend the full S5 runtime after the preceding complete gates pass.
+      # This is diagnostic scheduling, never a replacement for final core.
+      - name: Complete original 16-seed obstacle gate
+        working-directory: stream
+        run: |
+          set +e
+          timeout 3600 godot --headless --path . --script tests/test_obstacles.gd 2>&1 | tee ../motion-results/test_obstacles.log
+          code=${PIPESTATUS[0]}
+          set -e
+          echo "$code" > ../motion-results/test_obstacles.exit
+          [[ "$code" == 0 ]]
+          grep '^{.*"failures"' ../motion-results/test_obstacles.log | tail -1 | jq -e '.failures==[] or .failures==0' >/dev/null
+          ! grep -qE '^ERROR:|SCRIPT ERROR|Parse Error|Failed loading resource' ../motion-results/test_obstacles.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: motion-regression-complete
           path: motion-results/

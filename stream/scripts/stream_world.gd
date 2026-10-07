@@ -986,7 +986,11 @@ func _avoid(a: Dictionary, p: Vector2, desired: Vector2, speed: float) -> Vector
 		var ahead: Vector2=rel+relv*t
 		var now: float=Vector2(rel.x/r.x,rel.y/r.y).length()
 		var q: float=minf(now,Vector2(ahead.x/r.x,ahead.y/r.y).length())
-		var fixed_home: bool=_fixed_home_pose(o)
+		# Only a daytime resting school slot needs the extra clearance from a
+		# resident that cannot yield. Travelling fish retain smooth elliptical
+		# steering: a box-axis normal changes abruptly at its corners, causing
+		# route stalls, extra facing reversals and kinks (cloud37561022526).
+		var fixed_home: bool=a.species=="green_chromis" and a.activity=="Resting" and _fixed_home_pose(o)
 		if landing or horse_pair or fixed_home:
 			# Attached residents and horse trips use actual body boxes at corners.
 			now=maxf(absf(rel.x/r.x),absf(rel.y/r.y))
