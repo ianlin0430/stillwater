@@ -44,6 +44,14 @@ jobs:
           mkdir -p ../motion-results
           fail=0
           for variant in baseline stable; do
+          extra=()
+          if [[ "$variant" == stable ]]; then extra+=(--stable-horse-pass); fi
+          set +e
+          timeout 600 godot --headless --path . --script tests/test_obstacle_stall_regression.gd -- "${extra[@]}" 2>&1 | tee "../motion-results/replay-$variant.log"
+          code=${PIPESTATUS[0]}
+          set -e
+          echo "$code" > "../motion-results/replay-$variant.exit"
+          if [[ "$code" != 0 ]]; then fail=1; fi
           for case in min:17 max:42; do
             preset=${case%:*}
             seed=${case#*:}

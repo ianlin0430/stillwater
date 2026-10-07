@@ -1,0 +1,8 @@
+{
+  "source_run": 37589167283,
+  "source_sha": "b894d4de49cd59f38db7a296dacba7f828afe0c9",
+  "variant": "baseline",
+  "production_sha": "b9c091c",
+  "sha256": "194a06cf36e0ff08b8e55cee1317e525b4c8e8cbee257c3203237c7e6ece4b31",
+  "input": "original S5 forced trips, world and counters before failed no-progress windows"
+}

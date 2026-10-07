@@ -30,6 +30,7 @@ extends SceneTree
 # minutes of trips across the scene for every swimmer (the school leader leads the school).
 # Arguments after `--`: --seeds=a,b --scenes=reef --presets=min --parts=obstacles,kinks (to split a
 # local run; the default is everything, for CI).
+const Trips=preload("res://tests/obstacle_trip_driver.gd")
 const Seeds=preload("res://tests/seed_lists.gd")
 const COUNT: int = 16
 var SWIM: Dictionary=(StreamWorld as Script).get_script_constant_map().get("SWIM",{})
@@ -85,17 +86,6 @@ func reversals(route: PackedVector2Array, facing: float) -> int:
 		way=signf(dx)
 	return n
 
-func trip_end(w, a: Dictionary, obs: Array, k: int) -> Vector2:
-	var band: Array=w.band(a.species)
-	var x: float=(1120.0-float(int(a.id)%4)*80.0) if a.x<640.0 else (160.0+float(int(a.id)%4)*80.0)
-	var h: Vector2=body(w,a)*0.5
-	for j in 40:
-		var y: float=lerpf(band[0]+h.y,band[1]-h.y,StreamWorld._hash01(int(a.id)*31+k,j))
-		if y>=w.bed_y(x)-h.y:
-			continue
-		if obs.all(func(o): return Vector2((x-o.cx)/(o.rx+h.x),(y-o.cy)/(o.ry+h.y)).length()>=1.0):
-			return Vector2(x,y)
-	return Vector2(x,band[0]+h.y)
 
 func _initialize() -> void:
 	var started: int=Time.get_ticks_msec()
@@ -151,16 +141,7 @@ func run(seed_value: int, scene_id: String, preset: String, bare: bool) -> Dicti
 	var captured: bool=false
 	for i in 7000:
 		if i>=4500:
-			for a: Dictionary in w.state.animals:
-				if a.species=="green_chromis" and a!=lead:
-					continue
-				if not trips.has(a.id) or Vector2(a.x,a.y).distance_to(Vector2(a.tx,a.ty))<60.0:
-					trips[a.id]=trips.get(a.id,0)+1
-					var end: Vector2=trip_end(w,a,obs,trips[a.id])
-					a.tx=end.x
-					a.ty=end.y
-					a.activity="Schooling" if a==lead else "Hovering"
-				a.decision_at=w.state.elapsed+1.0e6
+			Trips.step(w,trips,obs)
 		var requested: Dictionary={}
 		if trace_hitch_path and i>=4500:
 			for a: Dictionary in of(w,"seahorse"):
