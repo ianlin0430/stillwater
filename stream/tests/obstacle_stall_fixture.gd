@@ -12,7 +12,15 @@ static func run(check: Callable, variant: bool=false) -> Dictionary:
 		file.close()
 		var w: StreamWorld=StreamWorld.new()
 		if variant: w=load("res://tests/obstacle_horse_pass_probe.gd").new()
-		var restored: bool=StreamWorld.validate(context.world) and w.restore(context.world) and var_to_bytes(w.export_state())==var_to_bytes(context.world)
+		# S5 deliberately freezes ecology with a negative test-only remainder.
+		# Validate every real save field with a legal remainder, then restore the
+		# original freeze before checking exact state. Do not weaken save rules.
+		var loadable: Dictionary=context.world.duplicate(true)
+		loadable.ecology_remainder=0.0
+		var restored: bool=StreamWorld.validate(loadable) and w.restore(loadable)
+		if restored:
+			w.state.ecology_remainder=context.world.ecology_remainder
+			restored=var_to_bytes(w.export_state())==var_to_bytes(context.world)
 		check.call(restored,"Obstacle stall restores exact world and forced-trip input: "+label)
 		if not restored: continue
 		var windows: Dictionary=context.window

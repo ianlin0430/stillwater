@@ -7,7 +7,7 @@ on:
     inputs:
       mode:
         type: choice
-        options: [full, horse-night, obstacle-stall]
+        options: [full, horse-night, obstacle-stall, obstacle-replay]
         default: full
   workflow_call:
     inputs:
@@ -38,7 +38,9 @@ jobs:
         working-directory: stream
         run: godot --headless --path . --import --quit-after 2000
       - name: Reproduce the two original obstacle stalls
-        if: inputs.mode == 'obstacle-stall'
+        env:
+          MOTION_MODE: ${{ inputs.mode }}
+        if: inputs.mode == 'obstacle-stall' || inputs.mode == 'obstacle-replay'
         working-directory: stream
         run: |
           mkdir -p ../motion-results
@@ -61,6 +63,7 @@ jobs:
           set -e
           echo "$code" > "../motion-results/replay-$variant.exit"
           if [[ "$code" != 0 ]]; then fail=1; fi
+          if [[ "$MOTION_MODE" == obstacle-replay ]]; then continue; fi
           for case in min:17 max:42; do
             preset=${case%:*}
             seed=${case#*:}
@@ -81,7 +84,7 @@ jobs:
           done
           exit "$fail"
       - uses: actions/upload-artifact@v4
-        if: always() && inputs.mode == 'obstacle-stall'
+        if: always() && (inputs.mode == 'obstacle-stall' || inputs.mode == 'obstacle-replay')
         with:
           name: obstacle-stall-diagnostic
           path: |
