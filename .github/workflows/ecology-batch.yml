@@ -167,8 +167,8 @@ jobs:
 
   chunk1:
     name: ${{ inputs.mode }} ${{ inputs.days }}d feed-${{ matrix.feed }} ${{ matrix.scene }}/${{ matrix.decor }} seed ${{ matrix.seed }} chunk 1/${{ needs.plan.outputs.chunks }}
-    needs: plan
-    if: ${{ !inputs.motion_diagnostic && !cancelled() && needs.plan.result == 'success' && fromJSON(needs.plan.outputs.chunks) >= 1 }}
+    needs: [plan, core]
+    if: ${{ !inputs.motion_diagnostic && !cancelled() && needs.plan.result == 'success' && (!inputs.run_core || needs.core.result == 'success') && fromJSON(needs.plan.outputs.chunks) >= 1 }}
     runs-on: ubuntu-latest
     timeout-minutes: 350
     strategy:
@@ -193,7 +193,7 @@ jobs:
   chunk2:
     name: ${{ inputs.mode }} ${{ inputs.days }}d feed-${{ matrix.feed }} ${{ matrix.scene }}/${{ matrix.decor }} seed ${{ matrix.seed }} chunk 2/${{ needs.plan.outputs.chunks }}
     needs: [plan, chunk1]
-    if: ${{ !inputs.motion_diagnostic && !cancelled() && needs.plan.result == 'success' && fromJSON(needs.plan.outputs.chunks) >= 2 }}
+    if: ${{ !inputs.motion_diagnostic && !cancelled() && needs.plan.result == 'success' && needs.chunk1.result == 'success' && fromJSON(needs.plan.outputs.chunks) >= 2 }}
     runs-on: ubuntu-latest
     timeout-minutes: 350
     strategy:
@@ -218,7 +218,7 @@ jobs:
   chunk3:
     name: ${{ inputs.mode }} ${{ inputs.days }}d feed-${{ matrix.feed }} ${{ matrix.scene }}/${{ matrix.decor }} seed ${{ matrix.seed }} chunk 3/${{ needs.plan.outputs.chunks }}
     needs: [plan, chunk2]
-    if: ${{ !inputs.motion_diagnostic && !cancelled() && needs.plan.result == 'success' && fromJSON(needs.plan.outputs.chunks) >= 3 }}
+    if: ${{ !inputs.motion_diagnostic && !cancelled() && needs.plan.result == 'success' && needs.chunk2.result == 'success' && fromJSON(needs.plan.outputs.chunks) >= 3 }}
     runs-on: ubuntu-latest
     timeout-minutes: 350
     strategy:
@@ -243,7 +243,7 @@ jobs:
   chunk4:
     name: ${{ inputs.mode }} ${{ inputs.days }}d feed-${{ matrix.feed }} ${{ matrix.scene }}/${{ matrix.decor }} seed ${{ matrix.seed }} chunk 4/${{ needs.plan.outputs.chunks }}
     needs: [plan, chunk3]
-    if: ${{ !inputs.motion_diagnostic && !cancelled() && needs.plan.result == 'success' && fromJSON(needs.plan.outputs.chunks) >= 4 }}
+    if: ${{ !inputs.motion_diagnostic && !cancelled() && needs.plan.result == 'success' && needs.chunk3.result == 'success' && fromJSON(needs.plan.outputs.chunks) >= 4 }}
     runs-on: ubuntu-latest
     timeout-minutes: 350
     strategy:
@@ -268,7 +268,7 @@ jobs:
   chunk5:
     name: ${{ inputs.mode }} ${{ inputs.days }}d feed-${{ matrix.feed }} ${{ matrix.scene }}/${{ matrix.decor }} seed ${{ matrix.seed }} chunk 5/${{ needs.plan.outputs.chunks }}
     needs: [plan, chunk4]
-    if: ${{ !inputs.motion_diagnostic && !cancelled() && needs.plan.result == 'success' && fromJSON(needs.plan.outputs.chunks) >= 5 }}
+    if: ${{ !inputs.motion_diagnostic && !cancelled() && needs.plan.result == 'success' && needs.chunk4.result == 'success' && fromJSON(needs.plan.outputs.chunks) >= 5 }}
     runs-on: ubuntu-latest
     timeout-minutes: 350
     strategy:
@@ -293,7 +293,7 @@ jobs:
   chunk6:
     name: ${{ inputs.mode }} ${{ inputs.days }}d feed-${{ matrix.feed }} ${{ matrix.scene }}/${{ matrix.decor }} seed ${{ matrix.seed }} chunk 6/${{ needs.plan.outputs.chunks }}
     needs: [plan, chunk5]
-    if: ${{ !inputs.motion_diagnostic && !cancelled() && needs.plan.result == 'success' && fromJSON(needs.plan.outputs.chunks) >= 6 }}
+    if: ${{ !inputs.motion_diagnostic && !cancelled() && needs.plan.result == 'success' && needs.chunk5.result == 'success' && fromJSON(needs.plan.outputs.chunks) >= 6 }}
     runs-on: ubuntu-latest
     timeout-minutes: 350
     strategy:
@@ -318,7 +318,7 @@ jobs:
   chunk7:
     name: ${{ inputs.mode }} ${{ inputs.days }}d feed-${{ matrix.feed }} ${{ matrix.scene }}/${{ matrix.decor }} seed ${{ matrix.seed }} chunk 7/${{ needs.plan.outputs.chunks }}
     needs: [plan, chunk6]
-    if: ${{ !inputs.motion_diagnostic && !cancelled() && needs.plan.result == 'success' && fromJSON(needs.plan.outputs.chunks) >= 7 }}
+    if: ${{ !inputs.motion_diagnostic && !cancelled() && needs.plan.result == 'success' && needs.chunk6.result == 'success' && fromJSON(needs.plan.outputs.chunks) >= 7 }}
     runs-on: ubuntu-latest
     timeout-minutes: 350
     strategy:
@@ -343,7 +343,7 @@ jobs:
   chunk8:
     name: ${{ inputs.mode }} ${{ inputs.days }}d feed-${{ matrix.feed }} ${{ matrix.scene }}/${{ matrix.decor }} seed ${{ matrix.seed }} chunk 8/${{ needs.plan.outputs.chunks }}
     needs: [plan, chunk7]
-    if: ${{ !inputs.motion_diagnostic && !cancelled() && needs.plan.result == 'success' && fromJSON(needs.plan.outputs.chunks) >= 8 }}
+    if: ${{ !inputs.motion_diagnostic && !cancelled() && needs.plan.result == 'success' && needs.chunk7.result == 'success' && fromJSON(needs.plan.outputs.chunks) >= 8 }}
     runs-on: ubuntu-latest
     timeout-minutes: 350
     strategy:
@@ -368,7 +368,7 @@ jobs:
   chunk9:
     name: ${{ inputs.mode }} ${{ inputs.days }}d feed-${{ matrix.feed }} ${{ matrix.scene }}/${{ matrix.decor }} seed ${{ matrix.seed }} chunk 9/${{ needs.plan.outputs.chunks }}
     needs: [plan, chunk8]
-    if: ${{ !inputs.motion_diagnostic && !cancelled() && needs.plan.result == 'success' && fromJSON(needs.plan.outputs.chunks) >= 9 }}
+    if: ${{ !inputs.motion_diagnostic && !cancelled() && needs.plan.result == 'success' && needs.chunk8.result == 'success' && fromJSON(needs.plan.outputs.chunks) >= 9 }}
     runs-on: ubuntu-latest
     timeout-minutes: 350
     strategy:
@@ -393,7 +393,7 @@ jobs:
   chunk10:
     name: ${{ inputs.mode }} ${{ inputs.days }}d feed-${{ matrix.feed }} ${{ matrix.scene }}/${{ matrix.decor }} seed ${{ matrix.seed }} chunk 10/${{ needs.plan.outputs.chunks }}
     needs: [plan, chunk9]
-    if: ${{ !inputs.motion_diagnostic && !cancelled() && needs.plan.result == 'success' && fromJSON(needs.plan.outputs.chunks) >= 10 }}
+    if: ${{ !inputs.motion_diagnostic && !cancelled() && needs.plan.result == 'success' && needs.chunk9.result == 'success' && fromJSON(needs.plan.outputs.chunks) >= 10 }}
     runs-on: ubuntu-latest
     timeout-minutes: 350
     strategy:
