@@ -781,6 +781,12 @@ func _move(delta: float) -> void:
 				_close=1.0
 				top=minf(top,cfg.scull/steep)
 			arrive=way*(maxf(top,OBSTACLE.escape*cruise) if _escaping else top)
+		# A vertical hitch waypoint still needs upright rowing in its last40px.
+		# Forward headway there turns the remaining vertical motion into sideways
+		# strokes and repeated reversals, delaying the night return (shipwreck/3).
+		if hitch_trip and way==Vector2.ZERO and absf(offset.y)>absf(offset.x)*sin(cfg.pitch):
+			climbing=true
+			_last_scull=true
 		# Everything else steering adds on top of arriving: rise and fall, spacing, dodging.
 		var desired:=Vector2.ZERO
 		# A gentle rise and fall while travelling, fading out on approach; no per-frame randomness.
