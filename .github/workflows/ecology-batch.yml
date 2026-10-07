@@ -45,6 +45,10 @@ on:
         description: run both scenes, min/max decor and none/daily feeding for every seed
         type: boolean
         default: false
+      run_core:
+        description: also run the complete core suite (skip only for a separate ecology-only companion run)
+        type: boolean
+        default: true
 
 # An explicit bash shell turns on pipefail, so a failing test or acceptance
 # gate fails the job instead of being hidden behind tee.
@@ -85,6 +89,7 @@ jobs:
       - id: plan
         env:
           RUN_DAYS: ${{ inputs.days }}
+          RUN_MODE: ${{ inputs.mode }}
           RUN_SEEDS: ${{ inputs.seeds }}
           RUN_SCENE: ${{ inputs.scene }}
           RUN_DECOR: ${{ inputs.decor }}
@@ -94,6 +99,7 @@ jobs:
 
   core:
     name: core tests
+    if: inputs.run_core
     runs-on: ubuntu-latest
     timeout-minutes: 350
     steps:
@@ -133,7 +139,7 @@ jobs:
             if [[ "$t" == test_obstacles ]]; then budget=3600; fi
             if timeout "$budget" godot --headless --path . --script "tests/$t.gd" 2>&1 | tee "../$t.log" \
               && grep '^{.*"failures"' "../$t.log" | tail -1 | jq -e '.failures==[] or .failures==0' >/dev/null \
-              && ! grep -qE 'SCRIPT ERROR|Parse Error|Failed loading resource' "../$t.log"; then
+              && ! grep -qE '^ERROR:|SCRIPT ERROR|Parse Error|Failed loading resource' "../$t.log"; then
               echo "PASS $t"
             else
               echo "::error::$t failed (exit code, failures JSON or load error)"; fail=1

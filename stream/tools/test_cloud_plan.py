@@ -24,6 +24,15 @@ class PlanTests(unittest.TestCase):
             with self.subTest(days=days,seeds=seeds), self.assertRaises(ValueError):
                 plan(days,seeds,broad=True)
 
+    def test_offline_32_seeds_keep_complete_coverage_with_fewer_jobs(self):
+        p=plan(180,list(range(1,33)),mode='offline')
+        self.assertEqual(p['chunks'],3)
+        self.assertEqual(p['bounds'],[0,60,120,180])
+        self.assertEqual(len(p['cases']),32)
+        self.assertLessEqual(len(p['cases'])*p['chunks']+2,256)
+        with self.assertRaises(ValueError):
+            plan(180,[42],mode='unknown')
+
 
 if __name__=='__main__':
     unittest.main()
