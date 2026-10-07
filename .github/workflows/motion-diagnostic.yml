@@ -3,6 +3,7 @@ name: Motion diagnostic
 # Short cloud reproductions. These never constitute full app acceptance.
 on:
   workflow_dispatch:
+  workflow_call:
 
 defaults:
   run:
