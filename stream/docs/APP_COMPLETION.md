@@ -1,4 +1,29 @@
-# App completion, 2026-10-06
+# App completion — current acceptance status
+
+Goal: 完成整個 app. **Not complete.** Current application candidate: `2ee7c782ea6edf38073fb87644241a71bcadf724`, branch `codex/app-completion-20261007`. Later evidence-only documentation commits do not change that candidate. QA uses memory-only `--qa` or isolated `--persist-qa`; never use real saves for tests.
+
+The user requires low power use (「不要用太多電力」). Keep checks short, serial and bounded with `tools/low_power_check.py`; do not start a large local/cloud acceptance run merely to finish this table. No test/collector is currently active. User authorization for visible native control remains unanswered; physical Cmd-Q and sleep/wake require the user under the approved sequence.
+
+| Requirement / gate | Current evidence and remaining work |
+|---|---|
+| Approved art and turns | Approved v2 backgrounds/decor and four side-view fish remain. Immediate mirroring supersedes the earlier paper-flip decision. Native complete comparison on current source is pending; headless visual-review preflight is not an image review. |
+| Four-species cast and ecology | Initial6/2/2/2, caps8/3/4/3 (12 opening,18 maximum), no neglect starvation/species extinction. Historical32-seed offline180d +365 stability passed at68c9966; the fresh changed-source run was interrupted and is not accepted. |
+| S5 obstacles / natural movement | Original full16-seed64-configuration obstacle and78-check natural gates passed at68c9966. Current resident-arrival/body-clearance changes still need both complete gates with unchanged seeds/thresholds. Interrupted runs are diagnostic. |
+| Clownfish / seahorse / gramma | Historical S6/S7/S8 and contracts passed; current complete reruns remain pending. Preserve upright3–6px/s horses, >=80% daylight hitching, all-night hitching, unique contacts, <=8min excursions/<=30s decor reattachment, gramma50px radius and real den clipping/rock fallback. Current held-pose classifier9/9 passes; this does not prove complete behavior. |
+| Chromis night/dawn | Preserve eligible shelter<=300px, resting target40–60px away, stable night targets and bounded dawn return. Current controlled clownfish pass3/3: resting movement0px, overlap.056964, passer completes. Full multi-seed night stability is pending after the intermediate candidate's68.85px drift failure. |
+| Decor and scene transitions | Fixed4–6 slots, mandatory anemone/hitch plant, real bodies/obstacles/homes, ecology/RNG independence and.75s transition. Two alpha-contact coordinates were corrected on existing art;75/75 decor-art gate passed before the subsequent motion-only edits. Current full scene/decor and visual integration acceptance remains pending. |
+| Interaction and old age | Feeding/lure/glass tapping, no inspector/audio; quiet old-age exit/fade<=120s, no corpse or offline replay. Historical contract/departure tests pass; current native visual integration remains pending. |
+| Save v3 and lifecycle | `reef.world`, protected legacy world/preferences, isolated new/existing saves and exact continuation. Older package isolated startup verified; current package, real window-close/Cmd-Q/hidden resume and physical hardware sleep/wake are unverified. |
+| Pixels, resize, fullscreen, FPS | Integer640×360 viewport for1280×720 world, pixel alignment, actual60/30/0 render states and hidden10Hz service. Prior code/core gates pass; current graphical resize/fullscreen and real frame measurements are pending. |
+| Complete live180d matrix | Run37495479815 at68c9966 is terminal failure:0/24 final cases,27/29 core gates;60-day chunks timed out. Ten exact18-day chunk workflow is prepared, not dispatched. All24 cases ×180 days and all12 acceptance flags remain required. |
+| Exact checkpoints / evidence tools | Ten-chunk actual CLI equivalence48/48 (world/tallies/report exact aside from timing). Planner3/3, collector12/12, persistence5/5, low-power runner2/2 and actionlint pass. These are tooling evidence, not live180d acceptance. |
+| Universal macOS package | Existing ad-hoc signed x86_64/arm64 app and21 exported-PCK resource checks belong to68c9966. No export at the current changed source; no final accepted release package. |
+| Native power/performance | Three separate30-minute foreground/background/hidden measurements and measured final CPU ceiling remain pending. Inherited15% one-core/350MB limits are provisional, not measured acceptance. Short check CPU times do not measure electrical energy or app watts. |
+| Documentation and final approval | README/product/backend contracts exist. This current table overrides running/pass claims in the historical journal below. User full comparison and physical acceptance, final exact-source evidence and accepted package are still required. |
+
+Current focused evidence is local under `stream/artifacts/completion/`: `low-power-world-parse.log` (syntax only,.476 CPU seconds), `low-power-held-fixture.log` (9 classifier cases,1.076 CPU seconds), `low-power-night-clown-pass.log` (one controlled pass,1.666 CPU seconds). No narrow result substitutes for a broader gate.
+
+## Historical integration journal (superseded candidate states)
 
 User goal: 完成整個 app. This supersedes the earlier frontend/backend work split; the current chat owns integration and remaining work. Approved art and immediate mirrored turns remain authoritative. User saves must not be touched by QA; launch with `-- --qa` or isolated persist QA.
 
