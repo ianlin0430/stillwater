@@ -12,6 +12,23 @@ import subprocess
 import time
 
 
+def signal_group(child, sig):
+    try:
+        os.killpg(child.pid, sig)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        # Darwin may deny a signal to an exiting zombie process group.
+        # Never mask a denial while our child is still running.
+        if child.poll() is None:
+            try:
+                child.wait(timeout=.1)
+            except subprocess.TimeoutExpired:
+                raise PermissionError('Cannot signal a still-running check group')
+        return False
+    return True
+
+
 def run(command, wall_seconds=20):
     if os.name != 'posix' or not 0 < wall_seconds <= 120:
         raise ValueError('POSIX only; wall budget must be positive and at most120 seconds')
@@ -29,27 +46,20 @@ def run(command, wall_seconds=20):
             if remaining<=0:
                 timed_out=True
                 break
-            try:
-                os.killpg(child.pid, signal.SIGSTOP)
-            except ProcessLookupError:
+            if not signal_group(child, signal.SIGSTOP):
                 break
             time.sleep(min(.18,remaining))
             remaining=wall_seconds-(time.monotonic()-start)
             if remaining<=0:
                 timed_out=True
                 break
-            try:
-                os.killpg(child.pid, signal.SIGCONT)
-            except ProcessLookupError:
+            if not signal_group(child, signal.SIGCONT):
                 break
             time.sleep(min(.02,remaining))
     finally:
         # Always remove the entire check group, including stopped descendants.
         # SIGKILL avoids briefly releasing a timed-out CPU-bound worker again.
-        try:
-            os.killpg(child.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
+        signal_group(child, signal.SIGKILL)
         child.wait()
     after=resource.getrusage(resource.RUSAGE_CHILDREN)
     return {'exit_code':child.returncode, 'timed_out':timed_out,
