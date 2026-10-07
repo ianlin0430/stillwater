@@ -68,6 +68,13 @@ def verify_logs(raw, engine=ENGINE):
         if type(verdict.get('checks')) is not int or verdict['checks'] != checks or verdict.get('failures') != []:
             raise ValueError(f'{suite}: incomplete/failed gate')
         if suite == 'test_obstacles':
+            regressions = verdict.get('numbers', {}).get('seahorse_stall', {})
+            if set(regressions) != {'shipwreck-min-17', 'shipwreck-max-42'}:
+                raise ValueError('S5 lacks both exact original stall regressions')
+            for row in regressions.values():
+                if (type(row.get('longest')) is not int or not 0 <= row['longest'] < 2
+                        or type(row.get('obstacle_stalls')) is not int or row['obstacle_stalls'] != 0):
+                    raise ValueError('S5 exact stall regression is incomplete/failed')
             numbers = verdict['numbers']['obstacles']
             if numbers.get('seeds') != SEEDS or any(type(s) is not int for s in numbers['seeds']):
                 raise ValueError('S5 does not cover the original16 seeds')

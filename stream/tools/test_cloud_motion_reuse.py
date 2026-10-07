@@ -24,6 +24,9 @@ class MotionReuse(unittest.TestCase):
                     config: {key: dict.fromkeys(map(str, SEEDS), 0)
                              for key in ['hesitation', 'control_hesitation']}
                     for config in ['reef/min', 'reef/max', 'shipwreck/min', 'shipwreck/max']}}}
+                verdict['numbers']['seahorse_stall'] = {
+                    label: {'longest': 0, 'obstacle_stalls': 0}
+                    for label in ['shipwreck-min-17', 'shipwreck-max-42']}
             (self.raw / (name + '.log')).write_text('Godot Engine v' + ENGINE + ' - fixture\n' + json.dumps(verdict) + '\n')
             (self.raw / (name + '.exit')).write_text('0\n')
 
@@ -128,6 +131,28 @@ class MotionReuse(unittest.TestCase):
         path.write_text('Godot Engine v' + ENGINE + ' - fixture\n' + json.dumps(data))
         with self.assertRaises(ValueError):
             verify_logs(self.raw)
+
+    def test_both_exact_stall_regressions_required(self):
+        path = self.raw / 'test_obstacles.log'
+        original = json.loads(path.read_text().splitlines()[-1])
+        for label in ['shipwreck-min-17', 'shipwreck-max-42']:
+            data = copy.deepcopy(original)
+            del data['numbers']['seahorse_stall'][label]
+            self.change('test_obstacles', numbers=data['numbers'])
+            with self.assertRaises(ValueError):
+                verify_logs(self.raw)
+
+    def test_failed_or_invalid_stall_metrics_rejected(self):
+        path = self.raw / 'test_obstacles.log'
+        original = json.loads(path.read_text().splitlines()[-1])
+        for field, value in [('longest', 2), ('longest', -1), ('longest', 0.0),
+                             ('longest', False), ('obstacle_stalls', 1),
+                             ('obstacle_stalls', False)]:
+            data = copy.deepcopy(original)
+            data['numbers']['seahorse_stall']['shipwreck-max-42'][field] = value
+            self.change('test_obstacles', numbers=data['numbers'])
+            with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+                verify_logs(self.raw)
 
     def test_actual_tree_identity(self):
         previous = pathlib.Path.cwd()
