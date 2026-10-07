@@ -1,9 +1,9 @@
 extends RefCounted
 const Trips=preload("res://tests/obstacle_trip_driver.gd")
-const HOME=(StreamWorld as Script).get_script_constant_map().get("HOME",{})
 
 static func run(check: Callable, variant: bool=false) -> Dictionary:
 	var results: Dictionary={}
+	var home_rules: Dictionary=(StreamWorld as Script).get_script_constant_map().get("HOME",{})
 	for label: String in ["shipwreck-min-17","shipwreck-max-42"]:
 		var file:=FileAccess.open("res://tests/fixtures/"+label+"-stall.var",FileAccess.READ)
 		check.call(file!=null,"Obstacle stall fixture exists: "+label)
@@ -40,7 +40,7 @@ static func run(check: Callable, variant: bool=false) -> Dictionary:
 				var h: Vector2=ReefFishArt.extent_for(a.species)*w.animal_scale(a)*.5
 				var near: bool=context.obstacles.any(func(o): return Vector2((p.x-o.cx)/(o.rx+h.x),(p.y-o.cy)/(o.ry+h.y)).length()<1.3)
 				if near: s.near+=1
-				if a.has("home_x") and p.distance_to(Vector2(a.home_x,a.home_y))<=HOME[a.species].radius: s.home+=1
+				if a.has("home_x") and p.distance_to(Vector2(a.home_x,a.home_y))<=home_rules[a.species].radius: s.home+=1
 				if s.n>=150:
 					if p.distance_to(s.from)<15.0 and s.home!=s.n:
 						runs[a.id]=runs.get(a.id,0)+1

@@ -43,6 +43,15 @@ jobs:
         run: |
           mkdir -p ../motion-results
           fail=0
+          for script in tests/test_obstacle_stall_regression.gd tests/test_obstacles.gd; do
+            log="../motion-results/parse-$(basename "$script" .gd).log"
+            set +e
+            timeout 60 godot --headless --path . --check-only --script "$script" 2>&1 | tee "$log"
+            code=${PIPESTATUS[0]}
+            set -e
+            echo "$code" > "${log%.log}.exit"
+            if [[ "$code" != 0 ]] || grep -qE '^ERROR:|SCRIPT ERROR|Parse Error|Failed loading resource' "$log"; then exit 1; fi
+          done
           for variant in baseline stable; do
           extra=()
           if [[ "$variant" == stable ]]; then extra+=(--stable-horse-pass); fi
