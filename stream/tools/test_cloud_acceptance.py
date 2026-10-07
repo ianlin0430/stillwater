@@ -102,6 +102,16 @@ class EvidenceTests(unittest.TestCase):
         (self.raw / 'test_obstacles.log').write_text('{"failures":[]}\nSCRIPT ERROR: late failure\n')
         self.assertFalse(self.result()['passed'])
 
+    def test_engine_errors_before_and_after_green_verdict_are_rejected(self):
+        verdict='{"checks":40,"failures":[]}\n'
+        error='ERROR: Condition "(uint32_t)buff.size() != len" is true. Returning: Variant()\n'
+        for content in [error+verdict, verdict+error]:
+            with self.subTest(content=content):
+                (self.raw / 'test_save_v3.log').write_text(content)
+                result=self.result()
+                self.assertFalse(result['passed'])
+                self.assertNotIn('test_save_v3',result['core'])
+
     def test_last_core_verdict_and_missing_log(self):
         path = self.raw / 'test_obstacles.log'
         path.write_text('{"failures":[]}\n{"failures":["failure"]}\n')

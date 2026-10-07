@@ -16,7 +16,7 @@ test_stage_scenes test_long_run_chunks test_scene_data test_scene_switch test_sa
 test_home_layout_restore test_home_geometry test_home_behaviors test_seahorse test_gramma
 test_chromis_roost test_clownfish test_clownfish_contract test_departures test_frame_pacer
 test_cast_transition test_decor_art test_new_fish_art test_mirror_turn'''.split()
-ERRORS = re.compile(r'SCRIPT ERROR|Parse Error|Failed loading resource')
+ERRORS = re.compile(r'^ERROR:|SCRIPT ERROR|Parse Error|Failed loading resource', re.MULTILINE)
 FLAGS = set('reproduction local_replacement old_age starvation predation population presence no_departures conservation plants valid depth_bands'.split())
 
 
