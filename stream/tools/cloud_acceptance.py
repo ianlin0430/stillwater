@@ -3,6 +3,7 @@
 import argparse
 import itertools
 import json
+import math
 import pathlib
 import re
 import subprocess
@@ -17,6 +18,23 @@ test_chromis_roost test_clownfish test_clownfish_contract test_departures test_f
 test_cast_transition test_decor_art test_new_fish_art test_mirror_turn'''.split()
 ERRORS = re.compile(r'SCRIPT ERROR|Parse Error|Failed loading resource')
 FLAGS = set('reproduction local_replacement old_age starvation predation population presence no_departures conservation plants valid depth_bands'.split())
+
+
+def complete_chunks(chunks):
+    """Reject gaps, overlaps, reordering and fake timing at any checkpoint size."""
+    if not isinstance(chunks, list) or not chunks:
+        return False
+    end = 0
+    for chunk in chunks:
+        if not isinstance(chunk, dict):
+            return False
+        start, stop, seconds = (chunk.get(k) for k in ['from_day', 'to_day', 'seconds'])
+        if type(start) is not int or type(stop) is not int or start != end or not start < stop <= 180:
+            return False
+        if type(seconds) not in (int, float) or not math.isfinite(seconds) or seconds <= 0:
+            return False
+        end = stop
+    return end == 180
 
 
 def audit(run, raw, sha):
@@ -45,8 +63,8 @@ def audit(run, raw, sha):
             if set(row.get('acceptance', {})) != FLAGS or any(flag is not True for flag in row['acceptance'].values()):
                 raise ValueError('acceptance flag missing or failed')
             chunks = row.get('chunks', [])
-            if [(c['from_day'], c['to_day']) for c in chunks] != [(0, 60), (60, 120), (120, 180)] or any(c['seconds'] <= 0 for c in chunks):
-                raise ValueError('missing or invalid three-chunk coverage')
+            if not complete_chunks(chunks):
+                raise ValueError('missing or invalid complete checkpoint coverage')
             rows.append({k: row[k] for k in ['seed', 'scene', 'decor', 'feed', 'days', 'chunks',
                                             'acceptance', 'max_population', 'max_material_residual',
                                             'starvation', 'longest_absence', 'depth']})

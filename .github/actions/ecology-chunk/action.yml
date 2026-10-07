@@ -1,0 +1,98 @@
+name: Ecology chunk
+description: Resume exact world and accumulators, simulate a bounded interval, publish evidence
+inputs:
+  mode:
+    description: mode
+    required: true
+  days:
+    description: days
+    required: true
+  seed:
+    description: seed
+    required: true
+  scene:
+    description: scene
+    required: true
+  decor:
+    description: decor
+    required: true
+  feed:
+    description: feed
+    required: true
+  year:
+    description: year
+    required: true
+  from-day:
+    description: from-day
+    required: true
+  to-day:
+    description: to-day
+    required: true
+  index:
+    description: index
+    required: true
+runs:
+  using: composite
+  steps:
+    - uses: actions/download-artifact@v4
+      if: inputs.from-day != '0'
+      with:
+        name: checkpoint-${{ inputs.mode }}-${{ inputs.days }}d-${{ inputs.scene }}-${{ inputs.decor }}-feed-${{ inputs.feed }}-seed-${{ inputs.seed }}-day-${{ inputs.from-day }}
+        path: stream/artifacts/ckpt
+    - name: Install Godot 4.6.3
+      shell: bash
+      run: |
+        set -eu
+        url=https://github.com/godotengine/godot-builds/releases/download/4.6.3-stable/Godot_v4.6.3-stable_linux.x86_64.zip
+        curl -fsSL -o godot.zip "$url"
+        unzip -q godot.zip
+        mv Godot_v4.6.3-stable_linux.x86_64 /usr/local/bin/godot
+        chmod +x /usr/local/bin/godot
+        godot --version
+    - name: Import project
+      shell: bash
+      working-directory: stream
+      run: godot --headless --path . --import --quit-after 2000
+    - name: Simulate and checkpoint
+      shell: bash
+      working-directory: stream
+      env:
+        RUN_MODE: ${{ inputs.mode }}
+        RUN_DAYS: ${{ inputs.days }}
+        RUN_SEED: ${{ inputs.seed }}
+        RUN_SCENE: ${{ inputs.scene }}
+        RUN_DECOR: ${{ inputs.decor }}
+        RUN_FEED: ${{ inputs.feed }}
+        RUN_YEAR: ${{ inputs.year }}
+        RUN_FROM: ${{ inputs.from-day }}
+        RUN_TO: ${{ inputs.to-day }}
+        RUN_INDEX: ${{ inputs.index }}
+      run: |
+        set -euo pipefail
+        args=("--mode=$RUN_MODE" "--days=$RUN_DAYS" "--seeds=$RUN_SEED" "--feed=$RUN_FEED" "--scene=$RUN_SCENE" "--decor=$RUN_DECOR" "--from-day=$RUN_FROM" "--to-day=$RUN_TO")
+        if (( RUN_FROM > 0 )); then args+=("--checkpoint-in=ckpt/day-$RUN_FROM.world"); fi
+        if (( RUN_TO == RUN_DAYS )); then
+          args+=("--year=$RUN_YEAR" "--out=ci-$RUN_MODE-${RUN_DAYS}d-$RUN_SCENE-$RUN_DECOR-feed-$RUN_FEED-$RUN_SEED.json")
+        else
+          args+=(--year=false "--checkpoint-out=ckpt/day-$RUN_TO.world")
+        fi
+        godot --headless --path . --script tests/long_run.gd -- "${args[@]}" 2>&1 | tee "../long-run-chunk-$RUN_INDEX.log"
+    - uses: actions/upload-artifact@v4
+      if: inputs.to-day != inputs.days
+      with:
+        name: checkpoint-${{ inputs.mode }}-${{ inputs.days }}d-${{ inputs.scene }}-${{ inputs.decor }}-feed-${{ inputs.feed }}-seed-${{ inputs.seed }}-day-${{ inputs.to-day }}
+        path: stream/artifacts/ckpt/day-${{ inputs.to-day }}.world*
+        retention-days: 7
+        if-no-files-found: error
+    - uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: ecology-${{ inputs.mode }}-${{ inputs.days }}d-${{ inputs.scene }}-${{ inputs.decor }}-feed-${{ inputs.feed }}-seed-${{ inputs.seed }}-chunk-${{ inputs.index }}-log
+        path: long-run-chunk-${{ inputs.index }}.log
+        if-no-files-found: warn
+    - uses: actions/upload-artifact@v4
+      if: always() && inputs.to-day == inputs.days
+      with:
+        name: ecology-${{ inputs.mode }}-${{ inputs.days }}d-${{ inputs.scene }}-${{ inputs.decor }}-feed-${{ inputs.feed }}-seed-${{ inputs.seed }}
+        path: stream/artifacts/ci-*.json
+        if-no-files-found: error

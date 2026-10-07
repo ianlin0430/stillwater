@@ -57,10 +57,12 @@ QA keeps an isolated in-memory world and never writes user saves/preferences. Th
 
 ## Long-run acceptance
 
-The **Ecology batch** workflow runs 180-day live or offline simulations in three checkpointed chunks. With default seeds 42,812,240921 and `acceptance_matrix=true`, it covers both scenes × min/max decoration × fed/unfed, producing 24 cases. Single configurations can select scene/decor/feed directly. Checkpoints reject mismatched seed, mode, feeding, duration or habitat, and split/whole results must agree exactly apart from timing.
+The **Ecology batch** workflow runs 180-day live or offline simulations in ten checkpointed18-day chunks. With default seeds 42,812,240921 and `acceptance_matrix=true`, it covers both scenes × min/max decoration × fed/unfed, producing 24 cases. Single configurations can select scene/decor/feed directly. Checkpoints reject mismatched seed, mode, feeding, duration or habitat, and split/whole results must agree exactly apart from timing. Shorter runs keep all requested days using up to ten chunks; the planner rejects a matrix that exceeds the hosted job limit.
 
 The 32-seed offline and 24-case live reports are release requirements. A passing short checkpoint test or generated matrix is not proof that those 180-day runs passed. Final results belong in [App completion](docs/APP_COMPLETION.md).
 
 See [the approved scope](docs/REDESIGN_2026-09-28.md), [art provenance](assets/reef/PROVENANCE.md) and [snapshot/event contract](docs/BACKEND_SNAPSHOT_EVENTS.md). Older validation notes are historical evidence and may describe superseded species or controls.
 
 Final native performance acceptance measures three separate30-minute states: `python3 tools/foreground_acceptance.py --mode foreground`, then `--mode background`, then `--mode hidden`. These are isolated QA launches and require the actual window state. Results and the final CPU ceiling remain pending; procedure and evidence limits are in [Validation](docs/validation.md).
+
+The current user requires low power use. Keep diagnostic checks short and serial: `python3 tools/low_power_check.py -- <headless check command>` runs at a10% duty cycle, with reduced scheduling priority and a20-second wall budget. It kills the check group at the limit and reports CPU time; a timeout is incomplete evidence. This is a local load limiter, not a measurement of electrical energy. Full acceptance and large cloud matrices remain deferred pending an energy-conscious plan.

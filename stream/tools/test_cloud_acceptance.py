@@ -5,7 +5,7 @@ import json
 import pathlib
 import tempfile
 import unittest
-from cloud_acceptance import audit, CORE, FLAGS, SEEDS
+from cloud_acceptance import audit, complete_chunks, CORE, FLAGS, SEEDS
 
 
 class EvidenceTests(unittest.TestCase):
@@ -70,6 +70,25 @@ class EvidenceTests(unittest.TestCase):
     def test_chunk_gap(self):
         self.alter(lambda r: r['runs'][0]['chunks'][1].update(from_day=61))
         self.assertFalse(self.result()['passed'])
+
+    def test_ten_exact_chunks(self):
+        chunks = [{'from_day': s, 'to_day': s+18, 'seconds': 1} for s in range(0,180,18)]
+        self.assertTrue(complete_chunks(chunks))
+        for path in self.paths:
+            value=json.loads(path.read_text())
+            value['runs'][0]['chunks']=chunks
+            path.write_text(json.dumps(value))
+        self.assertTrue(self.result()['passed'])
+
+    def test_invalid_checkpoint_coverage(self):
+        good=[{'from_day': s, 'to_day': s+18, 'seconds': 1} for s in range(0,180,18)]
+        for chunks in [[],good[:-1],good[::-1],good+[good[-1]],None]:
+            self.assertFalse(complete_chunks(chunks))
+        for key,value in [('from_day',1),('to_day',0),('to_day',181),('to_day',18.0),
+                          ('seconds',0),('seconds',float('nan')),('seconds',float('inf'))]:
+            chunks=copy.deepcopy(good)
+            chunks[0][key]=value
+            self.assertFalse(complete_chunks(chunks))
 
     def test_configuration_mismatch(self):
         self.alter(lambda r: r.update(scene='shipwreck' if r['scene']=='reef' else 'reef'))

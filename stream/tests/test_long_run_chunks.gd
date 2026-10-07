@@ -81,6 +81,27 @@ func chunked_cli() -> void:
 	var w_single: Dictionary=StreamStore.read(DIR+"single.world")
 	check(not w_single.is_empty() and var_to_bytes(StreamStore.read(DIR+"c3.world"))==var_to_bytes(w_single),"The world after three chunks is byte-identical to the world after one")
 	check(not tally(DIR+"single.world").is_empty() and var_to_bytes(tally(DIR+"c3.world"))==var_to_bytes(tally(DIR+"single.world")),"Every accumulator after three chunks is byte-identical (timing aside)")
+	# Hosted acceptance now uses ten bounded chunks. Exercise uneven integer
+	# day boundaries too, retaining exact food, monthly rows, RNG and tallies.
+	var prior: String=""
+	var ten_ok: bool=true
+	var bounds: Array=[]
+	for i in 10:
+		var start_day: int=DAYS*i/10
+		var end_day: int=DAYS*(i+1)/10
+		var checkpoint: String="chunk-test/ten%d.world" % i
+		var args: Array=base+["--out=chunk-test/ten.json","--from-day=%d" % start_day,"--to-day=%d" % end_day,"--checkpoint-out="+checkpoint]
+		if not prior.is_empty(): args.append("--checkpoint-in="+prior)
+		var part: Array=long_run(args)
+		ten_ok=ten_ok and part[0]==(whole[0] if i==9 else 0)
+		bounds.append([start_day,end_day])
+		prior=checkpoint
+	check(ten_ok,"Ten chunks complete every interval and judge only the last one")
+	check(var_to_bytes(report("ten.json"))==var_to_bytes(r_whole),"Ten chunks preserve the complete report exactly (timing aside)")
+	check(var_to_bytes(StreamStore.read(DIR+"ten9.world"))==var_to_bytes(w_single),"Ten chunks preserve the exact final world")
+	check(var_to_bytes(tally(DIR+"ten9.world"))==var_to_bytes(tally(DIR+"single.world")),"Ten chunks preserve every exact accumulator (timing aside)")
+	var ten_chunks: Array=JSON.parse_string(FileAccess.get_file_as_string(DIR+"ten.json")).runs[0].chunks
+	check(ten_chunks.map(func(c): return [int(c.from_day),int(c.to_day)])==bounds,"Ten chunks report all exact boundaries")
 	var wrong: Array=long_run(base+["--out=chunk-test/wrong.json","--from-day=%d" % third,"--checkpoint-in=chunk-test/c2.world"])
 	check(wrong[0]==1 and "CHUNK ERROR" in wrong[1] and not FileAccess.file_exists(DIR+"wrong.json"),"Resuming from a checkpoint of another day fails loudly")
 	var two_seeds: Array=long_run(["--mode=offline","--days=6","--seeds=42,812","--to-day=2","--checkpoint-out=chunk-test/x.world"])

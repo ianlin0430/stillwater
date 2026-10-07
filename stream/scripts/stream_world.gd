@@ -729,7 +729,10 @@ func _move(delta: float) -> void:
 		var nestled: bool=species=="clownfish" and a.activity=="Nestling" and _clown_inside(p)
 		home_hover=home_hover or nestled
 		if home_hover:
-			arrive=arrive.limit_length(cfg.scull*0.9)
+			# A resident's final pectoral approach must decay with the remaining
+			# distance. sqrt(brake * gap) overshoots a subpixel perch every 0.2s
+			# tick, producing repeated up/down strokes while already at home.
+			arrive=arrive.limit_length(minf(cfg.scull*0.9,gap*2.0))
 		var hovering: bool=resting and gap<CHROMIS.hold
 		if hovering:
 			arrive=Vector2.ZERO
@@ -931,11 +934,28 @@ func _keep_home_body_space(a: Dictionary, p: Vector2, next: Vector2) -> Vector2:
 			next.y=at.y+signf(before.y)*r.y
 	return next
 
+# A clasp or a physical den holds its owner; it cannot dodge passing traffic.
+func _fixed_home_pose(a: Dictionary) -> bool:
+	if a.activity=="Hitched" and a.has("hitch_x"): return true
+	if a.species!="royal_gramma" or a.activity not in ["Sheltering","Sleeping"] or not a.has("home") or a.home.kind=="rock": return false
+	var within_den: bool=Vector2(a.x-a.home_x,a.y-a.home_y).length()<HOME.royal_gramma.radius+_body(a).x*.5
+	return within_den and (a.activity=="Sheltering" and state.elapsed<a.decision_at or a.activity=="Sleeping" and (state.light_hour<7 or state.light_hour>19))
+
 func _avoid(a: Dictionary, p: Vector2, desired: Vector2, speed: float) -> Vector2:
 	_dodge=0.0
 	# A resting chromis stays put; the others go around it.
 	if a.activity=="Resting" and a.species=="green_chromis":
-		return desired
+		if state.light_hour<7 or state.light_hour>19: return desired
+		# Swimming traffic goes around a resting school, but an attached home
+		# resident cannot yield. A daytime breathing slot must stay clear of it;
+		# settled night targets remain fixed and never yield to passing traffic.
+		var clear: bool=true
+		for o: Dictionary in _not_chromis:
+			if not _fixed_home_pose(o): continue
+			var r: Vector2=(_bodies[a.id]+_bodies[o.id])*.5*SEPARATE.margin*1.17
+			var rel: Vector2=(p-Vector2(o.x,o.y)).abs()/r
+			if maxf(rel.x,rel.y)<1.0: clear=false
+		if clear: return desired
 	var own: Vector2=_bodies[a.id]
 	var v:=Vector2(a.get("vx",0.0),a.get("vy",0.0))
 	var push:=Vector2.ZERO
@@ -966,8 +986,9 @@ func _avoid(a: Dictionary, p: Vector2, desired: Vector2, speed: float) -> Vector
 		var ahead: Vector2=rel+relv*t
 		var now: float=Vector2(rel.x/r.x,rel.y/r.y).length()
 		var q: float=minf(now,Vector2(ahead.x/r.x,ahead.y/r.y).length())
-		if landing or horse_pair:
-			# Horse contact clipping uses body boxes throughout a trip, including corners.
+		var fixed_home: bool=_fixed_home_pose(o)
+		if landing or horse_pair or fixed_home:
+			# Attached residents and horse trips use actual body boxes at corners.
 			now=maxf(absf(rel.x/r.x),absf(rel.y/r.y))
 			q=minf(now,maxf(absf(ahead.x/r.x),absf(ahead.y/r.y)))
 		if q>=1.0:
@@ -1022,7 +1043,7 @@ func _avoid(a: Dictionary, p: Vector2, desired: Vector2, speed: float) -> Vector
 			holding=0.85
 		if now<holding or yields>0.0:
 			var n: Vector2=Vector2(rel.x/(r.x*r.x),rel.y/(r.y*r.y)).normalized()
-			if landing:
+			if landing or fixed_home:
 				n=Vector2(signf(rel.x),0) if absf(rel.x/r.x)>absf(rel.y/r.y) else Vector2(0,signf(rel.y))
 			var toward: float=-desired.dot(n)
 			if toward>0.0:

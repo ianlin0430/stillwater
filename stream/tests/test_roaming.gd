@@ -1,6 +1,6 @@
 extends SceneTree
-# Live-path movement checks for the 0.4.1 roaming rules: the chromis school roams the pool; since S4
-# (2026-09-28) the clownfish, seahorse and royal gramma swim about their homes instead.
+# Live-path roaming and resident arrival checks for the completed S6-S9 cast.
+# Seahorses travel between hitch homes; clownfish sleep and gramma hide at night.
 var failures: Array[String]=[]
 # Roaming destinations are clamped to x 130..1150 (StreamWorld._roaming_x).
 const SPAN: float=1020.0
@@ -17,7 +17,7 @@ func track(seed_value: int, hour: float, ticks: int) -> Dictionary:
 			if not tracks.has(a.id): continue
 			var t: Dictionary=tracks[a.id]
 			var p:=Vector2(a.x,a.y)
-			if a.has("home"):
+			if a.has("home") and a.species!="seahorse":
 				t.home_far=maxf(t.home_far,p.distance_to(Vector2(a.home_x,a.home_y)))
 			t.low=minf(t.low,a.x)
 			t.high=maxf(t.high,a.x)
@@ -34,7 +34,7 @@ func track(seed_value: int, hour: float, ticks: int) -> Dictionary:
 				failures.append("Invalid movement bounds")
 			if a.x<=108 or a.x>=1172:
 				t.edge+=1
-			if a.activity in ["Resting","Surface feeding","Displaying"]:
+			if a.activity in ["Resting","Nestling","Sleeping","Sheltering","Hitched"]:
 				t.still+=1
 			# Only count reversals big enough to read on screen as a twitch.
 			var vy: float=a.get("vy",0.0)
@@ -133,7 +133,7 @@ func _initialize() -> void:
 				check_routes(species,s)
 				if s.rim>0.15:
 					failures.append("Individuals hug a depth-band edge: "+species)
-			else:
+			elif species!="seahorse":
 				# A home fish stays about its home (two HOME radii by day and at night); its home may
 				# lie at the bottom of its band (a gramma's cave), so the band-rim share is not a fault.
 				var limit: float=2.0*StreamWorld.HOME[species].radius
@@ -141,6 +141,9 @@ func _initialize() -> void:
 					failures.append("A %s strays from its home (%.0f / %.0f px, limit %.0f)" % [species,s.home_far,night[species].home_far,limit])
 				if s.distance<100.0:
 					failures.append("A %s hardly moves by day (%.0f px)" % [species,s.distance])
+			# S7's dedicated gate checks actual tail contacts, >=80% daylight
+			# hitching, all-night hitching, unique homes and <=8min excursions.
+			# A 2*old-home-radius limit contradicts travel to a different hitch.
 			if s.edge>0.05:
 				failures.append("Individuals hug the stream walls: "+species)
 			if s.flips_per_minute>3.0:
