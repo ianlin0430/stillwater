@@ -11,6 +11,9 @@ name: Ecology batch
 on:
   workflow_dispatch:
     inputs:
+      reuse_motion_run:
+        description: optional completed full-motion run with identical app/tests; blank reruns everything
+        default: ""
       motion_case:
         description: full motion regression or the isolated failing night-horse trigger
         type: choice
@@ -132,6 +135,15 @@ jobs:
           chmod +x /usr/local/bin/godot
           godot --version
 
+      - name: Verify identical complete motion evidence
+        id: reuse
+        if: inputs.reuse_motion_run != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MOTION_RUN: ${{ inputs.reuse_motion_run }}
+        run: python3 stream/tools/cloud_motion_reuse.py --run "$MOTION_RUN" --repo "$GITHUB_REPOSITORY" --output .
+
+
       - name: Import project
         working-directory: stream
         run: godot --headless --path . --import --quit-after 2000 || true
@@ -144,9 +156,12 @@ jobs:
       # 29m29s, leaving almost no margin under the previous30-minute timeout.
       - name: Core tests
         working-directory: stream
+        env:
+          REUSED_MOTION: ${{ steps.reuse.outputs.verified }}
         run: |
           python3 tools/test_low_power_check.py
           python3 tools/test_cloud_plan.py
+          python3 tools/test_cloud_motion_reuse.py
           python3 tools/test_cloud_acceptance.py
           python3 tools/test_cloud_offline_acceptance.py
           python3 tools/test_persistence_acceptance.py
@@ -155,8 +170,15 @@ jobs:
             echo "== $t"
             budget=900
             if [[ "$t" == test_obstacles ]]; then budget=3600; fi
-            if timeout "$budget" godot --headless --path . --script "tests/$t.gd" 2>&1 | tee "../$t.log" \
-              && grep '^{.*"failures"' "../$t.log" | tail -1 | jq -e '.failures==[] or .failures==0' >/dev/null \
+            case "$REUSED_MOTION/$t" in
+              true/test_natural_motion|true/test_obstacles|true/test_seahorse|true/test_decor_art)
+                echo "Reusing identical-source complete motion evidence for $t" ;;
+              *)
+                if ! timeout "$budget" godot --headless --path . --script "tests/$t.gd" 2>&1 | tee "../$t.log"; then
+                  echo "::error::$t failed (exit code)"; fail=1; continue
+                fi ;;
+            esac
+            if grep '^{.*"failures"' "../$t.log" | tail -1 | jq -e '.failures==[] or .failures==0' >/dev/null \
               && ! grep -qE '^ERROR:|SCRIPT ERROR|Parse Error|Failed loading resource' "../$t.log"; then
               echo "PASS $t"
             else
@@ -169,7 +191,9 @@ jobs:
         if: always()
         with:
           name: ecology-core-tests
-          path: "*.log"
+          path: |
+            *.log
+            motion-reuse-verified.json
           if-no-files-found: warn
 
   chunk1:
