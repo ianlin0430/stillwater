@@ -4,7 +4,17 @@ name: Motion diagnostic
 # the complete core, ecology matrices, native review and physical acceptance.
 on:
   workflow_dispatch:
+    inputs:
+      mode:
+        type: choice
+        options: [full, horse-night]
+        default: full
   workflow_call:
+    inputs:
+      mode:
+        type: string
+        required: false
+        default: full
 
 defaults:
   run:
@@ -27,7 +37,28 @@ jobs:
       - name: Import
         working-directory: stream
         run: godot --headless --path . --import --quit-after 2000
+      - name: Isolated original night-horse trigger
+        if: inputs.mode == 'horse-night'
+        working-directory: stream
+        run: |
+          mkdir -p ../motion-results
+          set +e
+          timeout 600 godot --headless --path . --script tools/diagnostic_seahorse_night.gd 2>&1 | tee ../motion-results/night-horse.log
+          code=${PIPESTATUS[0]}
+          set -e
+          echo "$code" > ../motion-results/night-horse.exit
+          [[ "$code" == 0 ]]
+          grep '^{.*"failures"' ../motion-results/night-horse.log | tail -1 | jq -e '.failures==[] or .failures==0' >/dev/null
+          ! grep -qE '^ERROR:|SCRIPT ERROR|Parse Error|Failed loading resource' ../motion-results/night-horse.log
+      - uses: actions/upload-artifact@v4
+        if: always() && inputs.mode == 'horse-night'
+        with:
+          name: night-horse-diagnostic
+          path: |
+            motion-results/
+            stream/artifacts/night-horse/
       - name: Complete natural motion, seahorse and decor gates
+        if: inputs.mode == 'full'
         working-directory: stream
         run: |
           mkdir -p ../motion-results
@@ -46,13 +77,14 @@ jobs:
           done
           exit "$fail"
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: always() && inputs.mode == 'full'
         with:
           name: motion-regression-first
           path: motion-results/
       # Only spend the full S5 runtime after the preceding complete gates pass.
       # This is diagnostic scheduling, never a replacement for final core.
       - name: Complete original 16-seed obstacle gate
+        if: inputs.mode == 'full'
         working-directory: stream
         run: |
           set +e
@@ -64,7 +96,7 @@ jobs:
           grep '^{.*"failures"' ../motion-results/test_obstacles.log | tail -1 | jq -e '.failures==[] or .failures==0' >/dev/null
           ! grep -qE '^ERROR:|SCRIPT ERROR|Parse Error|Failed loading resource' ../motion-results/test_obstacles.log
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: always() && inputs.mode == 'full'
         with:
           name: motion-regression-complete
           path: motion-results/
