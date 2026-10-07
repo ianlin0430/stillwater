@@ -117,6 +117,10 @@ func seed_list() -> Array:
 # ends are the same; obstacles are still measured where they would be).
 func run(seed_value: int, scene_id: String, preset: String, bare: bool) -> Dictionary:
 	var w: StreamWorld=StreamWorld.new(seed_value,1000,scene_id)
+	if trace_hitch_path and not bare:
+		w=load("res://tests/obstacle_stall_trace.gd").new(seed_value,1000,scene_id)
+		w.set("trace_start",1180.0 if preset=="min" else 1000.0)
+		w.set("trace_end",1250.0 if preset=="min" else 1100.0)
 	var d: Dictionary=w.scene.preset(preset)
 	var dressed: bool=true
 	for slot: String in d:
