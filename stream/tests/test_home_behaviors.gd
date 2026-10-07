@@ -8,6 +8,7 @@ func _initialize() -> void:
 	for scene_id: String in ReefScene.IDS:
 		var w:=StreamWorld.new(42,1000,scene_id)
 		w.state.light_hour=0
+		fixed_pose_checks(w,check)
 		w.advance_live(30)
 		var horses: Array=w.state.animals.filter(func(a): return a.species=="seahorse")
 		check(horses.all(func(a): return a.activity=="Hitched" and a.has("hitch_x") and a.has("hitch_y")),scene_id+": night seahorses hitched")
@@ -27,3 +28,36 @@ func _initialize() -> void:
 		check(var_to_bytes(w.export_state())==var_to_bytes(restored.export_state()),scene_id+": continued poses are deterministic")
 	print(JSON.stringify({"checks":checks,"failures":failures}))
 	quit(0 if failures.is_empty() else 1)
+
+# Reusable small fixture: no simulation loop, save or additional world startup.
+static func fixed_pose_checks(w: StreamWorld, verify: Callable) -> void:
+	var hour: float=w.state.light_hour
+	var g: Dictionary=w.state.animals.filter(func(a): return a.species=="royal_gramma")[0].duplicate(true)
+	g.home.kind="shelter"
+	g.x=g.home_x
+	g.y=g.home_y
+	g.activity="Sheltering"
+	g.decision_at=w.state.elapsed+10.0
+	verify.call(w._fixed_home_pose(g),"A gramma in its active cave shelter is held")
+	g.x+=200.0
+	verify.call(not w._fixed_home_pose(g),"A gramma still returning to its cave is mobile")
+	g.x=g.home_x
+	g.decision_at=w.state.elapsed-1.0
+	verify.call(not w._fixed_home_pose(g),"An expired shelter timer does not hold a gramma")
+	g.activity="Sleeping"
+	w.state.light_hour=12.0
+	verify.call(not w._fixed_home_pose(g),"A stale daylight Sleeping label is mobile")
+	w.state.light_hour=0.0
+	verify.call(w._fixed_home_pose(g),"A nighttime cave sleeper is held")
+	g.home.kind="rock"
+	verify.call(not w._fixed_home_pose(g),"A rock perch has no clipped den hold")
+	g.home.kind="shelter"
+	g.activity="Hovering"
+	verify.call(not w._fixed_home_pose(g),"An ordinary hovering resident is mobile")
+	var h: Dictionary=w.state.animals.filter(func(a): return a.species=="seahorse")[0].duplicate(true)
+	h.activity="Hitched"
+	h.hitch_x=h.home_x
+	verify.call(w._fixed_home_pose(h),"An attached horse is held")
+	h.erase("hitch_x")
+	verify.call(not w._fixed_home_pose(h),"An unattached horse is mobile")
+	w.state.light_hour=hour
