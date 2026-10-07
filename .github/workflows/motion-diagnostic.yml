@@ -43,12 +43,15 @@ jobs:
         run: |
           mkdir -p ../motion-results
           fail=0
+          for variant in baseline stable; do
           for case in min:17 max:42; do
             preset=${case%:*}
             seed=${case#*:}
-            log="../motion-results/shipwreck-$preset-$seed.log"
+            log="../motion-results/shipwreck-$preset-$seed-$variant.log"
+            extra=()
+            if [[ "$variant" == stable ]]; then extra+=(--stable-horse-pass); fi
             set +e
-            timeout 600 godot --headless --path . --script tests/test_obstacles.gd -- --seeds="$seed" --scenes=shipwreck --presets="$preset" --parts=obstacles --trace-hitch-path 2>&1 | tee "$log"
+            timeout 600 godot --headless --path . --script tests/test_obstacles.gd -- --seeds="$seed" --scenes=shipwreck --presets="$preset" --parts=obstacles --trace-hitch-path "${extra[@]}" 2>&1 | tee "$log"
             code=${PIPESTATUS[0]}
             set -e
             echo "$code" > "${log%.log}.exit"
@@ -57,6 +60,7 @@ jobs:
               || grep -qE '^ERROR:|SCRIPT ERROR|Parse Error|Failed loading resource' "$log"; then
               fail=1
             fi
+          done
           done
           exit "$fail"
       - uses: actions/upload-artifact@v4

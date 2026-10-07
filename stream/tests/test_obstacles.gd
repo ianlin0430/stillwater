@@ -38,6 +38,7 @@ var checks: int=0
 var failures: Array[String]=[]
 var numbers: Dictionary={}
 var verbose: bool="--verbose" in OS.get_cmdline_user_args()
+var stable_horse_pass: bool="--stable-horse-pass" in OS.get_cmdline_user_args()
 var trace_hitch_path: bool="--trace-hitch-path" in OS.get_cmdline_user_args()
 
 func check(value: bool, message: String) -> void:
@@ -121,6 +122,8 @@ func run(seed_value: int, scene_id: String, preset: String, bare: bool) -> Dicti
 		w=load("res://tests/obstacle_stall_trace.gd").new(seed_value,1000,scene_id)
 		w.set("trace_start",1180.0 if preset=="min" else 1000.0)
 		w.set("trace_end",1250.0 if preset=="min" else 1100.0)
+	if stable_horse_pass:
+		w=load("res://tests/obstacle_horse_pass_probe.gd").new(seed_value,1000,scene_id)
 	var d: Dictionary=w.scene.preset(preset)
 	var dressed: bool=true
 	for slot: String in d:
@@ -166,6 +169,9 @@ func run(seed_value: int, scene_id: String, preset: String, bare: bool) -> Dicti
 					DirAccess.make_dir_recursive_absolute("res://artifacts/obstacle-stall")
 					var file:=FileAccess.open("res://artifacts/obstacle-stall/%s-%s-%d-before.var" % [scene_id,preset,seed_value],FileAccess.WRITE)
 					file.store_var(w.export_state())
+					var context:=FileAccess.open("res://artifacts/obstacle-stall/%s-%s-%d-%s-context.var" % [scene_id,preset,seed_value,"stable" if stable_horse_pass else "baseline"],FileAccess.WRITE)
+					context.store_var({"world":w.export_state(),"trips":trips,"tick":i,"window":window,"runs":runs,"obstacles":obs})
+					context.close()
 					file.close()
 					captured=true
 		w.advance_live(0.2)
