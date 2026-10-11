@@ -28,6 +28,10 @@ inputs:
   to-day:
     description: to-day
     required: true
+  source-run:
+    description: earlier workflow run to take the start checkpoint from; blank uses this run
+    required: false
+    default: ''
   index:
     description: index
     required: true
@@ -35,7 +39,14 @@ runs:
   using: composite
   steps:
     - uses: actions/download-artifact@v4
-      if: inputs.from-day != '0'
+      if: inputs.from-day != '0' && inputs.source-run != ''
+      with:
+        github-token: ${{ github.token }}
+        run-id: ${{ inputs.source-run }}
+        name: checkpoint-${{ inputs.mode }}-${{ inputs.days }}d-${{ inputs.scene }}-${{ inputs.decor }}-feed-${{ inputs.feed }}-seed-${{ inputs.seed }}-day-${{ inputs.from-day }}
+        path: stream/artifacts/ckpt
+    - uses: actions/download-artifact@v4
+      if: inputs.from-day != '0' && inputs.source-run == ''
       with:
         name: checkpoint-${{ inputs.mode }}-${{ inputs.days }}d-${{ inputs.scene }}-${{ inputs.decor }}-feed-${{ inputs.feed }}-seed-${{ inputs.seed }}-day-${{ inputs.from-day }}
         path: stream/artifacts/ckpt
